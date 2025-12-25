@@ -1,0 +1,7027 @@
+#![allow(unsafe_op_in_unsafe_fn)]
+#![windows_subsystem = "windows"]
+
+use std::fmt::Display;
+use std::io::{BufWriter, Read, Write};
+use std::mem::size_of;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
+use chrono::Local;
+use docx_rs::{
+    read_docx, Docx, DocumentChild, Paragraph, ParagraphChild, Run, RunChild, Table,
+    TableChild, TableCellContent, TableRowChild,
+};
+use calamine::{open_workbook_auto, Reader, Data as CalamineData};
+use cfb::CompoundFile;
+use encoding_rs::{Encoding, WINDOWS_1252};
+use futures_util::{SinkExt, StreamExt};
+use pdf_extract::extract_text;
+use printpdf::{BuiltinFont, Mm, PdfDocument};
+use rand::Rng;
+use rodio::{Decoder, OutputStream, Sink, Source};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use tokio::sync::mpsc;
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::client::IntoClientRequest,
+    tungstenite::http::HeaderValue,
+    tungstenite::protocol::Message,
+};
+use url::Url;
+use uuid::Uuid;
+use windows::core::{w, PCWSTR, PWSTR};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM, BOOL};
+use windows::Win32::Graphics::Gdi::{GetStockObject, HBRUSH, HFONT, COLOR_WINDOW, DEFAULT_GUI_FONT, InvalidateRect, UpdateWindow};
+use windows::Win32::System::DataExchange::COPYDATASTRUCT;
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, LoadLibraryW};
+use windows::Win32::UI::Controls::RichEdit::{
+    MSFTEDIT_CLASS, EM_SETEVENTMASK, ENM_CHANGE, FINDTEXTEXW, CHARRANGE, EM_FINDTEXTEXW, EM_EXSETSEL, EM_EXGETSEL,
+    TEXTRANGEW, EM_GETTEXTRANGE
+};
+use windows::Win32::System::Power::{SetThreadExecutionState, ES_CONTINUOUS, ES_SYSTEM_REQUIRED};
+use windows::Win32::UI::Controls::{
+    InitCommonControlsEx, ICC_TAB_CLASSES, INITCOMMONCONTROLSEX, NMHDR, TCITEMW, TCIF_TEXT,
+    TCM_ADJUSTRECT, TCM_DELETEITEM, TCM_GETCURSEL, TCM_INSERTITEMW, TCM_SETCURSEL, TCM_SETITEMW,
+    TCN_SELCHANGE, WC_TABCONTROLW, EM_GETMODIFY, EM_SETMODIFY, EM_SETREADONLY, WC_BUTTON,
+    WC_COMBOBOXW, WC_STATIC, BST_CHECKED, PBM_SETRANGE, PBM_SETPOS,
+    WC_LISTBOXW,
+};
+
+use windows::Win32::UI::Controls::Dialogs::{
+    FindTextW, ReplaceTextW, FINDREPLACEW, FINDREPLACE_FLAGS, FR_DIALOGTERM, FR_DOWN, FR_FINDNEXT,
+    FR_MATCHCASE, FR_REPLACE, FR_REPLACEALL, FR_WHOLEWORD, GetOpenFileNameW, GetSaveFileNameW,
+    OPENFILENAMEW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY, OFN_OVERWRITEPROMPT,
+    OFN_PATHMUSTEXIST,
+};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    EnableWindow, GetFocus, GetKeyState, SetFocus, VK_CONTROL, VK_ESCAPE, VK_F3, VK_F4, VK_F5,
+    VK_F6, VK_RETURN, VK_TAB, VK_SHIFT, VK_SPACE, VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN, VK_HOME,
+    VK_END, VK_PRIOR, VK_NEXT
+};
+use windows::Win32::UI::Shell::{DragAcceptFiles, DragFinish, DragQueryFileW, HDROP};
+use windows::Win32::UI::WindowsAndMessaging::{
+    AppendMenuW, CreateAcceleratorTableW, CreateMenu, CreateWindowExW,
+    DefWindowProcW, DeleteMenu, DestroyWindow, DispatchMessageW, DrawMenuBar, FindWindowW,
+    GetClientRect, GetMenuItemCount, GetMessageW, GetWindowLongPtrW, LoadCursorW, LoadIconW,
+    IsDialogMessageW, MessageBoxW, MoveWindow, PostQuitMessage, RegisterClassW, SendMessageW,
+    SetMenu, RegisterWindowMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowTextW,
+    ShowWindow, PostMessageW, WM_APP, GetParent, WS_POPUP,
+    TranslateAcceleratorW, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
+    EN_CHANGE, GWLP_USERDATA, CREATESTRUCTW,
+    HMENU, HCURSOR, HICON, IDC_ARROW, IDI_APPLICATION, IDYES, IDNO, MENU_ITEM_FLAGS,
+    MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNOCANCEL, MB_YESNO, MF_BYPOSITION,
+    MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, SW_HIDE, SW_SHOW, WM_CLOSE,
+    WM_COMMAND, WS_CAPTION, WS_SYSMENU, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME, WS_TABSTOP,
+    WM_CREATE, WM_DESTROY, WM_DROPFILES, WM_KEYDOWN, WM_NOTIFY, WM_SIZE, WM_TIMER, WNDCLASSW, WS_CHILD,
+    WS_CLIPCHILDREN, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_VISIBLE, ES_AUTOVSCROLL,
+    ES_AUTOHSCROLL, ES_MULTILINE, ES_WANTRETURN, WS_HSCROLL, WS_VSCROLL, ACCEL, FVIRTKEY,
+    FCONTROL, FSHIFT, WM_SETFOCUS, WM_NCDESTROY, HACCEL, WM_UNDO, WM_CUT, WM_COPY, WINDOW_STYLE,
+    WM_PASTE, WM_GETTEXT, WM_GETTEXTLENGTH, WM_COPYDATA, KillTimer, SetTimer, WM_SETFONT,
+    BM_GETCHECK, BM_SETCHECK, CB_ADDSTRING, CB_GETCURSEL, CB_GETITEMDATA,
+    CB_RESETCONTENT, CB_SETCURSEL, CB_SETITEMDATA, CBS_DROPDOWNLIST, CB_GETDROPPEDSTATE,
+    BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, WM_SETREDRAW,
+    LB_ADDSTRING, LB_GETCURSEL, LBN_DBLCLK, LB_GETCOUNT, LB_RESETCONTENT, LB_SETCURSEL,
+    LBS_NOTIFY, LBS_HASSTRINGS,
+};
+
+use windows::Win32::UI::WindowsAndMessaging::{IDCANCEL};
+
+const EM_GETSEL: u32 = 0x00B0;
+const EM_SETSEL: u32 = 0x00B1;
+const EM_SCROLLCARET: u32 = 0x00B7;
+const EM_REPLACESEL: u32 = 0x00C2;
+const EM_LIMITTEXT: u32 = 0x00C5;
+
+const IDM_FILE_NEW: usize = 1001;
+const IDM_FILE_OPEN: usize = 1002;
+const IDM_FILE_SAVE: usize = 1003;
+const IDM_FILE_SAVE_AS: usize = 1004;
+const IDM_FILE_SAVE_ALL: usize = 1005;
+const IDM_FILE_CLOSE: usize = 1006;
+const IDM_FILE_EXIT: usize = 1007;
+const IDM_FILE_READ_START: usize = 1008;
+const IDM_FILE_READ_PAUSE: usize = 1009;
+const IDM_FILE_READ_STOP: usize = 1010;
+const IDM_FILE_AUDIOBOOK: usize = 1011;
+const IDM_EDIT_UNDO: usize = 2001;
+const IDM_EDIT_CUT: usize = 2002;
+const IDM_EDIT_COPY: usize = 2003;
+const IDM_EDIT_PASTE: usize = 2004;
+const IDM_EDIT_SELECT_ALL: usize = 2005;
+const IDM_EDIT_FIND: usize = 2006;
+const IDM_EDIT_FIND_NEXT: usize = 2007;
+const IDM_EDIT_REPLACE: usize = 2008;
+const IDM_INSERT_BOOKMARK: usize = 2101;
+const IDM_MANAGE_BOOKMARKS: usize = 2102;
+const IDM_NEXT_TAB: usize = 3001;
+const IDM_FILE_RECENT_BASE: usize = 4000;
+const IDM_TOOLS_OPTIONS: usize = 5001;
+const IDM_HELP_GUIDE: usize = 7001;
+const IDM_HELP_ABOUT: usize = 7002;
+const MAX_RECENT: usize = 5;
+const WM_PDF_LOADED: u32 = WM_APP + 1;
+const WM_TTS_VOICES_LOADED: u32 = WM_APP + 2;
+const WM_TTS_PLAYBACK_DONE: u32 = WM_APP + 3;
+const WM_TTS_AUDIOBOOK_DONE: u32 = WM_APP + 4;
+const WM_TTS_PLAYBACK_ERROR: u32 = WM_APP + 5;
+const WM_UPDATE_PROGRESS: u32 = WM_APP + 6;
+const WM_TTS_CHUNK_START: u32 = WM_APP + 7;
+const FIND_DIALOG_ID: isize = 1;
+const REPLACE_DIALOG_ID: isize = 2;
+const COPYDATA_OPEN_FILE: usize = 1;
+const ES_CENTER: u32 = 0x1;
+const ES_READONLY: u32 = 0x800;
+
+const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+const WSS_URL_BASE: &str = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
+const VOICE_LIST_URL: &str = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list";
+const MAX_TTS_TEXT_LEN: usize = 3000;
+const MAX_TTS_TEXT_LEN_LONG: usize = 2000;
+const MAX_TTS_FIRST_CHUNK_LEN_LONG: usize = 800;
+const TTS_LONG_TEXT_THRESHOLD: usize = MAX_TTS_TEXT_LEN;
+
+const OPTIONS_CLASS_NAME: &str = "NovapadOptions";
+const OPTIONS_ID_LANG: usize = 6001;
+const OPTIONS_ID_OPEN: usize = 6002;
+const OPTIONS_ID_VOICE: usize = 6003;
+const OPTIONS_ID_MULTILINGUAL: usize = 6004;
+const OPTIONS_ID_SPLIT_ON_NEWLINE: usize = 6007;
+const OPTIONS_ID_WORD_WRAP: usize = 6008;
+const OPTIONS_ID_MOVE_CURSOR: usize = 6009;
+const OPTIONS_ID_AUDIO_SKIP: usize = 6010;
+const OPTIONS_ID_OK: usize = 6005;
+const OPTIONS_ID_CANCEL: usize = 6006;
+const HELP_ID_OK: usize = 7003;
+const HELP_CLASS_NAME: &str = "NovapadHelp";
+const PROGRESS_CLASS_NAME: &str = "NovapadProgress";
+const PROGRESS_ID_CANCEL: usize = 8001;
+const BOOKMARKS_CLASS_NAME: &str = "NovapadBookmarks";
+const BOOKMARKS_ID_LIST: usize = 9001;
+const BOOKMARKS_ID_DELETE: usize = 9002;
+const BOOKMARKS_ID_GOTO: usize = 9003;
+const BOOKMARKS_ID_OK: usize = 9004;
+
+struct PdfLoadResult {
+    hwnd_edit: HWND,
+    path: PathBuf,
+    result: Result<String, String>,
+}
+
+struct PdfLoadingState {
+    hwnd_edit: HWND,
+    timer_id: usize,
+    frame: usize,
+}
+
+#[derive(Default)]
+struct Document {
+    title: String,
+    path: Option<PathBuf>,
+    hwnd_edit: HWND,
+    dirty: bool,
+    format: FileFormat,
+}
+
+#[derive(Clone)]
+struct VoiceInfo {
+    short_name: String,
+    locale: String,
+    is_multilingual: bool,
+}
+
+enum TtsCommand {
+    Pause,
+    Resume,
+    Stop,
+}
+
+struct TtsSession {
+    id: u64,
+    command_tx: mpsc::UnboundedSender<TtsCommand>,
+    cancel: Arc<AtomicBool>,
+    paused: bool,
+    initial_caret_pos: i32,
+}
+
+struct AudiobookResult {
+    success: bool,
+    message: String,
+}
+
+#[derive(Clone)]
+struct TtsChunk {
+    text_to_read: String,
+    original_len: usize,
+}
+
+struct ProgressDialogState {
+    hwnd_pb: HWND,
+    hwnd_text: HWND,
+    hwnd_cancel: HWND,
+    total: usize,
+}
+
+fn log_path() -> Option<PathBuf> {
+    let base = std::env::var_os("APPDATA")?;
+    let mut path = PathBuf::from(base);
+    path.push("Novapad");
+    path.push("Novapad.log");
+    Some(path)
+}
+
+fn log_debug(message: &str) {
+    let Some(path) = log_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut log) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+        let _ = writeln!(log, "[{timestamp}] {message}");
+    }
+}
+
+fn prevent_sleep(enable: bool) {
+    unsafe {
+        if enable {
+            SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
+        } else {
+            SetThreadExecutionState(ES_CONTINUOUS);
+        }
+    }
+}
+
+fn post_tts_error(hwnd: HWND, session_id: u64, message: String) {
+    log_debug(&format!("TTS error: {message}"));
+    let payload = Box::new(message);
+    let _ = unsafe {
+        PostMessageW(
+            hwnd,
+            WM_TTS_PLAYBACK_ERROR,
+            WPARAM(session_id as usize),
+            LPARAM(Box::into_raw(payload) as isize),
+        )
+    };
+}
+
+struct OptionsDialogState {
+    parent: HWND,
+    combo_lang: HWND,
+    combo_open: HWND,
+    combo_voice: HWND,
+    combo_audio_skip: HWND,
+    checkbox_multilingual: HWND,
+    checkbox_split_on_newline: HWND,
+    checkbox_word_wrap: HWND,
+    checkbox_move_cursor: HWND,
+    ok_button: HWND,
+}
+
+struct HelpWindowState {
+    parent: HWND,
+    edit: HWND,
+    ok_button: HWND,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct Bookmark {
+    position: i32,
+    snippet: String,
+    timestamp: String,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct BookmarkStore {
+    // Path string -> list of bookmarks
+    files: std::collections::HashMap<String, Vec<Bookmark>>,
+}
+
+struct AudiobookPlayer {
+    path: PathBuf,
+    sink: Arc<Sink>,
+    _stream: OutputStream, // Must be kept alive
+    is_paused: bool,
+    start_instant: std::time::Instant,
+    accumulated_seconds: u64,
+    volume: f32,
+}
+
+#[derive(Default)]
+struct AppState {
+    hwnd_tab: HWND,
+    docs: Vec<Document>,
+    current: usize,
+    untitled_count: usize,
+    hfont: HFONT,
+    hmenu_recent: HMENU,
+    recent_files: Vec<PathBuf>,
+    settings: AppSettings,
+    bookmarks: BookmarkStore,
+    find_dialog: HWND,
+    replace_dialog: HWND,
+    options_dialog: HWND,
+    help_window: HWND,
+    bookmarks_window: HWND,
+    find_msg: u32,
+    find_text: Vec<u16>,
+    replace_text: Vec<u16>,
+    find_replace: Option<FINDREPLACEW>,
+    replace_replace: Option<FINDREPLACEW>,
+    last_find_flags: FINDREPLACE_FLAGS,
+    pdf_loading: Vec<PdfLoadingState>,
+    next_timer_id: usize,
+    tts_session: Option<TtsSession>,
+    tts_next_session_id: u64,
+    voice_list: Vec<VoiceInfo>,
+    audiobook_progress: HWND,
+    audiobook_cancel: Option<Arc<AtomicBool>>,
+    active_audiobook: Option<AudiobookPlayer>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct RecentFileStore {
+    files: Vec<String>,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+enum OpenBehavior {
+    #[serde(rename = "new_tab")]
+    NewTab,
+    #[serde(rename = "new_window")]
+    NewWindow,
+}
+
+impl Default for OpenBehavior {
+    fn default() -> Self {
+        OpenBehavior::NewTab
+    }
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+enum Language {
+    #[serde(rename = "it")]
+    Italian,
+    #[serde(rename = "en")]
+    English,
+}
+
+impl Default for Language {
+    fn default() -> Self {
+        Language::Italian
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(default)]
+struct AppSettings {
+    open_behavior: OpenBehavior,
+    language: Language,
+    tts_voice: String,
+    tts_only_multilingual: bool,
+    split_on_newline: bool,
+    word_wrap: bool,
+    move_cursor_during_reading: bool,
+    audiobook_skip_seconds: u32,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        AppSettings {
+            open_behavior: OpenBehavior::NewTab,
+            language: Language::Italian,
+            tts_voice: "it-IT-IsabellaNeural".to_string(),
+            tts_only_multilingual: false,
+            split_on_newline: true,
+            word_wrap: true,
+            move_cursor_during_reading: false,
+            audiobook_skip_seconds: 60,
+        }
+    }
+}
+
+
+#[derive(Clone, Copy)]
+enum TextEncoding {
+    Utf8,
+    Utf16Le,
+    Utf16Be,
+    Windows1252,
+}
+
+impl Default for TextEncoding {
+    fn default() -> Self {
+        TextEncoding::Utf8
+    }
+}
+
+#[derive(Clone, Copy)]
+enum FileFormat {
+    Text(TextEncoding),
+    Docx,
+    Doc,
+    Pdf,
+    Spreadsheet,
+    Epub,
+    Audiobook,
+}
+
+impl Default for FileFormat {
+    fn default() -> Self {
+        FileFormat::Text(TextEncoding::Utf8)
+    }
+}
+
+fn main() -> windows::core::Result<()> {
+    log_debug("Application started.");
+
+    unsafe {
+        let _ = LoadLibraryW(w!("Msftedit.dll"));
+        let hinstance = HINSTANCE(GetModuleHandleW(None)?.0);
+        let class_name = w!("NovapadWin32");
+
+        let wc = WNDCLASSW {
+            hCursor: HCURSOR(LoadCursorW(None, IDC_ARROW)?.0),
+            hIcon: HICON(LoadIconW(None, IDI_APPLICATION)?.0),
+            hInstance: hinstance,
+            lpszClassName: class_name,
+            style: CS_HREDRAW | CS_VREDRAW,
+            lpfnWndProc: Some(wndproc),
+            hbrBackground: HBRUSH((COLOR_WINDOW.0 + 1) as isize),
+            ..Default::default()
+        };
+        RegisterClassW(&wc);
+
+        let args: Vec<String> = std::env::args().collect();
+        let extra_paths: Vec<String> = if args.len() > 1 {
+            args[1..].to_vec()
+        } else {
+            Vec::new()
+        };
+        let settings = load_settings();
+        let file_to_open = extra_paths.first().cloned();
+        if !extra_paths.is_empty() {
+            if settings.open_behavior == OpenBehavior::NewTab {
+                let existing = FindWindowW(class_name, PCWSTR::null());
+                if existing.0 != 0 {
+                    for path in &extra_paths {
+                        if !send_open_file(existing, path) {
+                            break;
+                        }
+                    }
+                    SetForegroundWindow(existing);
+                    return Ok(());
+                }
+            }
+        }
+        let lp_param = &file_to_open as *const Option<String> as *const std::ffi::c_void;
+
+        let hwnd = CreateWindowExW(
+            Default::default(),
+            class_name,
+            w!("Novapad"),
+            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_VISIBLE,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            900,
+            700,
+            None,
+            None,
+            hinstance,
+            Some(lp_param),
+        );
+
+        if hwnd.0 == 0 {
+            return Ok(());
+        }
+
+        let accel = create_accelerators();
+        let mut msg = MSG::default();
+        while GetMessageW(&mut msg, HWND(0), 0, 0).into() {
+            // Priority 1: Global navigation keys (Ctrl+Tab)
+            if msg.message == WM_KEYDOWN && msg.wParam.0 as u32 == VK_TAB.0 as u32 {
+                if (GetKeyState(VK_CONTROL.0 as i32) & (0x8000u16 as i16)) != 0 {
+                    next_tab_with_prompt(hwnd);
+                    continue;
+                }
+            }
+
+            let mut handled = false;
+            let _ = with_state(hwnd, |state| {
+                // Audiobook keyboard controls (ONLY if no secondary window is open)
+                if msg.message == WM_KEYDOWN {
+                    let is_audiobook = state.docs.get(state.current).map(|d| matches!(d.format, FileFormat::Audiobook)).unwrap_or(false);
+                    let secondary_open = state.bookmarks_window.0 != 0 || state.options_dialog.0 != 0 || state.help_window.0 != 0;
+                    
+                    if is_audiobook && !secondary_open {
+                        match msg.wParam.0 as u32 {
+                            vk if vk == VK_SPACE.0 as u32 => {
+                                toggle_audiobook_pause(hwnd);
+                                handled = true;
+                                return;
+                            }
+                            vk if vk == VK_LEFT.0 as u32 => {
+                                let skip = state.settings.audiobook_skip_seconds as i64;
+                                seek_audiobook(hwnd, -skip);
+                                handled = true;
+                                return;
+                            }
+                            vk if vk == VK_RIGHT.0 as u32 => {
+                                let skip = state.settings.audiobook_skip_seconds as i64;
+                                seek_audiobook(hwnd, skip);
+                                handled = true;
+                                return;
+                            }
+                            vk if vk == VK_UP.0 as u32 => {
+                                change_audiobook_volume(hwnd, 0.1);
+                                handled = true;
+                                return;
+                            }
+                            vk if vk == VK_DOWN.0 as u32 => {
+                                change_audiobook_volume(hwnd, -0.1);
+                                handled = true;
+                                return;
+                            }
+                            // Block navigation to prevent screen reader noise
+                            vk if vk == VK_HOME.0 as u32 || vk == VK_END.0 as u32 ||
+                                  vk == VK_PRIOR.0 as u32 || vk == VK_NEXT.0 as u32 => {
+                                handled = true;
+                                return;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                if state.find_dialog.0 != 0 && IsDialogMessageW(state.find_dialog, &msg).as_bool() {
+                    handled = true;
+                    return;
+                }
+                if state.replace_dialog.0 != 0
+                    && IsDialogMessageW(state.replace_dialog, &msg).as_bool()
+                {
+                    handled = true;
+                    return;
+                }
+
+                if state.help_window.0 != 0 {
+                    if IsDialogMessageW(state.help_window, &msg).as_bool() {
+                        handled = true;
+                        return;
+                    }
+                }
+
+                if state.options_dialog.0 != 0 {
+                    // Special handling for Enter key in Options dialog to satisfy requirement:
+                    // "Enter activates OK" even in ComboBoxes (when closed).
+                    if msg.message == WM_KEYDOWN && msg.wParam.0 as u32 == VK_RETURN.0 as u32 {
+                        let focus = GetFocus();
+                        if GetParent(focus) == state.options_dialog {
+                            let dropped = SendMessageW(focus, CB_GETDROPPEDSTATE, WPARAM(0), LPARAM(0)).0 != 0;
+                            if !dropped {
+                                // If not a dropped-down combo, force OK.
+                                let _ = with_options_state(state.options_dialog, |opt_state| {
+                                    let _ = SendMessageW(
+                                        state.options_dialog,
+                                        WM_COMMAND,
+                                        WPARAM(OPTIONS_ID_OK | (0 << 16)),
+                                        LPARAM(opt_state.ok_button.0),
+                                    );
+                                });
+                                handled = true;
+                                return;
+                            }
+                        }
+                    }
+
+                    if IsDialogMessageW(state.options_dialog, &msg).as_bool() {
+                        handled = true;
+                        return;
+                    }
+                }
+
+                if state.audiobook_progress.0 != 0 {
+                    if msg.message == WM_KEYDOWN && msg.wParam.0 as u32 == VK_RETURN.0 as u32 {
+                        if GetFocus() == with_progress_state(state.audiobook_progress, |s| s.hwnd_cancel).unwrap_or(HWND(0)) {
+                            request_cancel_audiobook(state.audiobook_progress);
+                            handled = true;
+                            return;
+                        }
+                    }
+                    if IsDialogMessageW(state.audiobook_progress, &msg).as_bool() {
+                        handled = true;
+                        return;
+                    }
+                }
+
+                if state.bookmarks_window.0 != 0 {
+                    if msg.message == WM_KEYDOWN && msg.wParam.0 as u32 == VK_RETURN.0 as u32 {
+                        let focus = GetFocus();
+                        let (list, btn) = with_bookmarks_state(state.bookmarks_window, |s| (s.hwnd_list, s.hwnd_goto)).unwrap_or((HWND(0), HWND(0)));
+                        if focus == list || focus == btn {
+                            goto_selected_bookmark(state.bookmarks_window);
+                            handled = true;
+                            return;
+                        }
+                    }
+                    if IsDialogMessageW(state.bookmarks_window, &msg).as_bool() {
+                        handled = true;
+                        return;
+                    }
+                }
+            });
+            if handled {
+                continue;
+            }
+            if accel.0 != 0 && TranslateAcceleratorW(hwnd, accel, &msg) != 0 {
+                continue;
+            }
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+
+    Ok(())
+}
+
+unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if let Some(find_msg) = with_state(hwnd, |state| state.find_msg) {
+        if msg == find_msg {
+            handle_find_message(hwnd, lparam);
+            return LRESULT(0);
+        }
+    }
+
+    match msg {
+        WM_CREATE => {
+            let mut icc = INITCOMMONCONTROLSEX {
+                dwSize: size_of::<INITCOMMONCONTROLSEX>() as u32,
+                dwICC: ICC_TAB_CLASSES,
+            };
+            InitCommonControlsEx(&mut icc);
+
+            let hwnd_tab = CreateWindowExW(
+                Default::default(),
+                WC_TABCONTROLW,
+                PCWSTR::null(),
+                WS_CHILD | WS_VISIBLE,
+                0,
+                0,
+                0,
+                0,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
+
+            let hfont = HFONT(GetStockObject(DEFAULT_GUI_FONT).0);
+            let find_msg = RegisterWindowMessageW(w!("commdlg_FindReplace"));
+            let settings = load_settings();
+            let bookmarks = load_bookmarks();
+            let (_, recent_menu) = create_menus(hwnd, settings.language);
+            let recent_files = load_recent_files();
+            let state = Box::new(AppState {
+                hwnd_tab,
+                docs: Vec::new(),
+                current: 0,
+                untitled_count: 0,
+                hfont,
+                hmenu_recent: recent_menu,
+                recent_files,
+                settings,
+                bookmarks,
+                find_dialog: HWND(0),
+                replace_dialog: HWND(0),
+                options_dialog: HWND(0),
+                help_window: HWND(0),
+                bookmarks_window: HWND(0),
+                find_msg,
+                find_text: vec![0u16; 256],
+                replace_text: vec![0u16; 256],
+                find_replace: None,
+                replace_replace: None,
+                last_find_flags: FINDREPLACE_FLAGS(0),
+                pdf_loading: Vec::new(),
+                next_timer_id: 1,
+                tts_session: None,
+                tts_next_session_id: 1,
+                voice_list: Vec::new(),
+                audiobook_progress: HWND(0),
+                audiobook_cancel: None,
+                active_audiobook: None,
+            });
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
+
+            update_recent_menu(hwnd, recent_menu);
+            
+            let create_struct = lparam.0 as *const CREATESTRUCTW;
+            let lp_create_params = (*create_struct).lpCreateParams as *const Option<String>;
+            let file_to_open = if !lp_create_params.is_null() {
+                (*lp_create_params).as_ref()
+            } else {
+                None
+            };
+
+            if let Some(path_str) = file_to_open {
+                open_document(hwnd, Path::new(path_str));
+            } else {
+                new_document(hwnd);
+            }
+            
+            layout_children(hwnd);
+            DragAcceptFiles(hwnd, true);
+            LRESULT(0)
+        }
+        WM_SIZE => {
+            layout_children(hwnd);
+            LRESULT(0)
+        }
+        WM_SETFOCUS => {
+            let _ = with_state(hwnd, |state| {
+                if let Some(doc) = state.docs.get(state.current) {
+                    if matches!(doc.format, FileFormat::Audiobook) {
+                        unsafe { SetFocus(state.hwnd_tab); }
+                    } else {
+                        unsafe { SetFocus(doc.hwnd_edit); }
+                    }
+                }
+            });
+            LRESULT(0)
+        }
+        WM_NOTIFY => {
+            let hdr = &*(lparam.0 as *const NMHDR);
+            if hdr.code == TCN_SELCHANGE && hdr.hwndFrom == get_tab(hwnd) {
+                attempt_switch_to_selected_tab(hwnd);
+                return LRESULT(0);
+            }
+            if hdr.code == EN_CHANGE as u32 {
+                mark_dirty_from_edit(hwnd, hdr.hwndFrom);
+                return LRESULT(0);
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_TIMER => {
+            handle_pdf_loading_timer(hwnd, wparam.0 as usize);
+            LRESULT(0)
+        }
+        WM_PDF_LOADED => {
+            if lparam.0 == 0 {
+                return LRESULT(0);
+            }
+            let payload = Box::from_raw(lparam.0 as *mut PdfLoadResult);
+            handle_pdf_loaded(hwnd, *payload);
+            LRESULT(0)
+        }
+        WM_TTS_VOICES_LOADED => {
+            if lparam.0 == 0 {
+                return LRESULT(0);
+            }
+            let payload = Box::from_raw(lparam.0 as *mut Vec<VoiceInfo>);
+            let voices = *payload;
+            let _ = with_state(hwnd, |state| {
+                state.voice_list = voices.clone();
+            });
+            if let Some(dialog) = with_state(hwnd, |state| state.options_dialog) {
+                if dialog.0 != 0 {
+                    refresh_options_voices(dialog);
+                }
+            }
+            LRESULT(0)
+        }
+        WM_TTS_PLAYBACK_DONE => {
+            let session_id = wparam.0 as u64;
+            let _ = with_state(hwnd, |state| {
+                if let Some(current) = &state.tts_session {
+                    if current.id == session_id {
+                        state.tts_session = None;
+                        prevent_sleep(false);
+                    }
+                }
+            });
+            LRESULT(0)
+        }
+        WM_TTS_CHUNK_START => {
+            let session_id = wparam.0 as u64;
+            let offset = lparam.0 as i32;
+            let _ = with_state(hwnd, |state| {
+                if let Some(current) = &state.tts_session {
+                    if current.id == session_id && state.settings.move_cursor_during_reading {
+                        if let Some(doc) = state.docs.get(state.current) {
+                            let new_pos = current.initial_caret_pos + offset;
+                            let mut cr = CHARRANGE { cpMin: new_pos, cpMax: new_pos };
+                            unsafe {
+                                SendMessageW(doc.hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize));
+                                SendMessageW(doc.hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
+                            }
+                        }
+                    }
+                }
+            });
+            LRESULT(0)
+        }
+        WM_TTS_PLAYBACK_ERROR => {
+            if lparam.0 == 0 {
+                return LRESULT(0);
+            }
+            let payload = Box::from_raw(lparam.0 as *mut String);
+            let message = *payload;
+            let session_id = wparam.0 as u64;
+            let mut should_show = false;
+            let _ = with_state(hwnd, |state| {
+                if let Some(current) = &state.tts_session {
+                    if current.id == session_id {
+                        state.tts_session = None;
+                        prevent_sleep(false);
+                        should_show = true;
+                    }
+                }
+            });
+            if should_show {
+                let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+                show_error(hwnd, language, &message);
+            } else {
+                log_debug(&format!(
+                    "TTS error ignored for session {session_id}: {message}"
+                ));
+            }
+            LRESULT(0)
+        }
+        WM_TTS_AUDIOBOOK_DONE => {
+            if lparam.0 == 0 {
+                return LRESULT(0);
+            }
+            
+            let _ = with_state(hwnd, |state| {
+                if state.audiobook_progress.0 != 0 {
+                     let _ = DestroyWindow(state.audiobook_progress);
+                     state.audiobook_progress = HWND(0);
+                     state.audiobook_cancel = None;
+                }
+                if let Some(doc) = state.docs.get(state.current) {
+                    SetFocus(doc.hwnd_edit);
+                }
+            });
+
+            let payload = Box::from_raw(lparam.0 as *mut AudiobookResult);
+            let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+            let title = to_wide(if payload.success {
+                audiobook_done_title(language)
+            } else {
+                error_title(language)
+            });
+            let message = to_wide(&payload.message);
+            let flags = if payload.success { MB_OK | MB_ICONINFORMATION } else { MB_OK | MB_ICONERROR };
+            MessageBoxW(hwnd, PCWSTR(message.as_ptr()), PCWSTR(title.as_ptr()), flags);
+            LRESULT(0)
+        }
+        WM_KEYDOWN => {
+            if wparam.0 as u32 == u32::from(VK_TAB.0)
+                && (GetKeyState(VK_CONTROL.0 as i32) & (0x8000u16 as i16)) != 0
+            {
+                next_tab_with_prompt(hwnd);
+                return LRESULT(0);
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_COMMAND => {
+            let cmd_id = (wparam.0 & 0xffff) as usize;
+            let notification = (wparam.0 >> 16) as u16;
+            if u32::from(notification) == EN_CHANGE {
+                mark_dirty_from_edit(hwnd, HWND(lparam.0));
+                return LRESULT(0);
+            }
+
+            if cmd_id >= IDM_FILE_RECENT_BASE && cmd_id < IDM_FILE_RECENT_BASE + MAX_RECENT {
+                open_recent_by_index(hwnd, cmd_id - IDM_FILE_RECENT_BASE);
+                return LRESULT(0);
+            }
+
+            match cmd_id {
+                IDM_FILE_NEW => {
+                    log_debug("Menu: New document");
+                    new_document(hwnd);
+                    LRESULT(0)
+                }
+                IDM_FILE_OPEN => {
+                    log_debug("Menu: Open document");
+                    if let Some(path) = open_file_dialog(hwnd) {
+                        open_document(hwnd, &path);
+                    }
+                    LRESULT(0)
+                }
+                IDM_FILE_SAVE => {
+                    log_debug("Menu: Save document");
+                    let _ = save_current_document(hwnd);
+                    LRESULT(0)
+                }
+                IDM_FILE_SAVE_AS => {
+                    log_debug("Menu: Save document as");
+                    let _ = save_current_document_as(hwnd);
+                    LRESULT(0)
+                }
+                IDM_FILE_SAVE_ALL => {
+                    log_debug("Menu: Save all documents");
+                    let _ = save_all_documents(hwnd);
+                    LRESULT(0)
+                }
+                IDM_FILE_CLOSE => {
+                    log_debug("Menu: Close document");
+                    close_current_document(hwnd);
+                    LRESULT(0)
+                }
+                IDM_FILE_EXIT => {
+                    log_debug("Menu: Exit");
+                    let _ = try_close_app(hwnd);
+                    LRESULT(0)
+                }
+                IDM_FILE_READ_START => {
+                    log_debug("Menu: Start reading");
+                    start_tts_from_caret(hwnd);
+                    LRESULT(0)
+                }
+                IDM_FILE_READ_PAUSE => {
+                    log_debug("Menu: Pause/resume reading");
+                    toggle_tts_pause(hwnd);
+                    LRESULT(0)
+                }
+                IDM_FILE_READ_STOP => {
+                    log_debug("Menu: Stop reading");
+                    stop_tts_playback(hwnd);
+                    LRESULT(0)
+                }
+                IDM_FILE_AUDIOBOOK => {
+                    log_debug("Menu: Record audiobook");
+                    start_audiobook(hwnd);
+                    LRESULT(0)
+                }
+                IDM_EDIT_UNDO => {
+                    send_to_active_edit(hwnd, WM_UNDO);
+                    LRESULT(0)
+                }
+                IDM_EDIT_CUT => {
+                    send_to_active_edit(hwnd, WM_CUT);
+                    LRESULT(0)
+                }
+                IDM_EDIT_COPY => {
+                    send_to_active_edit(hwnd, WM_COPY);
+                    LRESULT(0)
+                }
+                IDM_EDIT_PASTE => {
+                    send_to_active_edit(hwnd, WM_PASTE);
+                    LRESULT(0)
+                }
+                IDM_EDIT_SELECT_ALL => {
+                    select_all_active_edit(hwnd);
+                    LRESULT(0)
+                }
+                IDM_EDIT_FIND => {
+                    log_debug("Menu: Find");
+                    open_find_dialog(hwnd);
+                    LRESULT(0)
+                }
+                IDM_EDIT_FIND_NEXT => {
+                    log_debug("Menu: Find next");
+                    find_next_from_state(hwnd);
+                    LRESULT(0)
+                }
+                IDM_EDIT_REPLACE => {
+                    log_debug("Menu: Replace");
+                    open_replace_dialog(hwnd);
+                    LRESULT(0)
+                }
+                IDM_INSERT_BOOKMARK => {
+                    log_debug("Menu: Insert Bookmark");
+                    insert_bookmark(hwnd);
+                    LRESULT(0)
+                }
+                IDM_MANAGE_BOOKMARKS => {
+                    log_debug("Menu: Manage Bookmarks");
+                    open_bookmarks_window(hwnd);
+                    LRESULT(0)
+                }
+                IDM_NEXT_TAB => {
+                    next_tab_with_prompt(hwnd);
+                    LRESULT(0)
+                }
+                IDM_TOOLS_OPTIONS => {
+                    log_debug("Menu: Options");
+                    open_options_dialog(hwnd);
+                    LRESULT(0)
+                }
+                IDM_HELP_GUIDE => {
+                    log_debug("Menu: Guide");
+                    open_help_window(hwnd);
+                    LRESULT(0)
+                }
+                IDM_HELP_ABOUT => {
+                    log_debug("Menu: About");
+                    show_about_dialog(hwnd);
+                    LRESULT(0)
+                }
+                _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+            }
+        }
+        WM_CLOSE => {
+            let _ = try_close_app(hwnd);
+            LRESULT(0)
+        }
+        WM_DESTROY => {
+            PostQuitMessage(0);
+            LRESULT(0)
+        }
+        WM_DROPFILES => {
+            handle_drop_files(hwnd, HDROP(wparam.0 as isize));
+            LRESULT(0)
+        }
+        WM_COPYDATA => {
+            let cds = &*(lparam.0 as *const COPYDATASTRUCT);
+            if cds.dwData == COPYDATA_OPEN_FILE && !cds.lpData.is_null() {
+                let path = from_wide(cds.lpData as *const u16);
+                if !path.is_empty() {
+                    open_document(hwnd, Path::new(&path));
+                    SetForegroundWindow(hwnd);
+                    if let Some(hwnd_edit) = get_active_edit(hwnd) {
+                        SetFocus(hwnd_edit);
+                    }
+                }
+                return LRESULT(1);
+            }
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut AppState;
+            if !ptr.is_null() {
+                drop(Box::from_raw(ptr));
+            }
+            LRESULT(0)
+        }
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
+    let hmenu = CreateMenu().unwrap_or(HMENU(0));
+    let file_menu = CreateMenu().unwrap_or(HMENU(0));
+    let recent_menu = CreateMenu().unwrap_or(HMENU(0));
+    let edit_menu = CreateMenu().unwrap_or(HMENU(0));
+    let insert_menu = CreateMenu().unwrap_or(HMENU(0));
+    let tools_menu = CreateMenu().unwrap_or(HMENU(0));
+    let help_menu = CreateMenu().unwrap_or(HMENU(0));
+
+    let labels = menu_labels(language);
+
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_NEW, labels.file_new);
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_OPEN, labels.file_open);
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_SAVE, labels.file_save);
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_SAVE_AS, labels.file_save_as);
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_SAVE_ALL, labels.file_save_all);
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_CLOSE, labels.file_close);
+    let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
+    let _ = append_menu_string(file_menu, MF_POPUP, recent_menu.0 as usize, labels.file_recent);
+    let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_READ_START, labels.file_read_start);
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_READ_PAUSE, labels.file_read_pause);
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_READ_STOP, labels.file_read_stop);
+    let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_AUDIOBOOK, labels.file_audiobook);
+    let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_EXIT, labels.file_exit);
+    let _ = append_menu_string(hmenu, MF_POPUP, file_menu.0 as usize, labels.menu_file);
+
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_UNDO, labels.edit_undo);
+    let _ = AppendMenuW(edit_menu, MF_SEPARATOR, 0, PCWSTR::null());
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_CUT, labels.edit_cut);
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_COPY, labels.edit_copy);
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_PASTE, labels.edit_paste);
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_SELECT_ALL, labels.edit_select_all);
+    let _ = AppendMenuW(edit_menu, MF_SEPARATOR, 0, PCWSTR::null());
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_FIND, labels.edit_find);
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_FIND_NEXT, labels.edit_find_next);
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_REPLACE, labels.edit_replace);
+    let _ = append_menu_string(hmenu, MF_POPUP, edit_menu.0 as usize, labels.menu_edit);
+
+    let _ = append_menu_string(insert_menu, MF_STRING, IDM_INSERT_BOOKMARK, labels.insert_bookmark);
+    let _ = append_menu_string(insert_menu, MF_STRING, IDM_MANAGE_BOOKMARKS, labels.manage_bookmarks);
+    let _ = append_menu_string(hmenu, MF_POPUP, insert_menu.0 as usize, labels.menu_insert);
+
+    let _ = append_menu_string(tools_menu, MF_STRING, IDM_TOOLS_OPTIONS, labels.menu_options);
+    let _ = append_menu_string(hmenu, MF_POPUP, tools_menu.0 as usize, labels.menu_tools);
+
+    let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_GUIDE, labels.help_guide);
+    let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_ABOUT, labels.help_about);
+    let _ = append_menu_string(hmenu, MF_POPUP, help_menu.0 as usize, labels.menu_help);
+
+    let _ = SetMenu(hwnd, hmenu);
+    (hmenu, recent_menu)
+}
+
+struct MenuLabels {
+    menu_file: &'static str,
+    menu_edit: &'static str,
+    menu_insert: &'static str,
+    menu_tools: &'static str,
+    menu_help: &'static str,
+    menu_options: &'static str,
+    file_new: &'static str,
+    file_open: &'static str,
+    file_save: &'static str,
+    file_save_as: &'static str,
+    file_save_all: &'static str,
+    file_close: &'static str,
+    file_recent: &'static str,
+    file_read_start: &'static str,
+    file_read_pause: &'static str,
+    file_read_stop: &'static str,
+    file_audiobook: &'static str,
+    file_exit: &'static str,
+    edit_undo: &'static str,
+    edit_cut: &'static str,
+    edit_copy: &'static str,
+    edit_paste: &'static str,
+    edit_select_all: &'static str,
+    edit_find: &'static str,
+    edit_find_next: &'static str,
+    edit_replace: &'static str,
+    insert_bookmark: &'static str,
+    manage_bookmarks: &'static str,
+    help_guide: &'static str,
+    help_about: &'static str,
+    recent_empty: &'static str,
+}
+
+fn menu_labels(language: Language) -> MenuLabels {
+    match language {
+        Language::Italian => MenuLabels {
+            menu_file: "&File",
+            menu_edit: "&Modifica",
+            menu_insert: "&Inserisci",
+            menu_tools: "S&trumenti",
+            menu_help: "&Aiuto",
+            menu_options: "&Opzioni...",
+            file_new: "&Nuovo\tCtrl+N",
+            file_open: "&Apri...\tCtrl+O",
+            file_save: "&Salva\tCtrl+S",
+            file_save_as: "Salva &come...",
+            file_save_all: "Salva &tutto\tCtrl+Shift+S",
+            file_close: "&Chiudi tab\tCtrl+W",
+            file_recent: "File &recenti",
+            file_read_start: "Avvia lettura\tF5",
+            file_read_pause: "Pausa lettura\tF4",
+            file_read_stop: "Stop lettura\tF6",
+            file_audiobook: "Registra audiolibro...\tCtrl+R",
+            file_exit: "&Esci",
+            edit_undo: "&Annulla\tCtrl+Z",
+            edit_cut: "&Taglia\tCtrl+X",
+            edit_copy: "&Copia\tCtrl+C",
+            edit_paste: "&Incolla\tCtrl+V",
+            edit_select_all: "Seleziona &tutto\tCtrl+A",
+            edit_find: "&Trova...\tCtrl+F",
+            edit_find_next: "Trova &successivo\tF3",
+            edit_replace: "&Sostituisci...\tCtrl+H",
+            insert_bookmark: "Inserisci &segnalibro\tCtrl+B",
+            manage_bookmarks: "&Gestisci segnalibri...",
+            help_guide: "&Guida",
+            help_about: "Informazioni &sul programma",
+            recent_empty: "Nessun file recente",
+        },
+        Language::English => MenuLabels {
+            menu_file: "&File",
+            menu_edit: "&Edit",
+            menu_insert: "&Insert",
+            menu_tools: "&Tools",
+            menu_help: "&Help",
+            menu_options: "&Options...",
+            file_new: "&New\tCtrl+N",
+            file_open: "&Open...\tCtrl+O",
+            file_save: "&Save\tCtrl+S",
+            file_save_as: "Save &As...",
+            file_save_all: "Save &All\tCtrl+Shift+S",
+            file_close: "&Close tab\tCtrl+W",
+            file_recent: "Recent &Files",
+            file_read_start: "Start reading\tF5",
+            file_read_pause: "Pause reading\tF4",
+            file_read_stop: "Stop reading\tF6",
+            file_audiobook: "Record audiobook...\tCtrl+R",
+            file_exit: "E&xit",
+            edit_undo: "&Undo\tCtrl+Z",
+            edit_cut: "Cu&t\tCtrl+X",
+            edit_copy: "&Copy\tCtrl+C",
+            edit_paste: "&Paste\tCtrl+V",
+            edit_select_all: "Select &All\tCtrl+A",
+            edit_find: "&Find...\tCtrl+F",
+            edit_find_next: "Find &Next\tF3",
+            edit_replace: "&Replace...\tCtrl+H",
+            insert_bookmark: "Insert &Bookmark\tCtrl+B",
+            manage_bookmarks: "&Manage Bookmarks...",
+            help_guide: "&Guide",
+            help_about: "&About the program",
+            recent_empty: "No recent files",
+        },
+    }
+}
+
+struct OptionsLabels {
+    title: &'static str,
+    label_language: &'static str,
+    label_open: &'static str,
+    label_voice: &'static str,
+    label_multilingual: &'static str,
+    label_split_on_newline: &'static str,
+    label_word_wrap: &'static str,
+    label_move_cursor: &'static str,
+    label_audio_skip: &'static str,
+    lang_it: &'static str,
+    lang_en: &'static str,
+    open_new_tab: &'static str,
+    open_new_window: &'static str,
+    ok: &'static str,
+    cancel: &'static str,
+    voices_loading: &'static str,
+    voices_empty: &'static str,
+}
+
+fn options_labels(language: Language) -> OptionsLabels {
+    match language {
+        Language::Italian => OptionsLabels {
+            title: "Opzioni",
+            label_language: "Lingua interfaccia:",
+            label_open: "Apertura file:",
+            label_voice: "Voce:",
+            label_multilingual: "Mostra solo voci multilingua",
+            label_split_on_newline: "Spezza la lettura quando si va a capo",
+            label_word_wrap: "A capo automatico nella finestra",
+            label_move_cursor: "Sposta il cursore durante la lettura",
+            label_audio_skip: "Spostamento MP3 (frecce):",
+            lang_it: "Italiano",
+            lang_en: "Inglese",
+            open_new_tab: "Apri file in nuovo tab",
+            open_new_window: "Apri file in nuova finestra",
+            ok: "OK",
+            cancel: "Annulla",
+            voices_loading: "Caricamento voci...",
+            voices_empty: "Nessuna voce disponibile",
+        },
+        Language::English => OptionsLabels {
+            title: "Options",
+            label_language: "Interface language:",
+            label_open: "Open behavior:",
+            label_voice: "Voice:",
+            label_multilingual: "Show only multilingual voices",
+            label_split_on_newline: "Split reading on new lines",
+            label_word_wrap: "Word wrap in editor",
+            label_move_cursor: "Move cursor during reading",
+            label_audio_skip: "MP3 skip interval:",
+            lang_it: "Italian",
+            lang_en: "English",
+            open_new_tab: "Open files in new tab",
+            open_new_window: "Open files in new window",
+            ok: "OK",
+            cancel: "Cancel",
+            voices_loading: "Loading voices...",
+            voices_empty: "No voices available",
+        },
+    }
+}
+
+fn untitled_base(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Senza titolo",
+        Language::English => "Untitled",
+    }
+}
+
+fn untitled_title(language: Language, count: usize) -> String {
+    format!("{} {}", untitled_base(language), count)
+}
+
+fn recent_missing_message(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Il file recente non esiste piu'.",
+        Language::English => "The recent file no longer exists.",
+    }
+}
+
+fn confirm_save_message(language: Language, title: &str) -> String {
+    match language {
+        Language::Italian => format!("Il documento \"{}\" e' modificato. Salvare?", title),
+        Language::English => format!("The document \"{}\" has been modified. Save?", title),
+    }
+}
+
+fn confirm_title(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Conferma",
+        Language::English => "Confirm",
+    }
+}
+
+fn error_title(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Errore",
+        Language::English => "Error",
+    }
+}
+
+fn tts_no_text_message(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Non c'e' testo da leggere.",
+        Language::English => "There is no text to read.",
+    }
+}
+
+fn audiobook_done_title(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Audiolibro",
+        Language::English => "Audiobook",
+    }
+}
+
+fn voices_load_error_message(language: Language, err: &str) -> String {
+    match language {
+        Language::Italian => format!("Errore nel caricamento delle voci: {err}"),
+        Language::English => format!("Failed to load voices: {err}"),
+    }
+}
+
+fn info_title(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Info",
+        Language::English => "Info",
+    }
+}
+
+fn help_title(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Guida",
+        Language::English => "Guide",
+    }
+}
+
+fn about_title(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Informazioni sul programma",
+        Language::English => "About the program",
+    }
+}
+
+fn about_message(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Questo programma e un piccolo Notepad, creato da Ambrogio Riili, che permette di aprire i files piu comuni, tra cui anche pdf, e di creare degli audiolibri.",
+        Language::English => "This program is a small Notepad, created by Ambrogio Riili, that can open common files, including PDF, and can create audiobooks.",
+    }
+}
+
+fn pdf_loaded_message(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "PDF caricato.",
+        Language::English => "PDF loaded.",
+    }
+}
+
+fn text_not_found_message(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Testo non trovato.",
+        Language::English => "Text not found.",
+    }
+}
+
+fn find_title(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Trova",
+        Language::English => "Find",
+    }
+}
+
+fn error_open_file_message(language: Language, err: impl Display) -> String {
+    match language {
+        Language::Italian => format!("Errore apertura file: {err}"),
+        Language::English => format!("Error opening file: {err}"),
+    }
+}
+
+fn error_open_doc_message(language: Language, err: impl Display) -> String {
+    match language {
+        Language::Italian => format!("Errore apertura file DOC: {err}"),
+        Language::English => format!("Error opening DOC file: {err}"),
+    }
+}
+
+fn error_worddocument_missing_message(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Stream WordDocument non trovato.",
+        Language::English => "WordDocument stream not found.",
+    }
+}
+
+fn error_read_stream_message(language: Language, err: impl Display) -> String {
+    match language {
+        Language::Italian => format!("Errore lettura stream: {err}"),
+        Language::English => format!("Error reading stream: {err}"),
+    }
+}
+
+fn error_read_file_message(language: Language, err: impl Display) -> String {
+    match language {
+        Language::Italian => format!("Errore lettura file: {err}"),
+        Language::English => format!("Error reading file: {err}"),
+    }
+}
+
+fn error_unknown_format_message(language: Language) -> &'static str {
+    match language {
+        Language::Italian => {
+            "Impossibile leggere il file. Formato sconosciuto o magic number invalido."
+        }
+        Language::English => "Unable to read file. Unknown format or invalid magic number.",
+    }
+}
+
+fn error_read_docx_message(language: Language, err: impl Display) -> String {
+    match language {
+        Language::Italian => format!("Errore lettura DOCX: {err}"),
+        Language::English => format!("Error reading DOCX: {err}"),
+    }
+}
+
+fn error_read_pdf_message(language: Language, err: impl Display) -> String {
+    match language {
+        Language::Italian => format!("Errore lettura PDF: {err}"),
+        Language::English => format!("Error reading PDF: {err}"),
+    }
+}
+
+fn error_open_excel_message(language: Language, err: impl Display) -> String {
+    match language {
+        Language::Italian => format!("Errore apertura Excel: {err}"),
+        Language::English => format!("Error opening Excel: {err}"),
+    }
+}
+
+fn error_no_sheet_message(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Nessun foglio trovato o errore lettura foglio.",
+        Language::English => "No sheet found or error reading sheet.",
+    }
+}
+
+fn error_save_file_message(language: Language, err: impl Display) -> String {
+    match language {
+        Language::Italian => format!("Errore salvataggio file: {err}"),
+        Language::English => format!("Error saving file: {err}"),
+    }
+}
+
+fn error_save_docx_message(language: Language, err: impl Display) -> String {
+    match language {
+        Language::Italian => format!("Errore salvataggio DOCX: {err}"),
+        Language::English => format!("Error saving DOCX: {err}"),
+    }
+}
+
+fn error_pdf_font_message(language: Language, err: impl Display) -> String {
+    match language {
+        Language::Italian => format!("Errore font PDF: {err}"),
+        Language::English => format!("Error loading PDF font: {err}"),
+    }
+}
+
+fn error_save_pdf_message(language: Language, err: impl Display) -> String {
+    match language {
+        Language::Italian => format!("Errore salvataggio PDF: {err}"),
+        Language::English => format!("Error saving PDF: {err}"),
+    }
+}
+
+fn error_invalid_utf16le_message(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Il file UTF-16LE ha una lunghezza non valida.",
+        Language::English => "The UTF-16LE file has an invalid length.",
+    }
+}
+
+fn error_invalid_utf16be_message(language: Language) -> &'static str {
+    match language {
+        Language::Italian => "Il file UTF-16BE ha una lunghezza non valida.",
+        Language::English => "The UTF-16BE file has an invalid length.",
+    }
+}
+
+unsafe fn append_menu_string(menu: HMENU, flags: MENU_ITEM_FLAGS, id: usize, text: &str) {
+    let wide = to_wide(text);
+    let _ = AppendMenuW(menu, flags, id, PCWSTR(wide.as_ptr()));
+}
+
+unsafe fn create_accelerators() -> HACCEL {
+    let virt = FCONTROL | FVIRTKEY;
+    let virt_shift = FCONTROL | FSHIFT | FVIRTKEY;
+    let mut accels = [
+        ACCEL { fVirt: virt, key: 'N' as u16, cmd: IDM_FILE_NEW as u16 },
+        ACCEL { fVirt: virt, key: 'O' as u16, cmd: IDM_FILE_OPEN as u16 },
+        ACCEL { fVirt: virt, key: 'S' as u16, cmd: IDM_FILE_SAVE as u16 },
+        ACCEL { fVirt: virt_shift, key: 'S' as u16, cmd: IDM_FILE_SAVE_ALL as u16 },
+        ACCEL { fVirt: virt, key: 'W' as u16, cmd: IDM_FILE_CLOSE as u16 },
+        ACCEL { fVirt: virt, key: 'F' as u16, cmd: IDM_EDIT_FIND as u16 },
+        ACCEL { fVirt: FVIRTKEY, key: VK_F3.0 as u16, cmd: IDM_EDIT_FIND_NEXT as u16 },
+        ACCEL { fVirt: virt, key: 'H' as u16, cmd: IDM_EDIT_REPLACE as u16 },
+        ACCEL { fVirt: virt, key: 'A' as u16, cmd: IDM_EDIT_SELECT_ALL as u16 },
+        ACCEL { fVirt: virt, key: VK_TAB.0 as u16, cmd: IDM_NEXT_TAB as u16 },
+        ACCEL { fVirt: FVIRTKEY, key: VK_F4.0 as u16, cmd: IDM_FILE_READ_PAUSE as u16 },
+        ACCEL { fVirt: FVIRTKEY, key: VK_F5.0 as u16, cmd: IDM_FILE_READ_START as u16 },
+        ACCEL { fVirt: FVIRTKEY, key: VK_F6.0 as u16, cmd: IDM_FILE_READ_STOP as u16 },
+        ACCEL { fVirt: virt, key: 'R' as u16, cmd: IDM_FILE_AUDIOBOOK as u16 },
+        ACCEL { fVirt: virt, key: 'B' as u16, cmd: IDM_INSERT_BOOKMARK as u16 },
+    ];
+    CreateAcceleratorTableW(&mut accels).unwrap_or(HACCEL(0))
+}
+
+unsafe fn open_find_dialog(hwnd: HWND) {
+    let has_dialog = with_state(hwnd, |state| state.find_dialog.0 != 0).unwrap_or(false);
+    if has_dialog {
+        let _ = with_state(hwnd, |state| {
+            SetFocus(state.find_dialog);
+        });
+        return;
+    }
+
+    let _ = with_state(hwnd, |state| {
+        let fr = FINDREPLACEW {
+            lStructSize: size_of::<FINDREPLACEW>() as u32,
+            hwndOwner: hwnd,
+            Flags: FR_DOWN,
+            lpstrFindWhat: PWSTR(state.find_text.as_mut_ptr()),
+            wFindWhatLen: state.find_text.len() as u16,
+            lCustData: LPARAM(FIND_DIALOG_ID),
+            ..Default::default()
+        };
+        state.find_replace = Some(fr);
+        if let Some(ref mut fr) = state.find_replace {
+            let dialog = FindTextW(fr);
+            state.find_dialog = dialog;
+        }
+    });
+}
+
+unsafe fn open_replace_dialog(hwnd: HWND) {
+    let has_dialog = with_state(hwnd, |state| state.replace_dialog.0 != 0).unwrap_or(false);
+    if has_dialog {
+        let _ = with_state(hwnd, |state| {
+            SetFocus(state.replace_dialog);
+        });
+        return;
+    }
+
+    let _ = with_state(hwnd, |state| {
+        let fr = FINDREPLACEW {
+            lStructSize: size_of::<FINDREPLACEW>() as u32,
+            hwndOwner: hwnd,
+            Flags: FR_DOWN,
+            lpstrFindWhat: PWSTR(state.find_text.as_mut_ptr()),
+            wFindWhatLen: state.find_text.len() as u16,
+            lpstrReplaceWith: PWSTR(state.replace_text.as_mut_ptr()),
+            wReplaceWithLen: state.replace_text.len() as u16,
+            lCustData: LPARAM(REPLACE_DIALOG_ID),
+            ..Default::default()
+        };
+        state.replace_replace = Some(fr);
+        if let Some(ref mut fr) = state.replace_replace {
+            let dialog = ReplaceTextW(fr);
+            state.replace_dialog = dialog;
+        }
+    });
+}
+
+unsafe fn open_options_dialog(hwnd: HWND) {
+    let existing = with_state(hwnd, |state| state.options_dialog).unwrap_or(HWND(0));
+    if existing.0 != 0 {
+        SetForegroundWindow(existing);
+        return;
+    }
+
+    let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
+    let class_name = to_wide(OPTIONS_CLASS_NAME);
+    let wc = WNDCLASSW {
+        hCursor: HCURSOR(LoadCursorW(None, IDC_ARROW).unwrap_or_default().0),
+        hInstance: hinstance,
+        lpszClassName: PCWSTR(class_name.as_ptr()),
+        lpfnWndProc: Some(options_wndproc),
+        hbrBackground: HBRUSH((COLOR_WINDOW.0 + 1) as isize),
+        ..Default::default()
+    };
+    RegisterClassW(&wc);
+
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    let labels = options_labels(language);
+    let title = to_wide(labels.title);
+
+    let dialog = CreateWindowExW(
+        WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME,
+        PCWSTR(class_name.as_ptr()),
+        PCWSTR(title.as_ptr()),
+        WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        520,
+        400,
+        hwnd,
+        None,
+        hinstance,
+        Some(hwnd.0 as *const std::ffi::c_void),
+    );
+
+    if dialog.0 != 0 {
+        let _ = with_state(hwnd, |state| {
+            state.options_dialog = dialog;
+        });
+        EnableWindow(hwnd, false);
+        SetForegroundWindow(dialog);
+        ensure_voice_list_loaded(hwnd, language);
+    }
+}
+
+unsafe fn open_help_window(hwnd: HWND) {
+    let existing = with_state(hwnd, |state| state.help_window).unwrap_or(HWND(0));
+    if existing.0 != 0 {
+        SetForegroundWindow(existing);
+        return;
+    }
+
+    let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
+    let class_name = to_wide(HELP_CLASS_NAME);
+    let wc = WNDCLASSW {
+        hCursor: HCURSOR(LoadCursorW(None, IDC_ARROW).unwrap_or_default().0),
+        hInstance: hinstance,
+        lpszClassName: PCWSTR(class_name.as_ptr()),
+        lpfnWndProc: Some(help_wndproc),
+        hbrBackground: HBRUSH((COLOR_WINDOW.0 + 1) as isize),
+        ..Default::default()
+    };
+    RegisterClassW(&wc);
+
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    let title = to_wide(help_title(language));
+    let window = CreateWindowExW(
+        WS_EX_CONTROLPARENT,
+        PCWSTR(class_name.as_ptr()),
+        PCWSTR(title.as_ptr()),
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        640,
+        520,
+        hwnd,
+        None,
+        hinstance,
+        Some(hwnd.0 as *const std::ffi::c_void),
+    );
+
+    if window.0 != 0 {
+        let _ = with_state(hwnd, |state| {
+            state.help_window = window;
+        });
+        SetForegroundWindow(window);
+    }
+}
+
+unsafe extern "system" fn help_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    match msg {
+        WM_CREATE => {
+            let create_struct = lparam.0 as *const CREATESTRUCTW;
+            let parent = HWND((*create_struct).lpCreateParams as isize);
+            let hfont = with_state(parent, |state| state.hfont).unwrap_or(HFONT(0));
+
+            let edit = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                w!("EDIT"),
+                PCWSTR::null(),
+                WS_CHILD
+                    | WS_VISIBLE
+                    | WS_VSCROLL
+                    | WINDOW_STYLE(ES_MULTILINE as u32)
+                    | WINDOW_STYLE(ES_AUTOVSCROLL as u32)
+                    | WINDOW_STYLE(ES_WANTRETURN as u32)
+                    | WS_TABSTOP,
+                0,
+                0,
+                0,
+                0,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
+            SendMessageW(edit, EM_SETREADONLY, WPARAM(1), LPARAM(0));
+            if hfont.0 != 0 {
+                let _ = SendMessageW(edit, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
+            }
+
+            let ok_button = CreateWindowExW(
+                Default::default(),
+                WC_BUTTON,
+                w!("OK"),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
+                0,
+                0,
+                0,
+                0,
+                hwnd,
+                HMENU(HELP_ID_OK as isize),
+                HINSTANCE(0),
+                None,
+            );
+            if hfont.0 != 0 && ok_button.0 != 0 {
+                let _ = SendMessageW(ok_button, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
+            }
+
+            let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
+            let guide_content = match language {
+                Language::Italian => include_str!("../guida.txt"),
+                Language::English => include_str!("../guida_en.txt"),
+            };
+            let guide = normalize_to_crlf(guide_content);
+            let guide_wide = to_wide(&guide);
+            let _ = SetWindowTextW(edit, PCWSTR(guide_wide.as_ptr()));
+            SetFocus(edit);
+
+            let state = Box::new(HelpWindowState { parent, edit, ok_button });
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
+            LRESULT(0)
+        }
+        WM_SETFOCUS => {
+            let _ = with_help_state(hwnd, |state| {
+                SetFocus(state.edit);
+            });
+            LRESULT(0)
+        }
+        WM_COMMAND => {
+            let cmd_id = (wparam.0 & 0xffff) as usize;
+            if cmd_id == HELP_ID_OK || cmd_id == IDCANCEL.0 as usize {
+                let _ = DestroyWindow(hwnd);
+                return LRESULT(0);
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_KEYDOWN => {
+            if wparam.0 as u32 == VK_TAB.0 as u32 {
+                let shift_down = (GetKeyState(VK_SHIFT.0 as i32) as u16) & 0x8000 != 0;
+                let _ = with_help_state(hwnd, |state| {
+                    let focus = GetFocus();
+                    if shift_down {
+                        if focus == state.edit {
+                            SetFocus(state.ok_button);
+                        } else {
+                            SetFocus(state.edit);
+                        }
+                    } else {
+                        if focus == state.ok_button {
+                            SetFocus(state.edit);
+                        } else {
+                            SetFocus(state.ok_button);
+                        }
+                    }
+                });
+                return LRESULT(0);
+            }
+            if wparam.0 as u32 == VK_RETURN.0 as u32 {
+                let _ = with_help_state(hwnd, |state| {
+                    if GetFocus() == state.ok_button {
+                        let _ = DestroyWindow(hwnd);
+                    }
+                });
+                return LRESULT(0);
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_SIZE => {
+            let width = (lparam.0 & 0xffff) as i32;
+            let height = ((lparam.0 >> 16) & 0xffff) as i32;
+            let _ = with_help_state(hwnd, |state| {
+                let button_width = 90;
+                let button_height = 28;
+                let margin = 12;
+                let edit_height = (height - button_height - (margin * 2)).max(0);
+                let _ = MoveWindow(state.edit, 0, 0, width, edit_height, true);
+                let _ = MoveWindow(
+                    state.ok_button,
+                    width - button_width - margin,
+                    edit_height + margin,
+                    button_width,
+                    button_height,
+                    true,
+                );
+            });
+            LRESULT(0)
+        }
+        WM_DESTROY => {
+            let parent = with_help_state(hwnd, |state| state.parent).unwrap_or(HWND(0));
+            if parent.0 != 0 {
+                let _ = with_state(parent, |state| {
+                    state.help_window = HWND(0);
+                });
+            }
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut HelpWindowState;
+            if !ptr.is_null() {
+                let _ = Box::from_raw(ptr);
+            }
+            LRESULT(0)
+        }
+        WM_CLOSE => {
+            let _ = DestroyWindow(hwnd);
+            LRESULT(0)
+        }
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+unsafe fn with_help_state<F, R>(hwnd: HWND, f: F) -> Option<R>
+where
+    F: FnOnce(&mut HelpWindowState) -> R,
+{
+    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut HelpWindowState;
+    if ptr.is_null() {
+        None
+    } else {
+        Some(f(&mut *ptr))
+    }
+}
+
+unsafe extern "system" fn options_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    match msg {
+        WM_CREATE => {
+            let create_struct = lparam.0 as *const CREATESTRUCTW;
+            let parent = HWND((*create_struct).lpCreateParams as isize);
+            let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
+            let labels = options_labels(language);
+
+            let hfont = with_state(parent, |state| state.hfont).unwrap_or(HFONT(0));
+            let label_lang = CreateWindowExW(
+                Default::default(),
+                WC_STATIC,
+                PCWSTR(to_wide(labels.label_language).as_ptr()),
+                WS_CHILD | WS_VISIBLE,
+                20,
+                20,
+                140,
+                20,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
+            let combo_lang = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                WC_COMBOBOXW,
+                PCWSTR::null(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
+                170,
+                18,
+                300,
+                120,
+                hwnd,
+                HMENU(OPTIONS_ID_LANG as isize),
+                HINSTANCE(0),
+                None,
+            );
+
+            let label_open = CreateWindowExW(
+                Default::default(),
+                WC_STATIC,
+                PCWSTR(to_wide(labels.label_open).as_ptr()),
+                WS_CHILD | WS_VISIBLE,
+                20,
+                60,
+                140,
+                20,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
+            let combo_open = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                WC_COMBOBOXW,
+                PCWSTR::null(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
+                170,
+                58,
+                300,
+                120,
+                hwnd,
+                HMENU(OPTIONS_ID_OPEN as isize),
+                HINSTANCE(0),
+                None,
+            );
+
+            let label_voice = CreateWindowExW(
+                Default::default(),
+                WC_STATIC,
+                PCWSTR(to_wide(labels.label_voice).as_ptr()),
+                WS_CHILD | WS_VISIBLE,
+                20,
+                100,
+                140,
+                20,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
+            let combo_voice = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                WC_COMBOBOXW,
+                PCWSTR::null(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
+                170,
+                98,
+                300,
+                140,
+                hwnd,
+                HMENU(OPTIONS_ID_VOICE as isize),
+                HINSTANCE(0),
+                None,
+            );
+
+            let checkbox_multilingual = CreateWindowExW(
+                Default::default(),
+                WC_BUTTON,
+                PCWSTR(to_wide(labels.label_multilingual).as_ptr()),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
+                170,
+                138,
+                300,
+                20,
+                hwnd,
+                HMENU(OPTIONS_ID_MULTILINGUAL as isize),
+                HINSTANCE(0),
+                None,
+            );
+
+            let label_audio_skip = CreateWindowExW(
+                Default::default(),
+                WC_STATIC,
+                PCWSTR(to_wide(labels.label_audio_skip).as_ptr()),
+                WS_CHILD | WS_VISIBLE,
+                20,
+                170,
+                140,
+                20,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
+            let combo_audio_skip = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                WC_COMBOBOXW,
+                PCWSTR::null(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
+                170,
+                168,
+                300,
+                140,
+                hwnd,
+                HMENU(OPTIONS_ID_AUDIO_SKIP as isize),
+                HINSTANCE(0),
+                None,
+            );
+
+let checkbox_split_on_newline = CreateWindowExW(
+                Default::default(),
+                WC_BUTTON,
+                PCWSTR(to_wide(labels.label_split_on_newline).as_ptr()),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
+                170,
+                202,
+                300,
+                20,
+                hwnd,
+                HMENU(OPTIONS_ID_SPLIT_ON_NEWLINE as isize),
+                HINSTANCE(0),
+                None,
+            );
+
+            let checkbox_word_wrap = CreateWindowExW(
+                Default::default(),
+                WC_BUTTON,
+                PCWSTR(to_wide(labels.label_word_wrap).as_ptr()),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
+                170,
+                226,
+                300,
+                20,
+                hwnd,
+                HMENU(OPTIONS_ID_WORD_WRAP as isize),
+                HINSTANCE(0),
+                None,
+            );
+
+            let checkbox_move_cursor = CreateWindowExW(
+                Default::default(),
+                WC_BUTTON,
+                PCWSTR(to_wide(labels.label_move_cursor).as_ptr()),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
+                170,
+                250,
+                300,
+                20,
+                hwnd,
+                HMENU(OPTIONS_ID_MOVE_CURSOR as isize),
+                HINSTANCE(0),
+                None,
+            );
+
+            let ok_button = CreateWindowExW(
+                Default::default(),
+                WC_BUTTON,
+                PCWSTR(to_wide(labels.ok).as_ptr()),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
+                280,
+                300,
+                90,
+                28,
+                hwnd,
+                HMENU(OPTIONS_ID_OK as isize),
+                HINSTANCE(0),
+                None,
+            );
+            let cancel_button = CreateWindowExW(
+                Default::default(),
+                WC_BUTTON,
+                PCWSTR(to_wide(labels.cancel).as_ptr()),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                380,
+                300,
+                90,
+                28,
+                hwnd,
+                HMENU(OPTIONS_ID_CANCEL as isize),
+                HINSTANCE(0),
+                None,
+            );
+
+            for control in [
+                label_lang,
+                combo_lang,
+                label_open,
+                combo_open,
+                label_voice,
+                combo_voice,
+                label_audio_skip,
+                combo_audio_skip,
+                checkbox_multilingual,
+                checkbox_split_on_newline,
+                checkbox_word_wrap,
+                checkbox_move_cursor,
+                ok_button,
+                cancel_button,
+            ] {
+                if control.0 != 0 && hfont.0 != 0 {
+                    let _ = SendMessageW(control, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
+                }
+            }
+
+            let dialog_state = Box::new(OptionsDialogState {
+                parent,
+                combo_lang,
+                combo_open,
+                combo_voice,
+                combo_audio_skip,
+                checkbox_multilingual,
+                checkbox_split_on_newline,
+                checkbox_word_wrap,
+                checkbox_move_cursor,
+                ok_button,
+            });
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(dialog_state) as isize);
+            initialize_options_dialog(hwnd);
+            SetFocus(combo_lang);
+            LRESULT(0)
+        }
+        WM_COMMAND => {
+            let cmd_id = (wparam.0 & 0xffff) as usize;
+            let _notify = ((wparam.0 >> 16) & 0xffff) as u16;
+            match cmd_id {
+                OPTIONS_ID_OK => {
+                    apply_options_dialog(hwnd);
+                    LRESULT(0)
+                }
+                OPTIONS_ID_CANCEL | 2 => { // 2 is IDCANCEL
+                    let _ = DestroyWindow(hwnd);
+                    LRESULT(0)
+                }
+                OPTIONS_ID_MULTILINGUAL => {
+                    refresh_options_voices(hwnd);
+                    LRESULT(0)
+                }
+                OPTIONS_ID_VOICE => {
+                    DefWindowProcW(hwnd, msg, wparam, lparam)
+                }
+                _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+            }
+        }
+        WM_KEYDOWN => {
+            if wparam.0 as u32 == VK_RETURN.0 as u32 {
+                let focus = GetFocus();
+                let is_voice = with_options_state(hwnd, |state| focus == state.combo_voice).unwrap_or(false);
+                if is_voice {
+                    apply_options_dialog(hwnd);
+                    return LRESULT(0);
+                }
+            } else if wparam.0 as u32 == VK_ESCAPE.0 as u32 {
+                let _ = DestroyWindow(hwnd);
+                return LRESULT(0);
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_DESTROY => {
+            let parent = with_options_state(hwnd, |state| state.parent).unwrap_or(HWND(0));
+            if parent.0 != 0 {
+                EnableWindow(parent, true);
+                SetForegroundWindow(parent);
+                let _ = with_state(parent, |state| {
+                    state.options_dialog = HWND(0);
+                });
+            }
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut OptionsDialogState;
+            if !ptr.is_null() {
+                let _ = Box::from_raw(ptr);
+            }
+            LRESULT(0)
+        }
+        WM_CLOSE => {
+            let _ = DestroyWindow(hwnd);
+            LRESULT(0)
+        }
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+unsafe fn with_options_state<F, R>(hwnd: HWND, f: F) -> Option<R>
+where
+    F: FnOnce(&mut OptionsDialogState) -> R,
+{
+    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut OptionsDialogState;
+    if ptr.is_null() {
+        None
+    } else {
+        Some(f(&mut *ptr))
+    }
+}
+
+unsafe fn initialize_options_dialog(hwnd: HWND) {
+    let (parent, combo_lang, combo_open, _combo_voice, combo_audio_skip, checkbox_multilingual, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor) = match with_options_state(hwnd, |state| {
+        (
+            state.parent,
+            state.combo_lang,
+            state.combo_open,
+            state.combo_voice,
+            state.combo_audio_skip,
+            state.checkbox_multilingual,
+            state.checkbox_split_on_newline,
+            state.checkbox_word_wrap,
+            state.checkbox_move_cursor,
+        )
+    }) {
+        Some(values) => values,
+        None => return,
+    };
+
+    let settings = with_state(parent, |state| state.settings.clone()).unwrap_or_default();
+    let labels = options_labels(settings.language);
+
+    let _ = SendMessageW(combo_lang, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
+    let _ = SendMessageW(combo_lang, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(labels.lang_it).as_ptr() as isize));
+    let _ = SendMessageW(combo_lang, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(labels.lang_en).as_ptr() as isize));
+    let lang_index = match settings.language {
+        Language::Italian => 0,
+        Language::English => 1,
+    };
+    let _ = SendMessageW(combo_lang, CB_SETCURSEL, WPARAM(lang_index), LPARAM(0));
+
+    let _ = SendMessageW(combo_open, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
+    let _ = SendMessageW(combo_open, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(labels.open_new_tab).as_ptr() as isize));
+    let _ = SendMessageW(combo_open, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(labels.open_new_window).as_ptr() as isize));
+    let open_index = match settings.open_behavior {
+        OpenBehavior::NewTab => 0,
+        OpenBehavior::NewWindow => 1,
+    };
+    let _ = SendMessageW(combo_open, CB_SETCURSEL, WPARAM(open_index), LPARAM(0));
+
+    if settings.tts_only_multilingual {
+        let _ = SendMessageW(
+            checkbox_multilingual,
+            BM_SETCHECK,
+            WPARAM(BST_CHECKED.0 as usize),
+            LPARAM(0),
+        );
+    }
+
+    if settings.split_on_newline {
+        let _ = SendMessageW(
+            checkbox_split_on_newline,
+            BM_SETCHECK,
+            WPARAM(BST_CHECKED.0 as usize),
+            LPARAM(0),
+        );
+    }
+
+    if settings.word_wrap {
+        let _ = SendMessageW(
+            checkbox_word_wrap,
+            BM_SETCHECK,
+            WPARAM(BST_CHECKED.0 as usize),
+            LPARAM(0),
+        );
+    }
+
+    if settings.move_cursor_during_reading {
+        let _ = SendMessageW(
+            checkbox_move_cursor,
+            BM_SETCHECK,
+            WPARAM(BST_CHECKED.0 as usize),
+            LPARAM(0),
+        );
+    }
+
+    // Populate skip interval combo
+    let _ = SendMessageW(combo_audio_skip, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
+    let skip_options = [
+        (10, "10 s"),
+        (30, "30 s"),
+        (60, "1 m"),
+        (120, "2 m"),
+        (300, "5 m"),
+    ];
+    let mut selected_idx = 2; // Default to 1m
+    for (secs, label) in skip_options.iter() {
+        let idx = SendMessageW(combo_audio_skip, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(label).as_ptr() as isize)).0 as usize;
+        let _ = SendMessageW(combo_audio_skip, CB_SETITEMDATA, WPARAM(idx), LPARAM(*secs as isize));
+        if *secs == settings.audiobook_skip_seconds {
+            selected_idx = idx;
+        }
+    }
+    let _ = SendMessageW(combo_audio_skip, CB_SETCURSEL, WPARAM(selected_idx), LPARAM(0));
+
+    refresh_options_voices(hwnd);
+}
+
+unsafe fn refresh_options_voices(hwnd: HWND) {
+    let (parent, combo_voice, checkbox) = match with_options_state(hwnd, |state| {
+        (state.parent, state.combo_voice, state.checkbox_multilingual)
+    }) {
+        Some(values) => values,
+        None => return,
+    };
+    let settings = with_state(parent, |state| state.settings.clone()).unwrap_or_default();
+    let voices = with_state(parent, |state| state.voice_list.clone()).unwrap_or_default();
+    let labels = options_labels(settings.language);
+    let only_multilingual = SendMessageW(checkbox, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32
+        == BST_CHECKED.0;
+
+    populate_voice_combo(combo_voice, &voices, &settings.tts_voice, only_multilingual, &labels);
+}
+
+unsafe fn populate_voice_combo(
+    combo_voice: HWND,
+    voices: &[VoiceInfo],
+    selected: &str,
+    only_multilingual: bool,
+    labels: &OptionsLabels,
+) {
+    let _ = SendMessageW(combo_voice, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
+    let mut selected_index: Option<usize> = None;
+    let mut combo_index = 0usize;
+
+    for (voice_index, voice) in voices.iter().enumerate() {
+        if only_multilingual && !voice.is_multilingual {
+            continue;
+        }
+        let label = format!("{} ({})", voice.short_name, voice.locale);
+        let wide = to_wide(&label);
+        let idx = SendMessageW(combo_voice, CB_ADDSTRING, WPARAM(0), LPARAM(wide.as_ptr() as isize)).0;
+        if idx >= 0 {
+            let _ = SendMessageW(
+                combo_voice,
+                CB_SETITEMDATA,
+                WPARAM(idx as usize),
+                LPARAM(voice_index as isize),
+            );
+            if voice.short_name == selected {
+                selected_index = Some(combo_index);
+            }
+            combo_index += 1;
+        }
+    }
+
+    if combo_index == 0 {
+        let label = if voices.is_empty() {
+            labels.voices_loading
+        } else {
+            labels.voices_empty
+        };
+        let _ = SendMessageW(combo_voice, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(label).as_ptr() as isize));
+        let _ = SendMessageW(combo_voice, CB_SETCURSEL, WPARAM(0), LPARAM(0));
+        return;
+    }
+
+    let final_index = selected_index.unwrap_or(0);
+    let _ = SendMessageW(combo_voice, CB_SETCURSEL, WPARAM(final_index), LPARAM(0));
+}
+
+unsafe fn apply_options_dialog(hwnd: HWND) {
+            let (
+                parent,
+                combo_lang,
+                combo_open,
+                combo_voice,
+                combo_audio_skip,
+                checkbox_multilingual,
+                checkbox_split_on_newline,
+                checkbox_word_wrap,
+                checkbox_move_cursor,
+            ) = match with_options_state(hwnd, |state| {
+                (
+                    state.parent,
+                    state.combo_lang,
+                    state.combo_open,
+                    state.combo_voice,
+                    state.combo_audio_skip,
+                    state.checkbox_multilingual,
+                    state.checkbox_split_on_newline,
+                    state.checkbox_word_wrap,
+                    state.checkbox_move_cursor,
+                )
+            }) {
+                        Some(values) => values,
+                        None => return,
+                    };
+            
+                    let mut settings = with_state(parent, |state| state.settings.clone()).unwrap_or_default();
+                    let old_language = settings.language;
+            
+                    let lang_sel = SendMessageW(combo_lang, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+                    settings.language = if lang_sel == 1 {
+                        Language::English
+                    } else {
+                        Language::Italian
+                    };
+            
+                    let open_sel = SendMessageW(combo_open, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+                    settings.open_behavior = if open_sel == 1 {
+                        OpenBehavior::NewWindow
+                    } else {
+                        OpenBehavior::NewTab
+                    };
+            
+                    let only_multilingual =
+                        SendMessageW(checkbox_multilingual, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32 == BST_CHECKED.0;
+                    settings.tts_only_multilingual = only_multilingual;
+            
+                    let split_on_newline =
+                        SendMessageW(checkbox_split_on_newline, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32
+                            == BST_CHECKED.0;
+                    let word_wrap =
+                        SendMessageW(checkbox_word_wrap, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32 == BST_CHECKED.0;
+                    let move_cursor =
+                        SendMessageW(checkbox_move_cursor, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32 == BST_CHECKED.0;
+                    settings.split_on_newline = split_on_newline;
+                    let old_word_wrap = settings.word_wrap;
+                    settings.word_wrap = word_wrap;
+                    settings.move_cursor_during_reading = move_cursor;
+            let voices = with_state(parent, |state| state.voice_list.clone()).unwrap_or_default();
+            let voice_sel = SendMessageW(combo_voice, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+            if voice_sel >= 0 {
+                let voice_index = SendMessageW(
+                    combo_voice,
+                    CB_GETITEMDATA,
+                    WPARAM(voice_sel as usize),
+                    LPARAM(0),
+                )
+                .0 as usize;
+                if voice_index < voices.len() {
+                    settings.tts_voice = voices[voice_index].short_name.clone();
+                }
+            }
+        
+            let skip_sel = SendMessageW(combo_audio_skip, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+            if skip_sel >= 0 {
+                let skip_secs = SendMessageW(combo_audio_skip, CB_GETITEMDATA, WPARAM(skip_sel as usize), LPARAM(0)).0;
+                settings.audiobook_skip_seconds = skip_secs as u32;
+            }
+        
+            let _ = with_state(parent, |state| {        state.settings = settings.clone();
+    });
+    let new_language = settings.language;
+    save_settings(settings.clone());
+
+    if old_language != new_language {
+        rebuild_menus(parent);
+    }
+
+    if old_word_wrap != settings.word_wrap {
+        apply_word_wrap_to_all_edits(parent, settings.word_wrap);
+    }
+
+    let _ = DestroyWindow(hwnd);
+}
+
+fn ensure_voice_list_loaded(hwnd: HWND, language: Language) {
+    let has_list = unsafe { with_state(hwnd, |state| !state.voice_list.is_empty()) }.unwrap_or(false);
+    if has_list {
+        return;
+    }
+    thread::spawn(move || {
+        match fetch_voice_list() {
+            Ok(list) => {
+                let payload = Box::new(list);
+                let _ = unsafe {
+                    PostMessageW(
+                        hwnd,
+                        WM_TTS_VOICES_LOADED,
+                        WPARAM(0),
+                        LPARAM(Box::into_raw(payload) as isize),
+                    )
+                };
+            }
+            Err(err) => unsafe {
+                let message = to_wide(&voices_load_error_message(language, &err));
+                let title = to_wide(error_title(language));
+                MessageBoxW(hwnd, PCWSTR(message.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONERROR);
+            },
+        }
+    });
+}
+
+fn fetch_voice_list() -> Result<Vec<VoiceInfo>, String> {
+    let url = format!("{}?trustedclienttoken={}", VOICE_LIST_URL, TRUSTED_CLIENT_TOKEN);
+    let resp = reqwest::blocking::get(url).map_err(|err| err.to_string())?;
+    let value: serde_json::Value = resp.json().map_err(|err| err.to_string())?;
+    let Some(voices) = value.as_array() else {
+        return Err("Risposta non valida".to_string());
+    };
+
+    let mut results = Vec::new();
+    for voice in voices {
+        let short_name = voice["ShortName"].as_str().unwrap_or("").to_string();
+        if short_name.is_empty() {
+            continue;
+        }
+        let locale = voice["Locale"].as_str().unwrap_or("").to_string();
+        let is_multilingual = short_name.contains("Multilingual");
+        results.push(VoiceInfo {
+            short_name,
+            locale,
+            is_multilingual,
+        });
+    }
+    results.sort_by(|a, b| a.short_name.cmp(&b.short_name));
+    Ok(results)
+}
+
+fn start_tts_from_caret(hwnd: HWND) {
+    let Some(hwnd_edit) = (unsafe { get_active_edit(hwnd) }) else {
+        return;
+    };
+    let (language, split_on_newline) = unsafe {
+        with_state(hwnd, |state| {
+            (state.settings.language, state.settings.split_on_newline)
+        })
+    }
+    .unwrap_or_default();
+    let text = unsafe { get_text_from_caret(hwnd_edit) };
+    if text.trim().is_empty() {
+        unsafe {
+            show_error(hwnd, language, tts_no_text_message(language));
+        }
+        return;
+    }
+    let voice = unsafe {
+        with_state(hwnd, |state| state.settings.tts_voice.clone()).unwrap_or_else(|| {
+            "it-IT-IsabellaNeural".to_string()
+        })
+    };
+    let mut start: i32 = 0;
+    let mut end: i32 = 0;
+    unsafe { SendMessageW(hwnd_edit, EM_GETSEL, WPARAM(&mut start as *mut _ as usize), LPARAM(&mut end as *mut _ as isize)); }
+    let initial_caret_pos = start.min(end);
+
+    let chunks = split_into_tts_chunks(&text, split_on_newline);
+    start_tts_playback_with_chunks(hwnd, text, voice, chunks, initial_caret_pos);
+}
+
+fn toggle_tts_pause(hwnd: HWND) {
+    let _ = unsafe {
+        with_state(hwnd, |state| {
+            let Some(session) = &mut state.tts_session else {
+                return;
+            };
+            if session.paused {
+                prevent_sleep(true);
+                let _ = session.command_tx.send(TtsCommand::Resume);
+                session.paused = false;
+            } else {
+                prevent_sleep(false);
+                let _ = session.command_tx.send(TtsCommand::Pause);
+                session.paused = true;
+            }
+        })
+    };
+}
+
+fn stop_tts_playback(hwnd: HWND) {
+    prevent_sleep(false);
+    let _ = unsafe {
+        with_state(hwnd, |state| {
+            if let Some(session) = &state.tts_session {
+                session.cancel.store(true, Ordering::SeqCst);
+                let _ = session.command_tx.send(TtsCommand::Stop);
+            }
+            state.tts_session = None;
+        })
+    };
+}
+
+fn handle_tts_command(
+    cmd: TtsCommand,
+    sink: &Sink,
+    cancel_flag: &AtomicBool,
+    paused: &mut bool,
+) -> bool {
+    match cmd {
+        TtsCommand::Pause => {
+            sink.pause();
+            *paused = true;
+            false
+        }
+        TtsCommand::Resume => {
+            sink.play();
+            *paused = false;
+            false
+        }
+        TtsCommand::Stop => {
+            cancel_flag.store(true, Ordering::SeqCst);
+            sink.stop();
+            true
+        }
+    }
+}
+
+
+
+
+fn start_tts_playback_with_chunks(hwnd: HWND, cleaned: String, voice: String, chunks: Vec<TtsChunk>, initial_caret_pos: i32) {
+    stop_tts_playback(hwnd);
+    prevent_sleep(true);
+    if chunks.is_empty() {
+        return;
+    }
+
+    let (tx, mut rx) = mpsc::unbounded_channel::<TtsCommand>();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_flag = cancel.clone();
+    let session_id = unsafe {
+        with_state(hwnd, |state| {
+            let id = state.tts_next_session_id;
+            state.tts_next_session_id = state.tts_next_session_id.saturating_add(1);
+            state.tts_session = Some(TtsSession {
+                id,
+                command_tx: tx.clone(),
+                cancel: cancel.clone(),
+                paused: false,
+                initial_caret_pos,
+            });
+            id
+        })
+        .unwrap_or(0)
+    };
+    let hwnd_copy = hwnd;
+    thread::spawn(move || {
+        log_debug(&format!(
+            "TTS start: voice={voice} chunks={} text_len={}",
+            chunks.len(),
+            cleaned.len()
+        ));
+        let (_stream, handle) = match OutputStream::try_default() {
+            Ok(values) => values,
+            Err(_) => {
+                post_tts_error(hwnd_copy, session_id, "Audio output device not available.".to_string());
+                return;
+            }
+        };
+        let sink = match Sink::try_new(&handle) {
+            Ok(sink) => sink,
+            Err(_) => {
+                post_tts_error(hwnd_copy, session_id, "Failed to create audio sink.".to_string());
+                return;
+            }
+        };
+        let rt = match tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(err) => {
+                post_tts_error(hwnd_copy, session_id, err.to_string());
+                return;
+            }
+        };
+
+        // Create a channel for buffered audio data (10 chunks buffer)
+        let (audio_tx, mut audio_rx) = mpsc::channel::<Result<(Vec<u8>, usize), String>>(10);
+        let cancel_downloader = cancel_flag.clone();
+        let chunks_downloader = chunks.clone();
+        let voice_downloader = voice.clone();
+
+        // Spawn background downloader task
+        rt.spawn(async move {
+            for chunk_obj in chunks_downloader {
+                if cancel_downloader.load(Ordering::SeqCst) { break; }
+                let request_id = Uuid::new_v4().simple().to_string();
+                match download_audio_chunk(&chunk_obj.text_to_read, &voice_downloader, &request_id).await {
+                    Ok(data) => {
+                        if audio_tx.send(Ok((data, chunk_obj.original_len))).await.is_err() { break; }
+                    }
+                    Err(e) => {
+                        let _ = audio_tx.send(Err(e)).await;
+                        break;
+                    }
+                }
+            }
+        });
+
+        let mut appended_any = false;
+        let mut paused = false;
+        let mut current_offset: usize = 0;
+
+        loop {
+            if cancel_flag.load(Ordering::SeqCst) { break; }
+
+            // Get next audio packet from buffer or handle commands while waiting
+            let packet = rt.block_on(async {
+                loop {
+                    if cancel_flag.load(Ordering::SeqCst) { return None; }
+                    
+                    // Priority to commands
+                    while let Ok(cmd) = rx.try_recv() {
+                        if handle_tts_command(cmd, &sink, cancel_flag.as_ref(), &mut paused) {
+                            return None;
+                        }
+                    }
+
+                    if paused {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
+
+                    tokio::select! {
+                        res = audio_rx.recv() => return res,
+                        cmd_opt = rx.recv() => {
+                            if let Some(cmd) = cmd_opt {
+                                if handle_tts_command(cmd, &sink, cancel_flag.as_ref(), &mut paused) {
+                                    return None;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            let Some(res) = packet else { break; };
+            let (audio, orig_len) = match res {
+                Ok(data) => data,
+                Err(e) => {
+                    post_tts_error(hwnd_copy, session_id, e);
+                    break;
+                }
+            };
+
+            if audio.is_empty() { continue; }
+
+            let _ = unsafe {
+                PostMessageW(
+                    hwnd_copy,
+                    WM_TTS_CHUNK_START,
+                    WPARAM(session_id as usize),
+                    LPARAM(current_offset as isize),
+                )
+            };
+
+            let cursor = std::io::Cursor::new(audio);
+            let source = match Decoder::new(cursor) {
+                Ok(source) => source,
+                Err(_) => {
+                    post_tts_error(hwnd_copy, session_id, "Failed to decode audio.".to_string());
+                    break;
+                }
+            };
+
+            sink.append(source);
+            appended_any = true;
+            
+            // Loop while audio is playing to handle commands (Pause/Resume/Stop)
+            while !sink.empty() {
+                if cancel_flag.load(Ordering::SeqCst) {
+                    sink.stop();
+                    break;
+                }
+                while let Ok(cmd) = rx.try_recv() {
+                    if handle_tts_command(cmd, &sink, cancel_flag.as_ref(), &mut paused) {
+                        break;
+                    }
+                }
+                if cancel_flag.load(Ordering::SeqCst) {
+                    sink.stop();
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            
+            if cancel_flag.load(Ordering::SeqCst) { break; }
+            current_offset += orig_len;
+        }
+
+        if appended_any {
+            let _ = unsafe {
+                PostMessageW(
+                    hwnd_copy,
+                    WM_TTS_PLAYBACK_DONE,
+                    WPARAM(session_id as usize),
+                    LPARAM(0),
+                )
+            };
+        }
+    });
+}
+
+
+unsafe fn create_progress_dialog(parent: HWND, total: usize) -> HWND {
+    let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
+    let class_name = to_wide(PROGRESS_CLASS_NAME);
+    
+    let wc = WNDCLASSW {
+        hCursor: HCURSOR(LoadCursorW(None, IDC_ARROW).unwrap_or_default().0),
+        hInstance: hinstance,
+        lpszClassName: PCWSTR(class_name.as_ptr()),
+        lpfnWndProc: Some(progress_wndproc),
+        hbrBackground: HBRUSH((COLOR_WINDOW.0 + 1) as isize),
+        ..Default::default()
+    };
+    RegisterClassW(&wc); 
+
+    let hwnd = CreateWindowExW(
+        WS_EX_DLGMODALFRAME,
+        PCWSTR(class_name.as_ptr()),
+        w!("Creazione Audiolibro"),
+        WS_POPUP | WS_CAPTION | WS_VISIBLE,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        300, 150,
+        parent,
+        HMENU(0),
+        hinstance,
+        Some(parent.0 as *const _),
+    );
+    
+    if hwnd.0 != 0 {
+         EnableWindow(parent, false);
+         let _ = with_progress_state(hwnd, |state| {
+             let _ = SendMessageW(state.hwnd_pb, PBM_SETRANGE, WPARAM(0), LPARAM((total as isize) << 16));
+             state.total = total;
+         });
+         
+         // Center window relative to parent
+         let mut rc_parent = RECT::default();
+         let mut rc_dlg = RECT::default();
+         let _ = windows::Win32::UI::WindowsAndMessaging::GetWindowRect(parent, &mut rc_parent);
+         let _ = windows::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &mut rc_dlg);
+         
+         let dlg_w = rc_dlg.right - rc_dlg.left;
+         let dlg_h = rc_dlg.bottom - rc_dlg.top;
+         let parent_w = rc_parent.right - rc_parent.left;
+         let parent_h = rc_parent.bottom - rc_parent.top;
+         
+         let x = rc_parent.left + (parent_w - dlg_w) / 2;
+         let y = rc_parent.top + (parent_h - dlg_h) / 2;
+         
+         let _ = MoveWindow(hwnd, x, y, dlg_w, dlg_h, true);
+    }
+    hwnd
+}
+
+unsafe fn with_progress_state<F, R>(hwnd: HWND, f: F) -> Option<R>
+where
+    F: FnOnce(&mut ProgressDialogState) -> R,
+{
+    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ProgressDialogState;
+    if ptr.is_null() {
+        None
+    } else {
+        Some(f(&mut *ptr))
+    }
+}
+
+unsafe fn request_cancel_audiobook(hwnd: HWND) {
+    let parent = GetParent(hwnd);
+    if parent.0 == 0 { return; }
+    
+    let already_cancelled = with_state(parent, |state| {
+        state.audiobook_cancel.as_ref().map(|c| c.load(Ordering::Relaxed)).unwrap_or(false)
+    }).unwrap_or(false);
+
+    if already_cancelled { return; }
+    
+    let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
+    let (msg, title) = match language {
+        Language::Italian => ("Sei sicuro di voler annullare la creazione dell'audiolibro?", "Conferma"),
+        Language::English => ("Are you sure you want to cancel the audiobook creation?", "Confirm"),
+    };
+    
+    let msg_w = to_wide(msg);
+    let title_w = to_wide(title);
+    
+    if MessageBoxW(hwnd, PCWSTR(msg_w.as_ptr()), PCWSTR(title_w.as_ptr()), MB_YESNO | MB_ICONWARNING) == IDYES {
+        let _ = with_state(parent, |state| {
+            if let Some(cancel) = &state.audiobook_cancel {
+                cancel.store(true, Ordering::Relaxed);
+            }
+        });
+    }
+}
+
+unsafe extern "system" fn progress_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    match msg {
+        WM_CREATE => {
+             let create_struct = lparam.0 as *const CREATESTRUCTW;
+             let _parent = HWND((*create_struct).lpCreateParams as isize);
+             
+             let label = CreateWindowExW(
+                 Default::default(),
+                 w!("EDIT"),
+                 w!("Creazione audiolibro in corso. Avanzamento: 0%"),
+                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE((ES_CENTER | ES_READONLY) as u32),
+                 20, 20, 240, 20,
+                 hwnd, HMENU(0), HINSTANCE(0), None
+             );
+             
+             let pb = CreateWindowExW(
+                 Default::default(),
+                 w!("msctls_progress32"),
+                 PCWSTR::null(),
+                 WS_CHILD | WS_VISIBLE,
+                 20, 50, 240, 20,
+                 hwnd, HMENU(0), HINSTANCE(0), None
+             );
+
+             let hwnd_cancel = CreateWindowExW(
+                 Default::default(),
+                 WC_BUTTON,
+                 w!("Annulla"),
+                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
+                 95, 80, 90, 28,
+                 hwnd, HMENU(PROGRESS_ID_CANCEL as isize), HINSTANCE(0), None
+             );
+             
+             let state = Box::new(ProgressDialogState { hwnd_pb: pb, hwnd_text: label, hwnd_cancel, total: 0 }); 
+             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
+             
+             if label.0 != 0 {
+                 SetFocus(label);
+             }
+             LRESULT(0)
+        }
+        WM_SETFOCUS => {
+            let _ = with_progress_state(hwnd, |state| {
+                SetFocus(state.hwnd_text);
+            });
+            LRESULT(0)
+        }
+        WM_COMMAND => {
+             let cmd_id = (wparam.0 & 0xffff) as usize;
+             if cmd_id == PROGRESS_ID_CANCEL || cmd_id == 2 { // 2 is IDCANCEL
+                 request_cancel_audiobook(hwnd);
+                 LRESULT(0)
+             } else {
+                 DefWindowProcW(hwnd, msg, wparam, lparam)
+             }
+        }
+        WM_UPDATE_PROGRESS => {
+             let current = wparam.0;
+             let _ = with_progress_state(hwnd, |state| {
+                 let _ = SendMessageW(state.hwnd_pb, PBM_SETPOS, WPARAM(current), LPARAM(0));
+                 if state.total > 0 {
+                     let pct = (current * 100) / state.total;
+                     let text = format!("Creazione audiolibro in corso. Avanzamento: {}%", pct);
+                     let wide = to_wide(&text);
+                     let _ = SetWindowTextW(state.hwnd_text, PCWSTR(wide.as_ptr()));
+                 }
+             });
+             LRESULT(0)
+        }
+        WM_CLOSE => {
+            request_cancel_audiobook(hwnd);
+            LRESULT(0)
+        }
+        WM_DESTROY => {
+            let parent = GetParent(hwnd);
+            if parent.0 != 0 {
+                EnableWindow(parent, true);
+                SetForegroundWindow(parent);
+            }
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ProgressDialogState;
+            if !ptr.is_null() {
+                let _ = Box::from_raw(ptr);
+            }
+            LRESULT(0)
+        }
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+fn start_audiobook(hwnd: HWND) {
+    let Some(hwnd_edit) = (unsafe { get_active_edit(hwnd) }) else {
+        return;
+    };
+    let language = unsafe { with_state(hwnd, |state| state.settings.language) }.unwrap_or_default();
+    let text = unsafe { get_edit_text(hwnd_edit) };
+    if text.trim().is_empty() {
+        unsafe {
+            show_error(hwnd, language, tts_no_text_message(language));
+        }
+        return;
+    }
+    let suggested_name = unsafe {
+        with_state(hwnd, |state| {
+            state.docs.get(state.current).map(|doc| {
+                let p = Path::new(&doc.title);
+                p.file_stem().and_then(|s| s.to_str()).unwrap_or(&doc.title).to_string()
+            })
+        })
+    }.flatten();
+
+    let Some(output) = (unsafe { save_audio_dialog(hwnd, suggested_name.as_deref()) }) else {
+        return;
+    };
+    let voice = unsafe {
+        with_state(hwnd, |state| state.settings.tts_voice.clone()).unwrap_or_else(|| {
+            "it-IT-IsabellaNeural".to_string()
+        })
+    };
+
+    let split_on_newline = unsafe { with_state(hwnd, |state| state.settings.split_on_newline) }
+        .unwrap_or(true);
+
+    let cleaned = strip_dashed_lines(&text);
+    let prepared = normalize_for_tts(&cleaned, split_on_newline);
+
+    let chunks = split_text(&prepared);
+    let chunks_len = chunks.len();
+    
+    let cancel_token = Arc::new(AtomicBool::new(false));
+    let progress_hwnd = unsafe {
+        let h = create_progress_dialog(hwnd, chunks_len);
+        let _ = with_state(hwnd, |state| {
+            state.audiobook_progress = h;
+            state.audiobook_cancel = Some(cancel_token.clone());
+        });
+        h
+    };
+
+    let cancel_clone = cancel_token.clone();
+    thread::spawn(move || {
+        let result = run_tts_audiobook(&chunks, &voice, &output, progress_hwnd, cancel_clone);
+        let success = result.is_ok();
+        let message = match result {
+            Ok(()) => match language {
+                Language::Italian => "Audiolibro salvato con successo.".to_string(),
+                Language::English => "Audiobook saved successfully.".to_string(),
+            },
+            Err(err) => err,
+        };
+        let payload = Box::new(AudiobookResult {
+            success,
+            message,
+        });
+        let _ = unsafe {
+            PostMessageW(
+                hwnd,
+                WM_TTS_AUDIOBOOK_DONE,
+                WPARAM(0),
+                LPARAM(Box::into_raw(payload) as isize),
+            )
+        };
+    });
+}
+
+fn run_tts_audiobook(
+    chunks: &[String],
+    voice: &str,
+    output: &Path,
+    progress_hwnd: HWND,
+    cancel: Arc<AtomicBool>,
+) -> Result<(), String> {
+    let file = std::fs::File::create(output).map_err(|err| err.to_string())?;
+    let mut writer = BufWriter::new(file);
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|err| err.to_string())?;
+
+    rt.block_on(async {
+        let tasks = chunks.iter().enumerate().map(|(i, chunk)| {
+            let chunk = chunk.clone();
+            let voice = voice.to_string();
+            let cancel = cancel.clone();
+            async move {
+                let request_id = Uuid::new_v4().simple().to_string();
+                loop {
+                    if cancel.load(Ordering::Relaxed) {
+                        return Err("Cancelled".to_string());
+                    }
+                    match download_audio_chunk(&chunk, &voice, &request_id).await {
+                        Ok(data) => return Ok::<Vec<u8>, String>(data),
+                        Err(err) => {
+                            if cancel.load(Ordering::Relaxed) {
+                                return Err("Cancelled".to_string());
+                            }
+                            let msg = format!("Errore download chunk {}: {}. Riprovo tra 5 secondi...", i + 1, err);
+                            log_debug(&msg);
+                            
+                            // Use select! to allow instant cancellation during sleep
+                            tokio::select! {
+                                _ = tokio::time::sleep(Duration::from_secs(5)) => {},
+                                _ = async {
+                                    while !cancel.load(Ordering::Relaxed) {
+                                        tokio::time::sleep(Duration::from_millis(100)).await;
+                                    }
+                                } => {
+                                    return Err("Cancelled".to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let mut stream = futures_util::stream::iter(tasks).buffered(30);
+        let mut completed = 0;
+        while let Some(result) = stream.next().await {
+            if cancel.load(Ordering::Relaxed) {
+                return Err("Operazione annullata.".to_string());
+            }
+            let audio = match result {
+                Ok(data) => data,
+                Err(e) if e == "Cancelled" => return Err("Operazione annullata.".to_string()),
+                Err(e) => return Err(e),
+            };
+            
+            writer.write_all(&audio).map_err(|err| err.to_string())?;
+            completed += 1;
+            if progress_hwnd.0 != 0 {
+                if cancel.load(Ordering::Relaxed) { return Err("Operazione annullata.".to_string()); }
+                unsafe { let _ = PostMessageW(progress_hwnd, WM_UPDATE_PROGRESS, WPARAM(completed), LPARAM(0)); }
+            }
+        }
+        writer.flush().map_err(|err| err.to_string())?;
+        Ok(())
+    }).map_err(|e| {
+        if e == "Operazione annullata." {
+            // Try to delete file
+            let _ = std::fs::remove_file(output);
+        }
+        e
+    })
+}
+
+unsafe fn get_text_from_caret(hwnd_edit: HWND) -> String {
+    let mut start: i32 = 0;
+    let mut end: i32 = 0;
+    // Use EM_GETSEL to get the current cursor/selection position
+    SendMessageW(hwnd_edit, EM_GETSEL, WPARAM(&mut start as *mut _ as usize), LPARAM(&mut end as *mut _ as isize));
+    
+    // We want to start reading from the beginning of any selection, or from the cursor if no selection.
+    let caret_pos = start.min(end).max(0) as usize;
+
+    let full_text = get_edit_text(hwnd_edit);
+    if caret_pos == 0 {
+        return full_text;
+    }
+
+    // RichEdit's WM_GETTEXT (used by get_edit_text) usually returns text with \r\n.
+    // However, the indices from EM_GETSEL in RichEdit are based on its internal 
+    // representation (which uses a single \r for newlines).
+    // To fix this mismatch, we work with a version of the text that has single-character newlines.
+    let wide: Vec<u16> = full_text.replace("\r\n", "\n").encode_utf16().collect();
+    
+    if caret_pos >= wide.len() {
+        return String::new();
+    }
+    
+    String::from_utf16_lossy(&wide[caret_pos..])
+}
+
+fn generate_sec_ms_gec() -> String {
+    let win_epoch = 11644473600i64;
+    let now = Local::now().timestamp();
+    let ticks = now + win_epoch;
+    let ticks = ticks - (ticks % 300);
+    let ticks = (ticks as f64) * 1e7;
+
+    let str_to_hash = format!("{:.0}{}", ticks, TRUSTED_CLIENT_TOKEN);
+    let mut hasher = Sha256::new();
+    hasher.update(str_to_hash);
+    let result = hasher.finalize();
+    hex::encode(result).to_uppercase()
+}
+
+fn generate_muid() -> String {
+    let mut rng = rand::thread_rng();
+    let mut bytes = [0u8; 16];
+    rng.fill(&mut bytes);
+    hex::encode(bytes).to_uppercase()
+}
+
+fn get_date_string() -> String {
+    let now = Local::now();
+    now.format("%a %b %d %Y %H:%M:%S GMT+0000 (Coordinated Universal Time)").to_string()
+}
+
+fn voice_locale_from_short_name(voice: &str) -> String {
+    let mut parts: Vec<&str> = voice.split('-').collect();
+    if parts.len() >= 3 {
+        parts.pop();
+        return parts.join("-");
+    }
+    voice.to_string()
+}
+
+fn mkssml(text: &str, voice: &str) -> String {
+    let lang = voice_locale_from_short_name(voice);
+    let lang = if lang.is_empty() { "en-US".to_string() } else { lang };
+
+    format!(
+        "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{}'>\n\
+        <voice name='{}'>\n\
+        <prosody pitch='+0Hz' rate='+0%' volume='+0%'>\n\
+        {}\n\
+        </prosody>\n\
+        </voice>\n\
+        </speak>",
+        lang, voice, text
+    )
+}
+
+fn remove_long_dash_runs(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut dash_run = 0;
+
+    for ch in line.chars() {
+        if ch == '-' {
+            dash_run += 1;
+            continue;
+        }
+        if dash_run > 0 {
+            if dash_run < 3 {
+                out.extend(std::iter::repeat('-').take(dash_run));
+            }
+            dash_run = 0;
+        }
+        out.push(ch);
+    }
+
+    if dash_run > 0 && dash_run < 3 {
+        out.extend(std::iter::repeat('-').take(dash_run));
+    }
+
+    out
+}
+
+fn strip_dashed_lines(text: &str) -> String {
+    text.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return Some(String::new());
+            }
+            let cleaned = remove_long_dash_runs(line);
+            if cleaned.trim().is_empty() {
+                return None;
+            }
+            Some(cleaned)
+        })
+        .collect::<Vec<String>>()
+        .join("\n")
+}
+
+fn split_text(text: &str) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let char_indices: Vec<(usize, char)> = text.char_indices().collect();
+    let char_len = char_indices.len();
+    let mut current_char = 0;
+    let is_long = char_len > TTS_LONG_TEXT_THRESHOLD;
+    let max_len = if is_long { MAX_TTS_TEXT_LEN_LONG } else { MAX_TTS_TEXT_LEN };
+    let first_len = if is_long { MAX_TTS_FIRST_CHUNK_LEN_LONG } else { max_len };
+
+    let byte_index_at = |char_idx: usize| -> usize {
+        if char_idx >= char_len {
+            text.len()
+        } else {
+            char_indices[char_idx].0
+        }
+    };
+
+    while current_char < char_len {
+        let target_len = if chunks.is_empty() { first_len } else { max_len };
+        let mut split_char = current_char + target_len;
+
+        if split_char >= char_len {
+            let chunk = text[byte_index_at(current_char)..].trim().to_string();
+            if !chunk.is_empty() {
+                chunks.push(chunk);
+            }
+            break;
+        }
+
+        let search_end = split_char;
+        let search_start = current_char;
+
+        let mut split_found = None;
+        for idx in (search_start..search_end).rev() {
+            let c = char_indices[idx].1;
+            if c == '.' || c == '!' || c == '?' {
+                let next_idx = idx + 1;
+                if next_idx >= char_len {
+                    split_found = Some(next_idx);
+                } else if char_indices[next_idx].1.is_whitespace() {
+                    split_found = Some(next_idx);
+                }
+                if split_found.is_some() {
+                    break;
+                }
+            }
+        }
+
+        if split_found.is_none() {
+            for idx in (search_start..search_end).rev() {
+                let c = char_indices[idx].1;
+                if c == '\n' {
+                    if idx + 1 < char_len && char_indices[idx + 1].1 == '\n' {
+                        split_found = Some(idx + 2);
+                        break;
+                    }
+                } else if c == ';' || c == ':' {
+                    split_found = Some(idx + 1);
+                    break;
+                }
+            }
+        }
+
+        if split_found.is_none() {
+            for idx in (search_start..search_end).rev() {
+                if char_indices[idx].1 == ' ' {
+                    split_found = Some(idx + 1);
+                    break;
+                }
+            }
+        }
+
+        if let Some(split_at) = split_found {
+            split_char = split_at;
+        }
+
+        if split_char > current_char {
+            let chunk = text[byte_index_at(current_char)..byte_index_at(split_char)]
+                .trim()
+                .to_string();
+            if !chunk.is_empty() {
+                chunks.push(chunk);
+            }
+            current_char = split_char;
+        } else {
+            let hard_limit = std::cmp::min(current_char + target_len, char_len);
+            let chunk = text[byte_index_at(current_char)..byte_index_at(hard_limit)]
+                .trim()
+                .to_string();
+            if !chunk.is_empty() {
+                chunks.push(chunk);
+            }
+            current_char = hard_limit;
+        }
+    }
+    chunks
+}
+
+fn split_into_tts_chunks(text: &str, split_on_newline: bool) -> Vec<TtsChunk> {
+    let mut sentences = Vec::new();
+    let mut current_sentence = String::new();
+    let mut current_orig_len = 0usize;
+
+    for ch in text.chars() {
+        current_sentence.push(ch);
+        current_orig_len += 1;
+        
+        let is_terminal = matches!(ch, '.' | '!' | '?') || (split_on_newline && ch == '\n');
+        
+        if is_terminal {
+            let sentence_text = current_sentence.clone();
+            if !sentence_text.trim().is_empty() {
+                sentences.push((sentence_text, current_orig_len));
+            }
+            current_sentence.clear();
+            current_orig_len = 0;
+        }
+    }
+
+    if !current_sentence.trim().is_empty() {
+        sentences.push((current_sentence, current_orig_len));
+    }
+
+    let mut chunks = Vec::new();
+    let mut current_chunk_text = String::new();
+    let mut current_chunk_orig_len = 0usize;
+    let max_chars = 150; // Restored to 150
+
+    for (s_text, s_len) in sentences {
+        let potential_new_len = current_chunk_text.chars().count() + s_text.chars().count();
+        
+        if !current_chunk_text.is_empty() && potential_new_len > max_chars {
+            // Finish current chunk
+            let cleaned = strip_dashed_lines(&current_chunk_text);
+            let prepared = normalize_for_tts(&cleaned, split_on_newline);
+            chunks.push(TtsChunk {
+                text_to_read: prepared,
+                original_len: current_chunk_orig_len,
+            });
+            current_chunk_text.clear();
+            current_chunk_orig_len = 0;
+        }
+        
+        current_chunk_text.push_str(&s_text);
+        current_chunk_orig_len += s_len;
+    }
+
+    if !current_chunk_text.is_empty() {
+        let cleaned = strip_dashed_lines(&current_chunk_text);
+        let prepared = normalize_for_tts(&cleaned, split_on_newline);
+        chunks.push(TtsChunk {
+            text_to_read: prepared,
+            original_len: current_chunk_orig_len,
+        });
+    }
+
+    chunks
+}
+
+async fn download_audio_chunk(
+    text: &str,
+    voice: &str,
+    request_id: &str,
+) -> Result<Vec<u8>, String> {
+    let max_retries = 5;
+    let mut last_error = String::new();
+
+    for attempt in 1..=max_retries {
+        match download_audio_chunk_attempt(text, voice, request_id).await {
+            Ok(data) => return Ok(data),
+            Err(e) => {
+                last_error = e;
+                log_debug(&format!(
+                    "Errore download chunk (tentativo {}/{}): {}. Riprovo...",
+                    attempt, max_retries, last_error
+                ));
+                if attempt < max_retries {
+                    tokio::time::sleep(Duration::from_millis(500 * attempt as u64)).await;
+                }
+            }
+        }
+    }
+    Err(format!(
+        "Falliti {} tentativi. Ultimo errore: {}",
+        max_retries, last_error
+    ))
+}
+
+async fn download_audio_chunk_attempt(
+    text: &str,
+    voice: &str,
+    request_id: &str,
+) -> Result<Vec<u8>, String> {
+    let sec_ms_gec = generate_sec_ms_gec();
+    let sec_ms_gec_version = "1-130.0.2849.68";
+
+    let url_str = format!(
+        "{}?TrustedClientToken={}&ConnectionId={}&Sec-MS-GEC={}&Sec-MS-GEC-Version={}",
+        WSS_URL_BASE, TRUSTED_CLIENT_TOKEN, request_id, sec_ms_gec, sec_ms_gec_version
+    );
+    let url = Url::parse(&url_str).map_err(|err| err.to_string())?;
+
+    let mut request = url.into_client_request().map_err(|err| err.to_string())?;
+    let headers = request.headers_mut();
+    headers.insert("Pragma", HeaderValue::from_static("no-cache"));
+    headers.insert("Cache-Control", HeaderValue::from_static("no-cache"));
+    headers.insert(
+        "Origin",
+        HeaderValue::from_static("chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"),
+    );
+    headers.insert(
+        "User-Agent",
+        HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0"),
+    );
+    headers.insert("Accept-Encoding", HeaderValue::from_static("gzip, deflate, br"));
+    headers.insert("Accept-Language", HeaderValue::from_static("en-US,en;q=0.9"));
+    let cookie = format!("muid={};", generate_muid());
+    headers.insert("Cookie", HeaderValue::from_str(&cookie).map_err(|err| err.to_string())?);
+
+    let (ws_stream, _) = connect_async(request).await.map_err(|err| err.to_string())?;
+    let (mut write, mut read) = ws_stream.split();
+
+    let config_msg = format!(
+        "X-Timestamp:{}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{{\"context\":{{\"synthesis\":{{\"audio\":{{\"metadataoptions\":{{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"}},\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}}}}}",
+        get_date_string()
+    );
+    write.send(Message::Text(config_msg)).await.map_err(|err| err.to_string())?;
+
+    let ssml = mkssml(text, voice);
+    let ssml_msg = format!(
+        "X-RequestId:{}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:{}Z\r\nPath:ssml\r\n\r\n{}",
+        request_id,
+        get_date_string(),
+        ssml
+    );
+    write.send(Message::Text(ssml_msg)).await.map_err(|err| err.to_string())?;
+
+    let mut audio_data = Vec::new();
+    while let Some(msg) = read.next().await {
+        let msg = msg.map_err(|err| err.to_string())?;
+        match msg {
+            Message::Text(text) => {
+                if text.contains("Path:turn.end") {
+                    break;
+                }
+            }
+            Message::Binary(data) => {
+                if data.len() < 2 {
+                    continue;
+                }
+                let be_len = u16::from_be_bytes([data[0], data[1]]) as usize;
+                let le_len = u16::from_le_bytes([data[0], data[1]]) as usize;
+                let mut parsed = false;
+                for header_len in [be_len, le_len] {
+                    if header_len == 0 || data.len() < header_len + 2 {
+                        continue;
+                    }
+                    let headers_bytes = &data[2..2 + header_len];
+                    let headers_str = String::from_utf8_lossy(headers_bytes);
+                    if headers_str.contains("Path:audio") {
+                        audio_data.extend_from_slice(&data[2 + header_len..]);
+                        parsed = true;
+                        break;
+                    }
+                }
+                if parsed {
+                    continue;
+                }
+            }
+            Message::Close(_) => break,
+            _ => {}
+        }
+    }
+
+    Ok(audio_data)
+}
+
+unsafe fn handle_find_message(hwnd: HWND, lparam: LPARAM) {
+    let fr = &*(lparam.0 as *const FINDREPLACEW);
+    if (fr.Flags & FR_DIALOGTERM) != FINDREPLACE_FLAGS(0) {
+        let _ = with_state(hwnd, |state| {
+            if fr.lCustData.0 == FIND_DIALOG_ID {
+                state.find_dialog = HWND(0);
+                state.find_replace = None;
+            } else if fr.lCustData.0 == REPLACE_DIALOG_ID {
+                state.replace_dialog = HWND(0);
+                state.replace_replace = None;
+            }
+        });
+        return;
+    }
+
+    if (fr.Flags & (FR_FINDNEXT | FR_REPLACE | FR_REPLACEALL)) == FINDREPLACE_FLAGS(0) {
+        return;
+    }
+
+    let search = from_wide(fr.lpstrFindWhat.0);
+    if search.is_empty() {
+        return;
+    }
+
+    let Some(hwnd_edit) = get_active_edit(hwnd) else {
+        return;
+    };
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+
+    let find_flags = extract_find_flags(fr.Flags);
+    let _ = with_state(hwnd, |state| {
+        state.last_find_flags = find_flags;
+    });
+
+    if (fr.Flags & FR_REPLACEALL) != FINDREPLACE_FLAGS(0) {
+        replace_all(hwnd, hwnd_edit, &search, &from_wide(fr.lpstrReplaceWith.0), find_flags);
+        return;
+    }
+
+    if (fr.Flags & FR_REPLACE) != FINDREPLACE_FLAGS(0) {
+        let replace = from_wide(fr.lpstrReplaceWith.0);
+        let replaced = replace_selection_if_match(hwnd_edit, &search, &replace, find_flags);
+        let found = find_next(hwnd_edit, &search, find_flags, true);
+        if !replaced && !found {
+            let message = to_wide(text_not_found_message(language));
+            let title = to_wide(find_title(language));
+            MessageBoxW(hwnd, PCWSTR(message.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONWARNING);
+        }
+        return;
+    }
+
+    if find_next(hwnd_edit, &search, find_flags, true) {
+        return;
+    }
+    let message = to_wide(text_not_found_message(language));
+    let title = to_wide(find_title(language));
+    MessageBoxW(hwnd, PCWSTR(message.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONWARNING);
+}
+
+unsafe fn find_next_from_state(hwnd: HWND) {
+    let (search, flags, language) = with_state(hwnd, |state| {
+        let search = from_wide(state.find_text.as_ptr());
+        (search, state.last_find_flags, state.settings.language)
+    })
+    .unwrap_or((String::new(), FINDREPLACE_FLAGS(0), Language::default()));
+    if search.is_empty() {
+        open_find_dialog(hwnd);
+        return;
+    }
+    let Some(hwnd_edit) = get_active_edit(hwnd) else {
+        return;
+    };
+    if !find_next(hwnd_edit, &search, flags, true) {
+        let message = to_wide(text_not_found_message(language));
+        let title = to_wide(find_title(language));
+        MessageBoxW(hwnd, PCWSTR(message.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONWARNING);
+    }
+}
+
+unsafe fn get_active_edit(hwnd: HWND) -> Option<HWND> {
+    with_state(hwnd, |state| state.docs.get(state.current).map(|doc| doc.hwnd_edit)).flatten()
+}
+
+fn extract_find_flags(flags: FINDREPLACE_FLAGS) -> FINDREPLACE_FLAGS {
+    let mut out = FINDREPLACE_FLAGS(0);
+    if (flags & FR_MATCHCASE) != FINDREPLACE_FLAGS(0) {
+        out |= FR_MATCHCASE;
+    }
+    if (flags & FR_WHOLEWORD) != FINDREPLACE_FLAGS(0) {
+        out |= FR_WHOLEWORD;
+    }
+    if (flags & FR_DOWN) != FINDREPLACE_FLAGS(0) {
+        out |= FR_DOWN;
+    }
+    out
+}
+
+unsafe fn find_next(
+    hwnd_edit: HWND,
+    search: &str,
+    flags: FINDREPLACE_FLAGS,
+    wrap: bool,
+) -> bool {
+    let mut cr = CHARRANGE { cpMin: 0, cpMax: 0 };
+    SendMessageW(hwnd_edit, EM_EXGETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize));
+    
+    let down = (flags & FR_DOWN) != FINDREPLACE_FLAGS(0);
+    
+    let mut ft = FINDTEXTEXW {
+        chrg: CHARRANGE {
+            cpMin: if down { cr.cpMax } else { cr.cpMin },
+            cpMax: if down { -1 } else { 0 },
+        },
+        lpstrText: PCWSTR(to_wide(search).as_ptr()),
+        chrgText: CHARRANGE { cpMin: 0, cpMax: 0 },
+    };
+
+    let result = SendMessageW(hwnd_edit, EM_FINDTEXTEXW, WPARAM(flags.0 as usize), LPARAM(&mut ft as *mut _ as isize));
+    
+    if result.0 != -1 {
+        let mut sel = ft.chrgText;
+        // Swap to put caret at the beginning
+        std::mem::swap(&mut sel.cpMin, &mut sel.cpMax);
+        SendMessageW(hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&mut sel as *mut _ as isize));
+        SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
+        SetFocus(hwnd_edit);
+        return true;
+    }
+
+    if wrap {
+        ft.chrg.cpMin = if down { 0 } else { -1 };
+        ft.chrg.cpMax = if down { -1 } else { 0 };
+        let result = SendMessageW(hwnd_edit, EM_FINDTEXTEXW, WPARAM(flags.0 as usize), LPARAM(&mut ft as *mut _ as isize));
+        if result.0 != -1 {
+            let mut sel = ft.chrgText;
+            std::mem::swap(&mut sel.cpMin, &mut sel.cpMax);
+            SendMessageW(hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&mut sel as *mut _ as isize));
+            SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
+            SetFocus(hwnd_edit);
+            return true;
+        }
+    }
+    false
+}
+
+
+
+unsafe fn replace_selection_if_match(
+    hwnd_edit: HWND,
+    search: &str,
+    replace: &str,
+    flags: FINDREPLACE_FLAGS,
+) -> bool {
+    let mut cr = CHARRANGE { cpMin: 0, cpMax: 0 };
+    SendMessageW(hwnd_edit, EM_EXGETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize));
+    
+    if cr.cpMin == cr.cpMax {
+        return false;
+    }
+
+    let wide_search = to_wide(search);
+    let mut ft = FINDTEXTEXW {
+        chrg: cr,
+        lpstrText: PCWSTR(wide_search.as_ptr()),
+        chrgText: CHARRANGE { cpMin: 0, cpMax: 0 },
+    };
+    
+    let res = SendMessageW(hwnd_edit, EM_FINDTEXTEXW, WPARAM(flags.0 as usize), LPARAM(&mut ft as *mut _ as isize));
+    
+    if res.0 == cr.cpMin as isize && ft.chrgText.cpMax == cr.cpMax {
+        let replace_wide = to_wide(replace);
+        SendMessageW(
+            hwnd_edit,
+            EM_REPLACESEL,
+            WPARAM(1),
+            LPARAM(replace_wide.as_ptr() as isize),
+        );
+        true
+    } else {
+        false
+    }
+}
+
+unsafe fn replace_all(
+    hwnd: HWND,
+    hwnd_edit: HWND,
+    search: &str,
+    replace: &str,
+    flags: FINDREPLACE_FLAGS,
+) {
+    if search.is_empty() {
+        return;
+    }
+    let mut start = 0i32;
+    let mut replaced_any = false;
+    let replace_wide = to_wide(replace);
+    
+    loop {
+        let mut ft = FINDTEXTEXW {
+            chrg: CHARRANGE {
+                cpMin: start,
+                cpMax: -1,
+            },
+            lpstrText: PCWSTR(to_wide(search).as_ptr()),
+            chrgText: CHARRANGE { cpMin: 0, cpMax: 0 },
+        };
+
+        let res = SendMessageW(hwnd_edit, EM_FINDTEXTEXW, WPARAM(flags.0 as usize), LPARAM(&mut ft as *mut _ as isize));
+        
+        if res.0 != -1 {
+            SendMessageW(hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&mut ft.chrgText as *mut _ as isize));
+            SendMessageW(
+                hwnd_edit,
+                EM_REPLACESEL,
+                WPARAM(1),
+                LPARAM(replace_wide.as_ptr() as isize),
+            );
+            replaced_any = true;
+            
+            let mut cr = CHARRANGE { cpMin: 0, cpMax: 0 };
+            SendMessageW(hwnd_edit, EM_EXGETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize));
+            start = cr.cpMax;
+        } else {
+            break;
+        }
+    }
+    
+    if !replaced_any {
+        let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+        let message = to_wide(text_not_found_message(language));
+        let title = to_wide(find_title(language));
+        MessageBoxW(hwnd, PCWSTR(message.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONWARNING);
+    }
+}
+
+unsafe fn update_recent_menu(hwnd: HWND, hmenu_recent: HMENU) {
+    let count = GetMenuItemCount(hmenu_recent);
+    if count > 0 {
+        for _ in 0..count {
+            let _ = DeleteMenu(hmenu_recent, 0, MF_BYPOSITION);
+        }
+    }
+
+    let (files, language) = with_state(hwnd, |state| {
+        (state.recent_files.clone(), state.settings.language)
+    })
+    .unwrap_or_default();
+    if files.is_empty() {
+        let labels = menu_labels(language);
+        let _ = append_menu_string(hmenu_recent, MF_STRING | MF_GRAYED, 0, labels.recent_empty);
+    } else {
+        for (i, path) in files.iter().enumerate() {
+            let label = format!("&{} {}", i + 1, abbreviate_recent_label(path));
+            let wide = to_wide(&label);
+            let _ = AppendMenuW(
+                hmenu_recent,
+                MF_STRING,
+                IDM_FILE_RECENT_BASE + i,
+                PCWSTR(wide.as_ptr()),
+            );
+        }
+    }
+    let _ = DrawMenuBar(hwnd);
+}
+
+unsafe fn insert_bookmark(hwnd: HWND) {
+    let (hwnd_edit, path, format) = match with_state(hwnd, |state| {
+        state.docs.get(state.current).and_then(|doc| {
+            doc.path.clone().map(|p| (doc.hwnd_edit, p, doc.format))
+        })
+    }) {
+        Some(Some(values)) => values,
+        _ => return,
+    };
+
+    if matches!(format, FileFormat::Audiobook) {
+        let (pos, snippet) = with_state(hwnd, |state| {
+            if let Some(player) = &mut state.active_audiobook {
+                let current_total = if player.is_paused {
+                    player.accumulated_seconds
+                } else {
+                    player.accumulated_seconds + player.start_instant.elapsed().as_secs()
+                };
+                let mins = current_total / 60;
+                let secs = current_total % 60;
+                (current_total as i32, format!("Posizione audio: {:02}:{:02}", mins, secs))
+            } else {
+                (0, "Audio non in riproduzione".to_string())
+            }
+        }).unwrap_or((0, String::new()));
+
+        let bookmark = Bookmark {
+            position: pos,
+            snippet,
+            timestamp: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        };
+
+        let path_str = path.to_string_lossy().to_string();
+        let bookmarks_window = with_state(hwnd, |state| {
+            let list = state.bookmarks.files.entry(path_str).or_default();
+            list.push(bookmark);
+            save_bookmarks(&state.bookmarks);
+            state.bookmarks_window
+        }).unwrap_or(HWND(0));
+
+        if bookmarks_window.0 != 0 {
+            unsafe { refresh_bookmarks_list(bookmarks_window); }
+        }
+        return;
+    }
+
+    let mut cr = CHARRANGE { cpMin: 0, cpMax: 0 };
+    unsafe { SendMessageW(hwnd_edit, EM_EXGETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize)); }
+    
+    let pos = cr.cpMax;
+    
+    // 1. Try to get up to 60 characters AFTER the cursor
+    let mut buffer = vec![0u16; 62];
+    let mut tr = TEXTRANGEW {
+        chrg: CHARRANGE { cpMin: pos, cpMax: pos + 60 },
+        lpstrText: PWSTR(buffer.as_mut_ptr()),
+    };
+    let copied = unsafe { SendMessageW(hwnd_edit, EM_GETTEXTRANGE, WPARAM(0), LPARAM(&mut tr as *mut _ as isize)).0 as usize };
+    let mut snippet = String::from_utf16_lossy(&buffer[..copied]);
+    
+    // Stop at the first newline
+    if let Some(idx) = snippet.find(|c| c == '\r' || c == '\n') {
+        snippet.truncate(idx);
+    }
+    
+    // 2. If the resulting snippet is empty (e.g. cursor at end of line), take text BEFORE the cursor
+    if snippet.trim().is_empty() && pos > 0 {
+        let start_pre = (pos - 60).max(0);
+        let mut buffer_pre = vec![0u16; 62];
+        let mut tr_pre = TEXTRANGEW {
+            chrg: CHARRANGE { cpMin: start_pre, cpMax: pos },
+            lpstrText: PWSTR(buffer_pre.as_mut_ptr()),
+        };
+        let copied_pre = unsafe { SendMessageW(hwnd_edit, EM_GETTEXTRANGE, WPARAM(0), LPARAM(&mut tr_pre as *mut _ as isize)).0 as usize };
+        let mut snippet_pre = String::from_utf16_lossy(&buffer_pre[..copied_pre]);
+        
+        // Take text after the last newline in this prefix
+        if let Some(idx) = snippet_pre.rfind(|c| c == '\r' || c == '\n') {
+            snippet_pre = snippet_pre[idx+1..].to_string();
+        }
+        snippet = snippet_pre;
+    }
+
+    let bookmark = Bookmark {
+        position: pos,
+        snippet: snippet.trim().to_string(),
+        timestamp: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+    };
+
+    let path_str = path.to_string_lossy().to_string();
+    let bookmarks_window = with_state(hwnd, |state| {
+        let list = state.bookmarks.files.entry(path_str).or_default();
+        list.push(bookmark);
+        save_bookmarks(&state.bookmarks);
+        state.bookmarks_window
+    }).unwrap_or(HWND(0));
+
+    if bookmarks_window.0 != 0 {
+        unsafe { refresh_bookmarks_list(bookmarks_window); }
+    }
+}
+
+unsafe fn goto_first_bookmark(hwnd_edit: HWND, path: &Path, bookmarks: &BookmarkStore, format: FileFormat) {
+    let path_str = path.to_string_lossy().to_string();
+    if let Some(list) = bookmarks.files.get(&path_str) {
+        if let Some(bm) = list.first() {
+            if matches!(format, FileFormat::Audiobook) {
+                // Audiobook position is handled by playback start
+            } else {
+                let mut cr = CHARRANGE { cpMin: bm.position, cpMax: bm.position };
+                SendMessageW(hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize));
+                SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
+            }
+        }
+    }
+}
+
+struct BookmarksWindowState {
+    parent: HWND,
+    hwnd_list: HWND,
+    hwnd_goto: HWND,
+}
+
+unsafe fn open_bookmarks_window(hwnd: HWND) {
+    let existing = with_state(hwnd, |state| state.bookmarks_window).unwrap_or(HWND(0));
+    if existing.0 != 0 {
+        SetForegroundWindow(existing);
+        return;
+    }
+
+    let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
+    let class_name = to_wide(BOOKMARKS_CLASS_NAME);
+    let wc = WNDCLASSW {
+        hCursor: HCURSOR(LoadCursorW(None, IDC_ARROW).unwrap_or_default().0),
+        hInstance: hinstance,
+        lpszClassName: PCWSTR(class_name.as_ptr()),
+        lpfnWndProc: Some(bookmarks_wndproc),
+        hbrBackground: HBRUSH((COLOR_WINDOW.0 + 1) as isize),
+        ..Default::default()
+    };
+    RegisterClassW(&wc);
+
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    let title = to_wide(if language == Language::Italian { "Gestisci segnalibri" } else { "Manage Bookmarks" });
+
+    let window = CreateWindowExW(
+        WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME,
+        PCWSTR(class_name.as_ptr()),
+        PCWSTR(title.as_ptr()),
+        WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        400,
+        450,
+        hwnd,
+        None,
+        hinstance,
+        Some(hwnd.0 as *const std::ffi::c_void),
+    );
+
+    if window.0 != 0 {
+        let _ = with_state(hwnd, |state| {
+            state.bookmarks_window = window;
+        });
+        EnableWindow(hwnd, false);
+        SetForegroundWindow(window);
+    }
+}
+
+unsafe extern "system" fn bookmarks_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    match msg {
+        WM_CREATE => {
+            let create_struct = lparam.0 as *const CREATESTRUCTW;
+            let parent = HWND((*create_struct).lpCreateParams as isize);
+            let hfont = with_state(parent, |state| state.hfont).unwrap_or(HFONT(0));
+            let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
+
+            let hwnd_list = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                WC_LISTBOXW,
+                PCWSTR::null(),
+                WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | WINDOW_STYLE((LBS_NOTIFY | LBS_HASSTRINGS) as u32),
+                10, 10, 360, 300,
+                hwnd, HMENU(BOOKMARKS_ID_LIST as isize), HINSTANCE(0), None
+            );
+
+            let btn_goto_text = if language == Language::Italian { "Vai a" } else { "Go to" };
+            let hwnd_goto = CreateWindowExW(
+                Default::default(), WC_BUTTON, PCWSTR(to_wide(btn_goto_text).as_ptr()),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
+                10, 320, 110, 30,
+                hwnd, HMENU(BOOKMARKS_ID_GOTO as isize), HINSTANCE(0), None
+            );
+
+            let btn_del_text = if language == Language::Italian { "Elimina" } else { "Delete" };
+            let hwnd_delete = CreateWindowExW(
+                Default::default(), WC_BUTTON, PCWSTR(to_wide(btn_del_text).as_ptr()),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                130, 320, 110, 30,
+                hwnd, HMENU(BOOKMARKS_ID_DELETE as isize), HINSTANCE(0), None
+            );
+
+            let hwnd_ok = CreateWindowExW(
+                Default::default(), WC_BUTTON, w!("OK"),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                250, 320, 110, 30,
+                hwnd, HMENU(BOOKMARKS_ID_OK as isize), HINSTANCE(0), None
+            );
+
+            for ctrl in [hwnd_list, hwnd_goto, hwnd_delete, hwnd_ok] {
+                if ctrl.0 != 0 && hfont.0 != 0 {
+                    let _ = SendMessageW(ctrl, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
+                }
+            }
+
+            let state = Box::new(BookmarksWindowState { parent, hwnd_list, hwnd_goto });
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
+            
+            refresh_bookmarks_list(hwnd);
+            
+            if SendMessageW(hwnd_list, windows::Win32::UI::WindowsAndMessaging::LB_GETCOUNT as u32, WPARAM(0), LPARAM(0)).0 > 0 {
+                SendMessageW(hwnd_list, windows::Win32::UI::WindowsAndMessaging::LB_SETCURSEL as u32, WPARAM(0), LPARAM(0));
+            }
+            SetFocus(hwnd_list);
+            
+            LRESULT(0)
+        }
+        WM_COMMAND => {
+            let cmd_id = (wparam.0 & 0xffff) as usize;
+            let notify = (wparam.0 >> 16) as u16;
+            match cmd_id {
+                BOOKMARKS_ID_GOTO => {
+                    goto_selected_bookmark(hwnd);
+                    LRESULT(0)
+                }
+                BOOKMARKS_ID_DELETE => {
+                    delete_selected_bookmark(hwnd);
+                    LRESULT(0)
+                }
+                BOOKMARKS_ID_OK => {
+                    let _ = DestroyWindow(hwnd);
+                    LRESULT(0)
+                }
+                BOOKMARKS_ID_LIST if notify == LBN_DBLCLK as u16 => {
+                    goto_selected_bookmark(hwnd);
+                    LRESULT(0)
+                }
+                cmd if cmd == IDCANCEL.0 as usize || cmd == 2 => {
+                    let _ = DestroyWindow(hwnd);
+                    LRESULT(0)
+                }
+                _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+            }
+        }
+        WM_CLOSE => {
+            let _ = DestroyWindow(hwnd);
+            LRESULT(0)
+        }
+        WM_DESTROY => {
+            let parent = with_bookmarks_state(hwnd, |s| s.parent).unwrap_or(HWND(0));
+            if parent.0 != 0 {
+                EnableWindow(parent, true);
+                SetForegroundWindow(parent);
+                let _ = with_state(parent, |state| {
+                    state.bookmarks_window = HWND(0);
+                });
+            }
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut BookmarksWindowState;
+            if !ptr.is_null() {
+                let _ = Box::from_raw(ptr);
+            }
+            LRESULT(0)
+        }
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+unsafe fn with_bookmarks_state<F, R>(hwnd: HWND, f: F) -> Option<R>
+where F: FnOnce(&mut BookmarksWindowState) -> R {
+    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut BookmarksWindowState;
+    if ptr.is_null() { None } else { Some(f(&mut *ptr)) }
+}
+
+unsafe fn refresh_bookmarks_list(hwnd: HWND) {
+    let (parent, hwnd_list) = match with_bookmarks_state(hwnd, |s| (s.parent, s.hwnd_list)) {
+        Some(v) => v,
+        None => return,
+    };
+
+    let path = with_state(parent, |state| {
+        state.docs.get(state.current).and_then(|d| d.path.clone())
+    }).flatten();
+
+    let Some(path) = path else { return; };
+    let path_str = path.to_string_lossy().to_string();
+
+    let _ = SendMessageW(hwnd_list, LB_RESETCONTENT, WPARAM(0), LPARAM(0));
+
+    with_state(parent, |state| {
+        if let Some(list) = state.bookmarks.files.get(&path_str) {
+            for bm in list {
+                let text = format!("[{}] {}", bm.timestamp, bm.snippet);
+                let wide = to_wide(&text);
+                let _ = SendMessageW(hwnd_list, LB_ADDSTRING, WPARAM(0), LPARAM(wide.as_ptr() as isize));
+            }
+        }
+    });
+
+    let count = SendMessageW(hwnd_list, LB_GETCOUNT, WPARAM(0), LPARAM(0)).0 as i32;
+    if count > 0 {
+        if SendMessageW(hwnd_list, LB_GETCURSEL, WPARAM(0), LPARAM(0)).0 as i32 == -1 {
+            SendMessageW(hwnd_list, LB_SETCURSEL, WPARAM(0), LPARAM(0));
+        }
+    }
+}
+
+unsafe fn goto_selected_bookmark(hwnd: HWND) {
+    let (parent, hwnd_list) = match with_bookmarks_state(hwnd, |s| (s.parent, s.hwnd_list)) {
+        Some(v) => v,
+        None => return,
+    };
+
+    let sel = SendMessageW(hwnd_list, LB_GETCURSEL, WPARAM(0), LPARAM(0)).0 as i32;
+    if sel < 0 { return; }
+
+    let (path, hwnd_edit, format) = with_state(parent, |state| {
+        state.docs.get(state.current).and_then(|d| d.path.clone().map(|p| (p, d.hwnd_edit, d.format)))
+    }).flatten().unwrap();
+
+    let path_str = path.to_string_lossy().to_string();
+    
+    with_state(parent, |state| {
+        if let Some(list) = state.bookmarks.files.get(&path_str) {
+            if let Some(bm) = list.get(sel as usize) {
+                if matches!(format, FileFormat::Audiobook) {
+                    unsafe { start_audiobook_at(parent, &path, bm.position as u64); }
+                } else {
+                    let mut cr = CHARRANGE { cpMin: bm.position, cpMax: bm.position };
+                    unsafe {
+                        SendMessageW(hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize));
+                        SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
+                    }
+                }
+                unsafe { SetFocus(hwnd_edit); }
+            }
+        }
+    });
+    let _ = DestroyWindow(hwnd);
+}
+
+unsafe fn delete_selected_bookmark(hwnd: HWND) {
+    let (parent, hwnd_list) = match with_bookmarks_state(hwnd, |s| (s.parent, s.hwnd_list)) {
+        Some(v) => v,
+        None => return,
+    };
+
+    let sel = SendMessageW(hwnd_list, LB_GETCURSEL, WPARAM(0), LPARAM(0)).0 as i32;
+    if sel < 0 { return; }
+
+    let path = with_state(parent, |state| {
+        state.docs.get(state.current).and_then(|d| d.path.clone())
+    }).flatten();
+
+    let Some(path) = path else { return; };
+    let path_str = path.to_string_lossy().to_string();
+
+    with_state(parent, |state| {
+        if let Some(list) = state.bookmarks.files.get_mut(&path_str) {
+            if sel < list.len() as i32 {
+                list.remove(sel as usize);
+                save_bookmarks(&state.bookmarks);
+            }
+        }
+    });
+    refresh_bookmarks_list(hwnd);
+}
+
+unsafe fn start_audiobook_playback(hwnd: HWND, path: &Path) {
+    let path_buf = path.to_path_buf();
+    
+    let bookmark_pos = with_state(hwnd, |state| {
+        state.bookmarks.files.get(&path_buf.to_string_lossy().to_string())
+            .and_then(|list| list.last()) // Use LAST bookmark for audio
+            .map(|bm| bm.position)
+            .unwrap_or(0)
+    }).unwrap_or(0);
+
+    let hwnd_main = hwnd;
+    std::thread::spawn(move || {
+        let (_stream, handle) = match OutputStream::try_default() {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+        let sink = match Sink::try_new(&handle) {
+            Ok(s) => Arc::new(s),
+            Err(_) => return,
+        };
+
+        let file = match std::fs::File::open(&path_buf) {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+        
+        let source = match Decoder::new(std::io::BufReader::new(file)) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+
+        // Skip to bookmark position if any
+        if bookmark_pos > 0 {
+            let skipped = source.skip_duration(std::time::Duration::from_secs(bookmark_pos as u64));
+            sink.append(skipped);
+        } else {
+            sink.append(source);
+        }
+
+        let player = AudiobookPlayer {
+            path: path_buf.clone(),
+            sink: sink.clone(),
+            _stream,
+            is_paused: false,
+            start_instant: std::time::Instant::now(),
+            accumulated_seconds: bookmark_pos as u64,
+            volume: 1.0,
+        };
+
+        let _ = with_state(hwnd_main, |state| {
+            state.active_audiobook = Some(player);
+        });
+    });
+}
+
+
+unsafe fn toggle_audiobook_pause(hwnd: HWND) {
+    with_state(hwnd, |state| {
+        if let Some(player) = &mut state.active_audiobook {
+            if player.is_paused {
+                player.sink.play();
+                player.is_paused = false;
+                player.start_instant = std::time::Instant::now();
+            } else {
+                player.sink.pause();
+                player.is_paused = true;
+                player.accumulated_seconds += player.start_instant.elapsed().as_secs();
+            }
+        }
+    });
+}
+
+unsafe fn seek_audiobook(hwnd: HWND, seconds: i64) {
+    let (path, current_pos) = match with_state(hwnd, |state| {
+        if let Some(player) = &mut state.active_audiobook {
+            if !player.is_paused {
+                player.accumulated_seconds += player.start_instant.elapsed().as_secs();
+                player.start_instant = std::time::Instant::now();
+            }
+            let new_pos = (player.accumulated_seconds as i64 + seconds).max(0);
+            player.accumulated_seconds = new_pos as u64;
+            Some((player.path.clone(), new_pos))
+        } else {
+            None
+        }
+    }) {
+        Some(Some(v)) => v,
+        _ => return,
+    };
+
+    stop_audiobook_playback(hwnd);
+    
+    let hwnd_main = hwnd;
+    std::thread::spawn(move || {
+        let (_stream, handle) = OutputStream::try_default().unwrap();
+        let sink = Arc::new(Sink::try_new(&handle).unwrap());
+        let file = std::fs::File::open(&path).unwrap();
+        let source = Decoder::new(std::io::BufReader::new(file)).unwrap();
+        
+        use rodio::Source;
+        let skipped = source.skip_duration(Duration::from_secs(current_pos as u64));
+        sink.append(skipped);
+
+        let player = AudiobookPlayer {
+            path,
+            sink: sink.clone(),
+            _stream,
+            is_paused: false,
+            start_instant: std::time::Instant::now(),
+            accumulated_seconds: current_pos as u64,
+            volume: 1.0,
+        };
+
+        let _ = with_state(hwnd_main, |state| {
+            state.active_audiobook = Some(player);
+        });
+    });
+}
+
+unsafe fn stop_audiobook_playback(hwnd: HWND) {
+    with_state(hwnd, |state| {
+        if let Some(player) = state.active_audiobook.take() {
+            player.sink.stop();
+        }
+    });
+}
+
+unsafe fn start_audiobook_at(hwnd: HWND, path: &Path, seconds: u64) {
+    stop_audiobook_playback(hwnd);
+    let path_buf = path.to_path_buf();
+    let hwnd_main = hwnd;
+    
+    std::thread::spawn(move || {
+        let (_stream, handle) = match OutputStream::try_default() {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+        let sink = match Sink::try_new(&handle) {
+            Ok(s) => Arc::new(s),
+            Err(_) => return,
+        };
+
+        let file = match std::fs::File::open(&path_buf) {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+        
+        let source = match Decoder::new(std::io::BufReader::new(file)) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+
+        if seconds > 0 {
+            let skipped = source.skip_duration(std::time::Duration::from_secs(seconds));
+            sink.append(skipped);
+        } else {
+            sink.append(source);
+        }
+
+        let player = AudiobookPlayer {
+            path: path_buf.clone(),
+            sink: sink.clone(),
+            _stream,
+            is_paused: false,
+            start_instant: std::time::Instant::now(),
+            accumulated_seconds: seconds,
+            volume: 1.0,
+        };
+
+        let _ = with_state(hwnd_main, |state| {
+            state.active_audiobook = Some(player);
+        });
+    });
+}
+
+unsafe fn change_audiobook_volume(hwnd: HWND, delta: f32) {
+    with_state(hwnd, |state| {
+        if let Some(player) = &mut state.active_audiobook {
+            player.volume = (player.volume + delta).clamp(0.0, 1.0);
+            player.sink.set_volume(player.volume);
+        }
+    });
+}
+
+
+unsafe fn rebuild_menus(hwnd: HWND) {
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    let (_, recent_menu) = create_menus(hwnd, language);
+    let _ = with_state(hwnd, |state| {
+        state.hmenu_recent = recent_menu;
+    });
+    update_recent_menu(hwnd, recent_menu);
+}
+
+unsafe fn push_recent_file(hwnd: HWND, path: &Path) {
+    let (hmenu_recent, files) = match with_state(hwnd, |state| {
+        state.recent_files.retain(|p| p != path);
+        state.recent_files.insert(0, path.to_path_buf());
+        if state.recent_files.len() > MAX_RECENT {
+            state.recent_files.truncate(MAX_RECENT);
+        }
+        (state.hmenu_recent, state.recent_files.clone())
+    }) {
+        Some(values) => values,
+        None => return,
+    };
+    update_recent_menu(hwnd, hmenu_recent);
+    save_recent_files(&files);
+}
+
+unsafe fn open_recent_by_index(hwnd: HWND, index: usize) {
+    let path = with_state(hwnd, |state| state.recent_files.get(index).cloned()).unwrap_or(None);
+    let Some(path) = path else { return; };
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    if !path.exists() {
+        show_error(hwnd, language, recent_missing_message(language));
+        let files = with_state(hwnd, |state| {
+            state.recent_files.retain(|p| p != &path);
+            update_recent_menu(hwnd, state.hmenu_recent);
+            state.recent_files.clone()
+        })
+        .unwrap_or_default();
+        save_recent_files(&files);
+        return;
+    }
+    open_document(hwnd, &path);
+}
+
+unsafe fn sync_dirty_from_edit(hwnd: HWND, index: usize) -> bool {
+    let mut hwnd_edit = HWND(0);
+    let mut is_dirty = false;
+    let mut is_current = false;
+    let _ = with_state(hwnd, |state| {
+        if let Some(doc) = state.docs.get(index) {
+            hwnd_edit = doc.hwnd_edit;
+            is_dirty = doc.dirty;
+            is_current = state.current == index;
+        }
+    });
+
+    if hwnd_edit.0 == 0 {
+        return is_dirty;
+    }
+
+    let modified = SendMessageW(hwnd_edit, EM_GETMODIFY, WPARAM(0), LPARAM(0)).0 != 0;
+    if modified && !is_dirty {
+        let _ = with_state(hwnd, |state| {
+            if let Some(doc) = state.docs.get_mut(index) {
+                doc.dirty = true;
+                update_tab_title(state.hwnd_tab, index, &doc.title, true);
+            }
+        });
+        if is_current {
+            update_window_title(hwnd);
+        }
+    }
+    is_dirty || modified
+}
+
+unsafe fn confirm_save_if_dirty_entry(hwnd: HWND, index: usize, title: &str) -> bool {
+    if !sync_dirty_from_edit(hwnd, index) {
+        return true;
+    }
+
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    let message = confirm_save_message(language, title);
+    let wide = to_wide(&message);
+    let confirm = to_wide(confirm_title(language));
+    let result = MessageBoxW(
+        hwnd,
+        PCWSTR(wide.as_ptr()),
+        PCWSTR(confirm.as_ptr()),
+        MB_YESNOCANCEL | MB_ICONWARNING,
+    );
+    match result {
+        IDYES => save_document_at(hwnd, index, false),
+        IDNO => true,
+        _ => false,
+    }
+}
+
+unsafe fn close_current_document(hwnd: HWND) {
+    let index = match with_state(hwnd, |state| state.current) {
+        Some(index) => index,
+        None => return,
+    };
+    let _ = close_document_at(hwnd, index);
+}
+
+unsafe fn close_document_at(hwnd: HWND, index: usize) -> bool {
+    let (current, hwnd_tab, count, title) = match with_state(hwnd, |state| {
+        if index >= state.docs.len() {
+            return None;
+        }
+        Some((
+            state.current,
+            state.hwnd_tab,
+            state.docs.len(),
+            state.docs[index].title.clone(),
+        ))
+    }) {
+        Some(Some(values)) => values,
+        _ => return false,
+    };
+    if index >= count {
+        return false;
+    }
+    if !confirm_save_if_dirty_entry(hwnd, index, &title) {
+        return false;
+    }
+
+    let mut was_empty = false;
+    let mut new_hwnd_edit = None;
+    let mut update_title = false;
+    let mut closing_hwnd_edit = HWND(0);
+    let _ = with_state(hwnd, |state| {
+        let was_current = index == current;
+        let doc = state.docs.remove(index);
+        closing_hwnd_edit = doc.hwnd_edit;
+        SendMessageW(hwnd_tab, TCM_DELETEITEM, WPARAM(index), LPARAM(0));
+
+        if state.docs.is_empty() {
+            was_empty = true;
+            return;
+        }
+
+        if was_current {
+            let idx = if index >= state.docs.len() {
+                state.docs.len() - 1
+            } else {
+                index
+            };
+            state.current = idx;
+            SendMessageW(hwnd_tab, TCM_SETCURSEL, WPARAM(idx), LPARAM(0));
+            new_hwnd_edit = state.docs.get(idx).map(|doc| doc.hwnd_edit);
+            update_title = true;
+        } else if index < state.current {
+            state.current -= 1;
+            SendMessageW(hwnd_tab, TCM_SETCURSEL, WPARAM(state.current), LPARAM(0));
+        }
+    });
+
+    if closing_hwnd_edit.0 != 0 {
+        stop_pdf_loading_animation(hwnd, closing_hwnd_edit);
+        let _ = DestroyWindow(closing_hwnd_edit);
+    }
+
+    if was_empty {
+        new_document(hwnd);
+        return true;
+    }
+
+    if let Some(hwnd_edit) = new_hwnd_edit {
+        let is_audiobook = with_state(hwnd, |state| {
+            state.docs.get(state.current).map(|d| matches!(d.format, FileFormat::Audiobook)).unwrap_or(false)
+        }).unwrap_or(false);
+
+        if is_audiobook {
+            ShowWindow(hwnd_edit, SW_HIDE);
+            let hwnd_tab = with_state(hwnd, |state| state.hwnd_tab).unwrap_or(HWND(0));
+            if hwnd_tab.0 != 0 { SetFocus(hwnd_tab); }
+        } else {
+            ShowWindow(hwnd_edit, SW_SHOW);
+            SetFocus(hwnd_edit);
+        }
+        update_window_title(hwnd);
+        layout_children(hwnd);
+    } else if update_title {
+        update_window_title(hwnd);
+    }
+
+    true
+}
+
+unsafe fn try_close_app(hwnd: HWND) -> bool {
+    let entries = with_state(hwnd, |state| {
+        state
+            .docs
+            .iter()
+            .enumerate()
+            .map(|(i, doc)| (i, doc.title.clone()))
+            .collect::<Vec<_>>()
+    })
+    .unwrap_or_default();
+    for (index, title) in entries {
+        if !confirm_save_if_dirty_entry(hwnd, index, &title) {
+            return false;
+        }
+    }
+    let _ = DestroyWindow(hwnd);
+    true
+}
+
+unsafe fn with_state<F, R>(hwnd: HWND, f: F) -> Option<R>
+where
+    F: FnOnce(&mut AppState) -> R,
+{
+    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut AppState;
+    if ptr.is_null() {
+        None
+    } else {
+        Some(f(&mut *ptr))
+    }
+}
+
+unsafe fn get_current_index(hwnd: HWND) -> usize {
+    with_state(hwnd, |state| state.current).unwrap_or(0)
+}
+
+unsafe fn get_tab(hwnd: HWND) -> HWND {
+    with_state(hwnd, |state| state.hwnd_tab).unwrap_or(HWND(0))
+}
+
+unsafe fn new_document(hwnd: HWND) {
+    let new_index = with_state(hwnd, |state| {
+        state.untitled_count += 1;
+        let title = untitled_title(state.settings.language, state.untitled_count);
+        let hwnd_edit = create_edit(hwnd, state.hfont, state.settings.word_wrap);
+        let doc = Document {
+            title: title.clone(),
+            path: None,
+            hwnd_edit,
+            dirty: false,
+            format: FileFormat::Text(TextEncoding::Utf8),
+        };
+        state.docs.push(doc);
+        insert_tab(state.hwnd_tab, &title, (state.docs.len() - 1) as i32);
+        state.docs.len() - 1
+    })
+    .unwrap_or(0);
+    select_tab(hwnd, new_index);
+}
+
+unsafe fn open_document(hwnd: HWND, path: &Path) {
+    log_debug(&format!("Open document: {}", path.display()));
+
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    if is_pdf_path(path) {
+        open_pdf_document_async(hwnd, path);
+        return;
+    }
+    let (content, format) = if is_docx_path(path) {
+        match read_docx_text(path, language) {
+            Ok(text) => (text, FileFormat::Docx),
+            Err(message) => {
+                show_error(hwnd, language, &message);
+                return;
+            }
+        }
+    } else if is_epub_path(path) {
+        match read_epub_text(path, language) {
+            Ok(text) => (text, FileFormat::Epub),
+            Err(message) => {
+                show_error(hwnd, language, &message);
+                return;
+            }
+        }
+    } else if is_mp3_path(path) {
+        (String::new(), FileFormat::Audiobook)
+    } else if is_doc_path(path) {
+        match read_doc_text(path, language) {
+            Ok(text) => (text, FileFormat::Doc),
+            Err(message) => {
+                show_error(hwnd, language, &message);
+                return;
+            }
+        }
+    } else if is_spreadsheet_path(path) {
+        match read_spreadsheet_text(path, language) {
+            Ok(text) => (text, FileFormat::Spreadsheet),
+            Err(message) => {
+                show_error(hwnd, language, &message);
+                return;
+            }
+        }
+    } else {
+        match std::fs::read(path) {
+            Ok(bytes) => match decode_text(&bytes, language) {
+                Ok((text, encoding)) => (text, FileFormat::Text(encoding)),
+                Err(message) => {
+                    show_error(hwnd, language, &message);
+                    return;
+                }
+            },
+            Err(err) => {
+                show_error(hwnd, language, &error_open_file_message(language, err));
+                return;
+            }
+        }
+    };
+
+    let new_index = with_state(hwnd, |state| {
+        let title = path.file_name().and_then(|s| s.to_str()).unwrap_or("File");
+        let hwnd_edit = create_edit(hwnd, state.hfont, state.settings.word_wrap);
+        set_edit_text(hwnd_edit, &content);
+
+        let doc = Document {
+            title: title.to_string(),
+            path: Some(path.to_path_buf()),
+            hwnd_edit,
+            dirty: false,
+            format,
+        };
+        if matches!(format, FileFormat::Audiobook) {
+            unsafe {
+                SendMessageW(hwnd_edit, EM_SETREADONLY, WPARAM(1), LPARAM(0));
+                ShowWindow(hwnd_edit, SW_HIDE);
+            }
+        }
+        state.docs.push(doc);
+        insert_tab(state.hwnd_tab, title, (state.docs.len() - 1) as i32);
+        goto_first_bookmark(hwnd_edit, path, &state.bookmarks, format);
+        state.docs.len() - 1
+    })
+    .unwrap_or(0);
+    select_tab(hwnd, new_index);
+    if matches!(format, FileFormat::Audiobook) {
+        unsafe { start_audiobook_playback(hwnd, path); }
+    }
+    push_recent_file(hwnd, path);
+}
+
+unsafe fn open_pdf_document_async(hwnd: HWND, path: &Path) {
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    let path_buf = path.to_path_buf();
+    let title = path.file_name().and_then(|s| s.to_str()).unwrap_or("File").to_string();
+    let (hwnd_edit, new_index) = with_state(hwnd, |state| {
+        let hwnd_edit = create_edit(hwnd, state.hfont, state.settings.word_wrap);
+        set_edit_text(hwnd_edit, &pdf_loading_placeholder(0));
+        let doc = Document {
+            title: title.clone(),
+            path: Some(path_buf.clone()),
+            hwnd_edit,
+            dirty: false,
+            format: FileFormat::Pdf,
+        };
+        state.docs.push(doc);
+        insert_tab(state.hwnd_tab, &title, (state.docs.len() - 1) as i32);
+        (hwnd_edit, state.docs.len() - 1)
+    })
+    .unwrap_or((HWND(0), 0));
+
+    if hwnd_edit.0 == 0 {
+        return;
+    }
+    select_tab(hwnd, new_index);
+
+    start_pdf_loading_animation(hwnd, hwnd_edit);
+
+    let hwnd_main = hwnd;
+    std::thread::spawn(move || {
+        let result = read_pdf_text(&path_buf, language);
+        let payload = Box::new(PdfLoadResult {
+            hwnd_edit,
+            path: path_buf,
+            result,
+        });
+        unsafe {
+            let payload_ptr = Box::into_raw(payload);
+            if PostMessageW(
+                hwnd_main,
+                WM_PDF_LOADED,
+                WPARAM(0),
+                LPARAM(payload_ptr as isize),
+            )
+            .is_err()
+            {
+                let _ = Box::from_raw(payload_ptr);
+            }
+        }
+    });
+}
+
+unsafe fn handle_pdf_loaded(hwnd: HWND, payload: PdfLoadResult) {
+    let PdfLoadResult {
+        hwnd_edit,
+        path,
+        result,
+    } = payload;
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+
+    stop_pdf_loading_animation(hwnd, hwnd_edit);
+
+    let doc_index = with_state(hwnd, |state| {
+        state
+            .docs
+            .iter()
+            .enumerate()
+            .find_map(|(i, doc)| (doc.hwnd_edit == hwnd_edit).then_some(i))
+    })
+    .flatten();
+
+    let Some(index) = doc_index else {
+        return;
+    };
+
+    match result {
+        Ok(text) => {
+            set_edit_text(hwnd_edit, &text);
+            let _ = with_state(hwnd, |state| {
+                goto_first_bookmark(hwnd_edit, &path, &state.bookmarks, FileFormat::Pdf);
+            });
+            show_info(hwnd, language, pdf_loaded_message(language));
+            let mut update_title = false;
+            let _ = with_state(hwnd, |state| {
+                if let Some(doc) = state.docs.get_mut(index) {
+                    doc.dirty = false;
+                    update_tab_title(state.hwnd_tab, index, &doc.title, false);
+                    update_title = state.current == index;
+                }
+            });
+            if update_title {
+                update_window_title(hwnd);
+            }
+            push_recent_file(hwnd, &path);
+        }
+        Err(message) => {
+            show_error(hwnd, language, &message);
+            let _ = close_document_at(hwnd, index);
+        }
+    }
+}
+
+unsafe fn start_pdf_loading_animation(hwnd: HWND, hwnd_edit: HWND) {
+    let timer_id = with_state(hwnd, |state| {
+        let timer_id = state.next_timer_id;
+        state.next_timer_id = state.next_timer_id.saturating_add(1);
+        state.pdf_loading.push(PdfLoadingState {
+            hwnd_edit,
+            timer_id,
+            frame: 0,
+        });
+        timer_id
+    })
+    .unwrap_or(0);
+
+    if timer_id == 0 {
+        return;
+    }
+
+    if SetTimer(hwnd, timer_id, 120, None) == 0 {
+        stop_pdf_loading_animation(hwnd, hwnd_edit);
+    }
+}
+
+unsafe fn stop_pdf_loading_animation(hwnd: HWND, hwnd_edit: HWND) {
+    let mut timer_id = None;
+    let _ = with_state(hwnd, |state| {
+        if let Some(pos) = state
+            .pdf_loading
+            .iter()
+            .position(|entry| entry.hwnd_edit == hwnd_edit)
+        {
+            timer_id = Some(state.pdf_loading[pos].timer_id);
+            state.pdf_loading.swap_remove(pos);
+        }
+    });
+    if let Some(timer_id) = timer_id {
+        let _ = KillTimer(hwnd, timer_id);
+    }
+}
+
+unsafe fn handle_pdf_loading_timer(hwnd: HWND, timer_id: usize) {
+    let mut target = None;
+    let _ = with_state(hwnd, |state| {
+        if let Some(entry) = state
+            .pdf_loading
+            .iter_mut()
+            .find(|entry| entry.timer_id == timer_id)
+        {
+            entry.frame = entry.frame.wrapping_add(1);
+            target = Some((entry.hwnd_edit, entry.frame));
+        }
+    });
+
+    if let Some((hwnd_edit, frame)) = target {
+        set_edit_text(hwnd_edit, &pdf_loading_placeholder(frame));
+    }
+}
+
+fn pdf_loading_placeholder(frame: usize) -> String {
+    let spinner = ['|', '/', '-', '\\'][frame % 4];
+    let bar_width = 24;
+    let filled = frame % (bar_width + 1);
+    let bar = format!(
+        "{}{}",
+        "#".repeat(filled),
+        "-".repeat(bar_width.saturating_sub(filled))
+    );
+    format!(
+        "Caricamento PDF...\r\n\r\n[{bar}]\r\nAnalisi in corso {spinner}"
+    )
+}
+
+unsafe fn handle_drop_files(hwnd: HWND, hdrop: HDROP) {
+    let count = DragQueryFileW(hdrop, 0xFFFFFFFF, None);
+    for index in 0..count {
+        let mut buffer = [0u16; 260];
+        let len = DragQueryFileW(hdrop, index, Some(&mut buffer));
+        if len == 0 {
+            continue;
+        }
+        let path = PathBuf::from(from_wide(buffer.as_ptr()));
+        if path.as_os_str().is_empty() {
+            continue;
+        }
+        open_document(hwnd, &path);
+    }
+    DragFinish(hdrop);
+}
+
+unsafe fn save_current_document(hwnd: HWND) -> bool {
+    save_document_at(hwnd, get_current_index(hwnd), false)
+}
+
+unsafe fn save_current_document_as(hwnd: HWND) -> bool {
+    save_document_at(hwnd, get_current_index(hwnd), true)
+}
+
+unsafe fn save_all_documents(hwnd: HWND) -> bool {
+    let dirty_indices = with_state(hwnd, |state| {
+        state
+            .docs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, doc)| if doc.dirty { Some(i) } else { None })
+            .collect::<Vec<_>>()
+    })
+    .unwrap_or_default();
+    for index in dirty_indices {
+        if !save_document_at(hwnd, index, false) {
+            return false;
+        }
+    }
+    true
+}
+
+unsafe fn save_document_at(hwnd: HWND, index: usize, force_dialog: bool) -> bool {
+    let path = match with_state(hwnd, |state| {
+        if state.docs.is_empty() || index >= state.docs.len() {
+            return None;
+        }
+        let language = state.settings.language;
+        let text = get_edit_text(state.docs[index].hwnd_edit);
+        let suggested_name = suggested_filename_from_text(&text)
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| state.docs[index].title.clone());
+
+        let path = if !force_dialog {
+            state.docs[index].path.clone()
+        } else {
+            None
+        };
+        let path = match path {
+            Some(path) => path,
+            None => match save_file_dialog(hwnd, Some(&suggested_name)) {
+                Some(path) => path,
+                None => return None,
+            },
+        };
+
+        let is_docx = is_docx_path(&path);
+        let is_pdf = is_pdf_path(&path);
+        if is_docx {
+            if let Err(message) = write_docx_text(&path, &text, language) {
+                show_error(hwnd, language, &message);
+                return None;
+            }
+            state.docs[index].format = FileFormat::Docx;
+        } else if is_pdf {
+            let pdf_title = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Documento");
+            if let Err(message) = write_pdf_text(&path, pdf_title, &text, language) {
+                show_error(hwnd, language, &message);
+                return None;
+            }
+            state.docs[index].format = FileFormat::Pdf;
+        } else {
+            let encoding = match state.docs[index].format {
+                FileFormat::Text(enc) => enc,
+                FileFormat::Docx | FileFormat::Doc | FileFormat::Pdf | FileFormat::Spreadsheet | FileFormat::Epub | FileFormat::Audiobook => TextEncoding::Utf8,
+            };
+            let bytes = encode_text(&text, encoding);
+            if let Err(err) = std::fs::write(&path, bytes) {
+                show_error(hwnd, language, &error_save_file_message(language, err));
+                return None;
+            }
+            state.docs[index].format = FileFormat::Text(encoding);
+        }
+
+        let hwnd_edit = state.docs[index].hwnd_edit;
+        state.docs[index].path = Some(path.clone());
+        state.docs[index].dirty = false;
+        SendMessageW(hwnd_edit, EM_SETMODIFY, WPARAM(0), LPARAM(0));
+        let title = path.file_name().and_then(|s| s.to_str()).unwrap_or("File");
+        state.docs[index].title = title.to_string();
+        update_tab_title(state.hwnd_tab, index, &state.docs[index].title, false);
+        if index == state.current {
+            update_window_title(hwnd);
+        }
+        Some(path)
+    }) {
+        Some(Some(path)) => path,
+        _ => return false,
+    };
+    push_recent_file(hwnd, &path);
+    true
+}
+
+unsafe fn next_tab_with_prompt(hwnd: HWND) {
+    let (current, count) = match with_state(hwnd, |state| {
+        if state.docs.is_empty() {
+            return None;
+        }
+        let current = state.current;
+        Some((current, state.docs.len()))
+    }) {
+        Some(Some(values)) => values,
+        _ => return,
+    };
+    if count <= 1 {
+        return;
+    }
+    let next = (current + 1) % count;
+    select_tab(hwnd, next);
+}
+
+unsafe fn attempt_switch_to_selected_tab(hwnd: HWND) {
+    let (current, hwnd_tab, count) = match with_state(hwnd, |state| {
+        if state.docs.is_empty() {
+            return None;
+        }
+        let current = state.current;
+        Some((
+            current,
+            state.hwnd_tab,
+            state.docs.len(),
+        ))
+    }) {
+        Some(Some(values)) => values,
+        _ => return,
+    };
+    let sel = SendMessageW(hwnd_tab, TCM_GETCURSEL, WPARAM(0), LPARAM(0)).0 as i32;
+    if sel < 0 {
+        return;
+    }
+    let sel = sel as usize;
+    if sel >= count || sel == current {
+        return;
+    }
+    select_tab(hwnd, sel);
+}
+
+unsafe fn select_tab(hwnd: HWND, index: usize) {
+    let result = with_state(hwnd, |state| {
+        if index >= state.docs.len() {
+            return None;
+        }
+        let prev = state.current;
+        let prev_edit = state.docs.get(prev).map(|doc| doc.hwnd_edit);
+        let new_doc = state.docs.get(index);
+        let new_edit = new_doc.map(|doc| doc.hwnd_edit);
+        let is_audiobook = new_doc.map(|doc| matches!(doc.format, FileFormat::Audiobook)).unwrap_or(false);
+        state.current = index;
+        Some((state.hwnd_tab, prev_edit, new_edit, is_audiobook))
+    })
+    .flatten();
+
+    let Some((hwnd_tab, prev_edit, new_edit, is_audiobook)) = result else {
+        return;
+    };
+
+    if let Some(hwnd_edit) = prev_edit {
+        ShowWindow(hwnd_edit, SW_HIDE);
+    }
+    SendMessageW(hwnd_tab, TCM_SETCURSEL, WPARAM(index), LPARAM(0));
+    if let Some(hwnd_edit) = new_edit {
+        if is_audiobook {
+            ShowWindow(hwnd_edit, SW_HIDE);
+            SetFocus(hwnd_tab);
+        } else {
+            ShowWindow(hwnd_edit, SW_SHOW);
+            SetFocus(hwnd_edit);
+        }
+    }
+    update_window_title(hwnd);
+    layout_children(hwnd);
+}
+
+unsafe fn insert_tab(hwnd_tab: HWND, title: &str, index: i32) {
+    let mut text = to_wide(title);
+    let mut item = TCITEMW {
+        mask: TCIF_TEXT,
+        pszText: PWSTR(text.as_mut_ptr()),
+        ..Default::default()
+    };
+    SendMessageW(hwnd_tab, TCM_INSERTITEMW, WPARAM(index as usize), LPARAM(&mut item as *mut _ as isize));
+}
+
+unsafe fn update_tab_title(hwnd_tab: HWND, index: usize, title: &str, dirty: bool) {
+    let label = if dirty {
+        format!("{title}*")
+    } else {
+        title.to_string()
+    };
+    let mut text = to_wide(&label);
+    let mut item = TCITEMW {
+        mask: TCIF_TEXT,
+        pszText: PWSTR(text.as_mut_ptr()),
+        ..Default::default()
+    };
+    SendMessageW(hwnd_tab, TCM_SETITEMW, WPARAM(index), LPARAM(&mut item as *mut _ as isize));
+}
+
+unsafe fn mark_dirty_from_edit(hwnd: HWND, hwnd_edit: HWND) {
+    let _ = with_state(hwnd, |state| {
+        for (i, doc) in state.docs.iter_mut().enumerate() {
+            if doc.hwnd_edit == hwnd_edit && !doc.dirty {
+                doc.dirty = true;
+                update_tab_title(state.hwnd_tab, i, &doc.title, true);
+                update_window_title(hwnd);
+                break;
+            }
+        }
+    });
+}
+
+unsafe fn update_window_title(hwnd: HWND) {
+    let _ = with_state(hwnd, |state| {
+        if let Some(doc) = state.docs.get(state.current) {
+            let suffix = if doc.dirty { "*" } else { "" };
+            let untitled = untitled_base(state.settings.language);
+            let display_title = if doc.title.starts_with(untitled) {
+                untitled
+            } else {
+                doc.title.as_str()
+            };
+            let title = format!("{display_title}{suffix} - Novapad");
+            let _ = SetWindowTextW(hwnd, PCWSTR(to_wide(&title).as_ptr()));
+        }
+    });
+}
+
+unsafe fn layout_children(hwnd: HWND) {
+    let state_data = with_state(hwnd, |state| {
+        (state.hwnd_tab, state.docs.iter().map(|d| d.hwnd_edit).collect::<Vec<_>>())
+    });
+    let Some((hwnd_tab, edit_handles)) = state_data else {
+        return;
+    };
+    let mut rc = RECT::default();
+    if GetClientRect(hwnd, &mut rc).is_err() {
+        return;
+    }
+    let width = rc.right - rc.left;
+    let height = rc.bottom - rc.top;
+    let _ = MoveWindow(hwnd_tab, 0, 0, width, height, true);
+
+    let mut display = rc;
+    SendMessageW(
+        hwnd_tab,
+        TCM_ADJUSTRECT,
+        WPARAM(0),
+        LPARAM(&mut display as *mut _ as isize),
+    );
+    let edit_width = display.right - display.left;
+    let edit_height = display.bottom - display.top;
+    for hwnd_edit in edit_handles {
+        let _ = MoveWindow(
+            hwnd_edit,
+            display.left,
+            display.top,
+            edit_width,
+            edit_height,
+            true,
+        );
+    }
+}
+
+unsafe fn create_edit(parent: HWND, hfont: HFONT, word_wrap: bool) -> HWND {
+    let mut base_style = WS_CHILD.0 | WS_VSCROLL.0 | ES_MULTILINE as u32 | ES_AUTOVSCROLL as u32 | ES_WANTRETURN as u32;
+
+    if !word_wrap {
+        base_style |= WS_HSCROLL.0 | ES_AUTOHSCROLL as u32;
+    }
+
+    let style = WINDOW_STYLE(base_style);
+
+    let hwnd_edit = CreateWindowExW(
+        WS_EX_CLIENTEDGE,
+        MSFTEDIT_CLASS,
+        PCWSTR::null(),
+        style,
+        0,
+        0,
+        0,
+        0,
+        parent,
+        HMENU(0),
+        HINSTANCE(0),
+        None,
+    );
+    SendMessageW(hwnd_edit, EM_LIMITTEXT, WPARAM(0x7FFFFFFE), LPARAM(0));
+    SendMessageW(hwnd_edit, EM_SETEVENTMASK, WPARAM(0), LPARAM(ENM_CHANGE as isize));
+    SendMessageW(hwnd_edit, EM_SETREADONLY, WPARAM(0), LPARAM(0));
+    SendMessageW(hwnd_edit, EM_SETMODIFY, WPARAM(0), LPARAM(0));
+    SendMessageW(
+        hwnd_edit,
+        windows::Win32::UI::WindowsAndMessaging::WM_SETFONT,
+        WPARAM(hfont.0 as usize),
+        LPARAM(1),
+    );
+    ShowWindow(hwnd_edit, SW_HIDE);
+    hwnd_edit
+}
+
+unsafe fn apply_word_wrap_to_all_edits(hwnd: HWND, word_wrap: bool) {
+    let edits = with_state(hwnd, |state| state.docs.iter().map(|d| d.hwnd_edit).collect::<Vec<_>>())
+        .unwrap_or_default();
+
+    for edit in edits {
+        apply_word_wrap_to_edit(edit, word_wrap);
+    }
+}
+
+unsafe fn apply_word_wrap_to_edit(hwnd_edit: HWND, word_wrap: bool) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOMOVE,
+        SWP_NOSIZE, SWP_NOZORDER,
+    };
+
+    let _ = SendMessageW(hwnd_edit, WM_SETREDRAW, WPARAM(0), LPARAM(0));
+
+    let mut style = GetWindowLongPtrW(hwnd_edit, GWL_STYLE) as u32;
+
+    if word_wrap {
+        style &= !(WS_HSCROLL.0);
+        style &= !(ES_AUTOHSCROLL as u32);
+    } else {
+        style |= WS_HSCROLL.0;
+        style |= ES_AUTOHSCROLL as u32;
+    }
+
+    let _ = SetWindowLongPtrW(hwnd_edit, GWL_STYLE, style as isize);
+    let _ = SetWindowPos(
+        hwnd_edit,
+        HWND(0),
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
+    );
+
+    let _ = SendMessageW(hwnd_edit, WM_SETREDRAW, WPARAM(1), LPARAM(0));
+    let _ = InvalidateRect(hwnd_edit, None, BOOL(1));
+    let _ = UpdateWindow(hwnd_edit);
+}
+
+
+unsafe fn send_to_active_edit(hwnd: HWND, msg: u32) {
+    let _ = with_state(hwnd, |state| {
+        if let Some(doc) = state.docs.get(state.current) {
+            SendMessageW(doc.hwnd_edit, msg, WPARAM(0), LPARAM(0));
+        }
+    });
+}
+
+unsafe fn select_all_active_edit(hwnd: HWND) {
+    let _ = with_state(hwnd, |state| {
+        if let Some(doc) = state.docs.get(state.current) {
+            SendMessageW(doc.hwnd_edit, EM_SETSEL, WPARAM(0), LPARAM(-1));
+        }
+    });
+}
+
+unsafe fn set_edit_text(hwnd_edit: HWND, text: &str) {
+    let wide = to_wide_normalized(text);
+    
+    SendMessageW(hwnd_edit, WM_SETREDRAW, WPARAM(0), LPARAM(0));
+    let _ = SetWindowTextW(hwnd_edit, PCWSTR(wide.as_ptr()));
+    SendMessageW(hwnd_edit, WM_SETREDRAW, WPARAM(1), LPARAM(0));
+    
+    let _ = InvalidateRect(hwnd_edit, None, BOOL(1));
+    let _ = UpdateWindow(hwnd_edit);
+    SendMessageW(hwnd_edit, EM_SETMODIFY, WPARAM(0), LPARAM(0));
+}
+
+unsafe fn get_edit_text(hwnd_edit: HWND) -> String {
+    let len = SendMessageW(hwnd_edit, WM_GETTEXTLENGTH, WPARAM(0), LPARAM(0)).0 as usize;
+    if len == 0 {
+        return String::new();
+    }
+    let mut buffer = vec![0u16; len + 1];
+    SendMessageW(
+        hwnd_edit,
+        WM_GETTEXT,
+        WPARAM((len + 1) as usize),
+        LPARAM(buffer.as_mut_ptr() as isize),
+    );
+    String::from_utf16_lossy(&buffer[..len])
+}
+
+fn suggested_filename_from_text(text: &str) -> Option<String> {
+    let first_line = text.lines().next().unwrap_or("").trim();
+    if first_line.is_empty() {
+        return None;
+    }
+    let sanitized = sanitize_filename(first_line);
+    if sanitized.is_empty() {
+        None
+    } else {
+        Some(sanitized)
+    }
+}
+
+fn sanitize_filename(input: &str) -> String {
+    let mut out = String::new();
+    for ch in input.chars() {
+        if ch.is_ascii_control() {
+            continue;
+        }
+        match ch {
+            '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => out.push(' '),
+            _ => out.push(ch),
+        }
+    }
+    let mut cleaned = out
+        .trim()
+        .trim_end_matches(|c| c == '.' || c == ' ')
+        .to_string();
+    if cleaned.is_empty() {
+        return cleaned;
+    }
+    if cleaned.len() > 120 {
+        cleaned.truncate(120);
+    }
+    if is_reserved_filename(&cleaned) {
+        cleaned.push('_');
+    }
+    cleaned
+}
+
+fn is_reserved_filename(name: &str) -> bool {
+    let upper = name
+        .trim_end_matches(|c| c == '.' || c == ' ')
+        .to_ascii_uppercase();
+    matches!(
+        upper.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
+}
+
+unsafe fn open_file_dialog(hwnd: HWND) -> Option<PathBuf> {
+    let filter = to_wide(
+        "TXT (*.txt)\0*.txt\0PDF (*.pdf)\0*.pdf\0EPUB (*.epub)\0*.epub\0MP3 (*.mp3)\0*.mp3\0Word (*.doc;*.docx)\0*.doc;*.docx\0Excel (*.xls;*.xlsx)\0*.xls;*.xlsx\0RTF (*.rtf)\0*.rtf\0Tutti i file (*.*)\0*.*\0",
+    );
+    let mut file_buf = [0u16; 260];
+    let mut ofn = OPENFILENAMEW {
+        lStructSize: size_of::<OPENFILENAMEW>() as u32,
+        hwndOwner: hwnd,
+        lpstrFilter: PCWSTR(filter.as_ptr()),
+        lpstrFile: PWSTR(file_buf.as_mut_ptr()),
+        nMaxFile: file_buf.len() as u32,
+        Flags: OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY,
+        ..Default::default()
+    };
+    let ok = GetOpenFileNameW(&mut ofn);
+    if ok.as_bool() {
+        Some(PathBuf::from(from_wide(file_buf.as_ptr())))
+    } else {
+        None
+    }
+}
+
+unsafe fn save_file_dialog(hwnd: HWND, suggested_name: Option<&str>) -> Option<PathBuf> {
+    let filter = to_wide(
+        "TXT (*.txt)\0*.txt\0PDF (*.pdf)\0*.pdf\0EPUB (*.epub)\0*.epub\0Word (*.doc;*.docx)\0*.doc;*.docx\0Excel (*.xls;*.xlsx)\0*.xls;*.xlsx\0RTF (*.rtf)\0*.rtf\0Tutti i file (*.*)\0*.*\0",
+    );
+    let mut file_buf = [0u16; 260];
+    if let Some(name) = suggested_name {
+        let mut idx = 0usize;
+        for &ch in to_wide(name).iter() {
+            if ch == 0 || idx >= file_buf.len() - 1 {
+                break;
+            }
+            file_buf[idx] = ch;
+            idx += 1;
+        }
+        file_buf[idx] = 0;
+    }
+    let mut ofn = OPENFILENAMEW {
+        lStructSize: size_of::<OPENFILENAMEW>() as u32,
+        hwndOwner: hwnd,
+        lpstrFilter: PCWSTR(filter.as_ptr()),
+        lpstrFile: PWSTR(file_buf.as_mut_ptr()),
+        nMaxFile: file_buf.len() as u32,
+        Flags: OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST,
+        ..Default::default()
+    };
+    let ok = GetSaveFileNameW(&mut ofn);
+    if ok.as_bool() {
+        let mut path = PathBuf::from(from_wide(file_buf.as_ptr()));
+        if path.extension().is_none() {
+            match ofn.nFilterIndex {
+                1 => { path.set_extension("txt"); },
+                2 => { path.set_extension("pdf"); },
+                3 => { path.set_extension("docx"); },
+                4 => { path.set_extension("xlsx"); },
+                5 => { path.set_extension("rtf"); },
+                _ => {},
+            }
+        }
+        Some(path)
+    } else {
+        None
+    }
+}
+
+unsafe fn save_audio_dialog(hwnd: HWND, suggested_name: Option<&str>) -> Option<PathBuf> {
+    let mut file_buf = vec![0u16; 4096];
+    if let Some(name) = suggested_name {
+        let mut name_wide = to_wide(name);
+        // Remove trailing null if present from to_wide
+        if let Some(0) = name_wide.last() {
+            name_wide.pop();
+        }
+        let copy_len = name_wide.len().min(file_buf.len() - 1);
+        file_buf[..copy_len].copy_from_slice(&name_wide[..copy_len]);
+    }
+    let filter = "MP3 Files (*.mp3)\0*.mp3\0All Files (*.*)\0*.*\0\0";
+    let filter_wide = to_wide(filter);
+    let title = to_wide("Audiobook");
+    let mut ofn = OPENFILENAMEW {
+        lStructSize: size_of::<OPENFILENAMEW>() as u32,
+        hwndOwner: hwnd,
+        lpstrFile: PWSTR(file_buf.as_mut_ptr()),
+        nMaxFile: file_buf.len() as u32,
+        lpstrFilter: PCWSTR(filter_wide.as_ptr()),
+        lpstrTitle: PCWSTR(title.as_ptr()),
+        Flags: OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST,
+        ..Default::default()
+    };
+    if GetSaveFileNameW(&mut ofn).as_bool() {
+        let mut path = PathBuf::from(from_wide(file_buf.as_ptr()));
+        if path.extension().is_none() {
+            path.set_extension("mp3");
+        }
+        Some(path)
+    } else {
+        None
+    }
+}
+
+unsafe fn show_error(hwnd: HWND, language: Language, message: &str) {
+    log_debug(&format!("Error shown: {message}"));
+    let wide = to_wide(message);
+    let title = to_wide(error_title(language));
+    MessageBoxW(hwnd, PCWSTR(wide.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONERROR);
+}
+
+unsafe fn show_info(hwnd: HWND, language: Language, message: &str) {
+    log_debug(&format!("Info shown: {message}"));
+    let wide = to_wide(message);
+    let title = to_wide(info_title(language));
+    MessageBoxW(
+        hwnd,
+        PCWSTR(wide.as_ptr()),
+        PCWSTR(title.as_ptr()),
+        MB_OK | MB_ICONINFORMATION,
+    );
+}
+
+unsafe fn show_about_dialog(hwnd: HWND) {
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    let message = to_wide(about_message(language));
+    let title = to_wide(about_title(language));
+    MessageBoxW(
+        hwnd,
+        PCWSTR(message.as_ptr()),
+        PCWSTR(title.as_ptr()),
+        MB_OK | MB_ICONINFORMATION,
+    );
+}
+
+fn to_wide(value: &str) -> Vec<u16> {
+    let mut out = Vec::with_capacity(value.len() + 1);
+    out.extend(value.encode_utf16());
+    out.push(0);
+    out
+}
+
+fn to_wide_normalized(text: &str) -> Vec<u16> {
+    let mut out = Vec::with_capacity(text.len() + 1);
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\r' => {
+                out.push(0x000D); // \r
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                out.push(0x000A); // \n
+            }
+            '\n' => {
+                out.push(0x000D); // \r
+                out.push(0x000A); // \n
+            }
+            _ => {
+                if (ch as u32) <= 0xFFFF {
+                    out.push(ch as u16);
+                } else {
+                    let mut b = [0u16; 2];
+                    ch.encode_utf16(&mut b);
+                    out.extend_from_slice(&b);
+                }
+            }
+        }
+    }
+    out.push(0);
+    out
+}
+
+
+unsafe fn send_open_file(hwnd: HWND, path: &str) -> bool {
+    let wide = to_wide(path);
+    let data = COPYDATASTRUCT {
+        dwData: COPYDATA_OPEN_FILE,
+        cbData: (wide.len() * size_of::<u16>()) as u32,
+        lpData: wide.as_ptr() as *mut std::ffi::c_void,
+    };
+    SendMessageW(hwnd, WM_COPYDATA, WPARAM(0), LPARAM(&data as *const _ as isize));
+    true
+}
+
+fn from_wide(ptr: *const u16) -> String {
+    if ptr.is_null() {
+        return String::new();
+    }
+    unsafe {
+        let mut len = 0;
+        while *ptr.add(len) != 0 {
+            len += 1;
+        }
+        String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len))
+    }
+}
+
+fn is_docx_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("docx"))
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+    use std::time::Duration;
+
+    #[test]
+    #[ignore]
+    fn tts_smoke_downloads_audio() {
+        let phrases = [
+            "Ciao mondo.",
+            "Questo e un test di sintesi vocale.",
+            "Hello from Novapad.",
+        ];
+        let mut last_error = String::new();
+        for _ in 0..3 {
+            for phrase in phrases {
+                let request_id = Uuid::new_v4().simple().to_string();
+                let rt = tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .expect("runtime build failed");
+                match rt.block_on(download_audio_chunk(
+                    phrase,
+                    "it-IT-IsabellaNeural",
+                    &request_id,
+                )) {
+                    Ok(audio) if audio.len() > 1024 => {
+                        return;
+                    }
+                    Ok(audio) => {
+                        last_error = format!("Audio too short: {} bytes", audio.len());
+                    }
+                    Err(err) => {
+                        last_error = err;
+                    }
+                }
+            }
+            thread::sleep(Duration::from_millis(300));
+        }
+        panic!("TTS smoke test failed: {last_error}");
+    }
+}
+
+fn is_doc_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("doc"))
+        .unwrap_or(false)
+}
+
+fn is_spreadsheet_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("xls") || s.eq_ignore_ascii_case("xlsx"))
+        .unwrap_or(false)
+}
+
+fn is_pdf_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("pdf"))
+        .unwrap_or(false)
+}
+
+fn is_epub_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("epub"))
+        .unwrap_or(false)
+}
+
+fn is_mp3_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("mp3"))
+        .unwrap_or(false)
+}
+
+fn read_epub_text(path: &Path, language: Language) -> Result<String, String> {
+    use epub::doc::EpubDoc;
+    let mut doc = EpubDoc::new(path).map_err(|e| error_read_file_message(language, e))?;
+    let mut full_text = String::new();
+
+    // Get the title if available
+    if let Some(title_item) = doc.mdata("title") {
+        full_text.push_str(&title_item.value);
+        full_text.push_str("\n\n");
+    }
+
+    // Iterate through chapters using the spine
+    let spine = doc.spine.clone();
+    for item in spine {
+        if let Some((content, mime)) = doc.get_resource(&item.idref) {
+            if mime.contains("xhtml") || mime.contains("html") || mime.contains("xml") {
+                let text = String::from_utf8(content.clone()).unwrap_or_else(|_| {
+                    String::from_utf8_lossy(&content).to_string()
+                });
+                
+                let cleaned = strip_html_tags(&text);
+                for line in cleaned.lines() {
+                    let trimmed = line.trim();
+                    // Skip technical strings like part0000, part0001, etc.
+                    if trimmed.is_empty() || (trimmed.starts_with("part") && trimmed.len() <= 12) {
+                        continue;
+                    }
+                    full_text.push_str(trimmed);
+                    full_text.push_str("\n");
+                }
+                full_text.push_str("\n");
+            }
+        }
+    }
+
+    if full_text.trim().is_empty() {
+        return Err("Il file EPUB sembra non contenere testo estraibile.".to_string());
+    }
+
+    Ok(full_text)
+}
+
+fn strip_html_tags(html: &str) -> String {
+    let mut out = String::new();
+    let mut inside = false;
+    for ch in html.chars() {
+        if ch == '<' {
+            inside = true;
+            continue;
+        }
+        if ch == '>' {
+            inside = false;
+            continue;
+        }
+        if !inside {
+            out.push(ch);
+        }
+    }
+    // Basic entity decoding
+    out.replace("&nbsp;", " ")
+       .replace("&lt;", "<")
+       .replace("&gt;", ">")
+       .replace("&amp;", "&")
+       .replace("&quot;", "\"")
+       .replace("&apos;", "'")
+}
+
+fn read_doc_text(path: &Path, language: Language) -> Result<String, String> {
+    log_debug("read_doc_text called");
+
+    let file = std::fs::File::open(path).map_err(|e| error_open_doc_message(language, e))?;
+    
+    // Try to determine if it is an OLE file (CFB)
+    match CompoundFile::open(&file) {
+        Ok(mut comp) => {
+            log_debug("OLE CompoundFile open success");
+            // Legacy DOC text is usually in "WordDocument" stream.
+            let buffer = {
+                let mut stream = match comp.open_stream("WordDocument") {
+                    Ok(stream) => stream,
+                    Err(_) => return Err(error_worddocument_missing_message(language).to_string()),
+                };
+                let mut buffer = Vec::new();
+                if let Err(e) = stream.read_to_end(&mut buffer) {
+                    return Err(error_read_stream_message(language, e));
+                }
+                buffer
+            };
+
+            let mut table_bytes = Vec::new();
+            if let Ok(mut table_stream) = comp.open_stream("1Table") {
+                let _ = table_stream.read_to_end(&mut table_bytes);
+            } else if let Ok(mut table_stream) = comp.open_stream("0Table") {
+                let _ = table_stream.read_to_end(&mut table_bytes);
+            }
+
+            if !table_bytes.is_empty() {
+                if let Some(text) = extract_doc_text_piece_table(&buffer, &table_bytes) {
+                    return Ok(clean_doc_text(text));
+                }
+            }
+            
+            let text_utf16 = extract_utf16_strings(&buffer);
+            let text_ascii = extract_ascii_strings(&buffer);
+
+            log_debug(&format!(
+                "DOC debug: UTF16 len={} ASCII len={}",
+                text_utf16.len(),
+                text_ascii.len()
+            ));
+            
+            // Try scanning for UTF-16LE text (Word 97+)
+            if text_utf16.len() > 100 {
+                return Ok(clean_doc_text(text_utf16));
+            }
+
+            // Fallback to ASCII/ANSI scanning (Word 6.0/95 or failed UTF-16)
+            if !text_ascii.is_empty() {
+                return Ok(clean_doc_text(text_ascii));
+            }
+            
+            Ok(clean_doc_text(text_utf16)) // Return whatever we found even if short
+        },
+        Err(err) => {
+            log_debug(&format!("OLE Open failed. Entering fallback. Err: {err}"));
+            let bytes = std::fs::read(path)
+                .map_err(|e| error_read_file_message(language, e))?;
+
+            if looks_like_rtf(&bytes) {
+                return Ok(extract_rtf_text(&bytes));
+            }
+
+            // Fallback 1: Try reading as DOCX (Zip/XML)
+            if let Ok(text) = read_docx_text(path, language) {
+                return Ok(clean_doc_text(text));
+            }
+            
+            // Fallback 2: Try extracting strings from raw bytes directly (treating as binary dump)
+            println!("Reading fallback bytes: {} bytes", bytes.len());
+            // Try UTF-16LE first (common in Word 97+)
+            let text_utf16 = extract_utf16_strings(&bytes);
+            println!("Extracted UTF16: {} chars", text_utf16.len());
+            if text_utf16.len() > 100 {
+                let cleaned = clean_doc_text(text_utf16);
+                println!("Cleaned UTF16: {} chars", cleaned.len());
+                return Ok(cleaned);
+            }
+            
+            // Try ASCII
+            let text_ascii = extract_ascii_strings(&bytes);
+            println!("Extracted ASCII: {} chars", text_ascii.len());
+            if text_ascii.len() > 0 {
+                let cleaned = clean_doc_text(text_ascii);
+                println!("Cleaned ASCII: {} chars", cleaned.len());
+                return Ok(cleaned);
+            }
+            
+            // If extraction found nothing but we have some utf16, return it
+            if !text_utf16.is_empty() {
+                return Ok(clean_doc_text(text_utf16));
+            }
+
+            Err(error_unknown_format_message(language).to_string())
+        }
+    }
+}
+
+fn looks_like_rtf(bytes: &[u8]) -> bool {
+    let mut start = 0usize;
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        start = 3;
+    }
+    while start < bytes.len() && bytes[start].is_ascii_whitespace() {
+        start += 1;
+    }
+    bytes.get(start..start + 5).map(|s| s == b"{\\rtf").unwrap_or(false)
+}
+
+struct DocPiece {
+    offset: usize,
+    cp_len: usize,
+    compressed: bool,
+}
+
+fn extract_doc_text_piece_table(word: &[u8], table: &[u8]) -> Option<String> {
+    let pieces = find_piece_table(table)?;
+    let mut out = String::new();
+    for piece in pieces {
+        if piece.cp_len == 0 {
+            continue;
+        }
+        if piece.compressed {
+            let end = piece.offset.saturating_add(piece.cp_len);
+            if end > word.len() {
+                continue;
+            }
+            let slice = &word[piece.offset..end];
+            let (decoded, _, _) = WINDOWS_1252.decode(slice);
+            out.push_str(&decoded);
+        } else {
+            let byte_len = piece.cp_len.saturating_mul(2);
+            let end = piece.offset.saturating_add(byte_len);
+            if end > word.len() {
+                continue;
+            }
+            let mut utf16 = Vec::with_capacity(byte_len / 2);
+            for chunk in word[piece.offset..end].chunks_exact(2) {
+                utf16.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+            }
+            out.push_str(&String::from_utf16_lossy(&utf16));
+        }
+    }
+    if out.is_empty() {
+        return None;
+    }
+    Some(out.replace('\r', "\n"))
+}
+
+fn find_piece_table(table: &[u8]) -> Option<Vec<DocPiece>> {
+    let mut best: Option<Vec<DocPiece>> = None;
+    let mut i = 0usize;
+    while i + 5 <= table.len() {
+        if table[i] != 0x02 {
+            i += 1;
+            continue;
+        }
+        let lcb = read_u32_le(table, i + 1)? as usize;
+        let start = i + 5;
+        let end = start.saturating_add(lcb);
+        if lcb < 4 || end > table.len() {
+            i += 1;
+            continue;
+        }
+        if let Some(pieces) = parse_plc_pcd(&table[start..end]) {
+            let should_replace = best
+                .as_ref()
+                .map(|b| pieces.len() > b.len())
+                .unwrap_or(true);
+            if should_replace {
+                best = Some(pieces);
+            }
+        }
+        i += 1;
+    }
+    best
+}
+
+fn parse_plc_pcd(data: &[u8]) -> Option<Vec<DocPiece>> {
+    if data.len() < 4 {
+        return None;
+    }
+    let remaining = data.len().saturating_sub(4);
+    if remaining % 12 != 0 {
+        return None;
+    }
+    let piece_count = remaining / 12;
+    if piece_count == 0 {
+        return None;
+    }
+    let cp_count = piece_count + 1;
+    let cp_bytes = cp_count * 4;
+    if cp_bytes > data.len() {
+        return None;
+    }
+    let mut cps = Vec::with_capacity(cp_count);
+    for idx in 0..cp_count {
+        cps.push(read_u32_le(data, idx * 4)?);
+    }
+    if cps.windows(2).any(|w| w[1] < w[0]) {
+        return None;
+    }
+    let mut pieces = Vec::with_capacity(piece_count);
+    let pcd_start = cp_bytes;
+    for idx in 0..piece_count {
+        let off = pcd_start + idx * 8;
+        if off + 8 > data.len() {
+            return None;
+        }
+        let fc_raw = read_u32_le(data, off + 2)?;
+        let compressed = (fc_raw & 1) == 1;
+        let fc = fc_raw & 0xFFFFFFFE;
+        let offset = if compressed {
+            (fc as usize) / 2
+        } else {
+            fc as usize
+        };
+        let cp_len = cps[idx + 1].saturating_sub(cps[idx]) as usize;
+        pieces.push(DocPiece {
+            offset,
+            cp_len,
+            compressed,
+        });
+    }
+    Some(pieces)
+}
+
+fn read_u32_le(data: &[u8], offset: usize) -> Option<u32> {
+    if offset + 4 > data.len() {
+        return None;
+    }
+    Some(u32::from_le_bytes([
+        data[offset],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
+    ]))
+}
+
+fn clean_doc_text(text: String) -> String {
+    let mut cleaned = String::new();
+    let mut log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path().unwrap_or_else(|| PathBuf::from("Novapad.log")))
+        .ok();
+
+    if let Some(ref mut f) = log_file {
+        use std::io::Write;
+        let _ = writeln!(f, "--- Start Cleaning ---");
+    }
+    
+    for line in text.lines() {
+        // Trim whitespace AND control characters immediately
+        let trimmed = line.trim_matches(|c: char| c.is_whitespace() || c.is_control());
+        
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if is_likely_garbage(trimmed) {
+            if let Some(ref mut f) = log_file {
+                use std::io::Write;
+                let _ = writeln!(f, "GARBAGE FILTERED: {}", trimmed.chars().take(50).collect::<String>());
+            }
+            continue;
+        }
+        
+        // Final safety net for the specific report - Check CONTAINS, not just starts_with
+        if trimmed.contains("11252") {
+             if let Some(ref mut f) = log_file {
+                use std::io::Write;
+                let _ = writeln!(f, "SIGNATURE FILTERED: {}", trimmed.chars().take(50).collect::<String>());
+             }
+             continue;
+        }
+
+        if let Some(ref mut f) = log_file {
+            use std::io::Write;
+            let _ = writeln!(f, "KEEPING: {}", trimmed.chars().take(50).collect::<String>());
+            // Log hex bytes of the first 20 chars to see hidden chars
+            let bytes: Vec<u8> = trimmed.chars().take(20).map(|c| c as u8).collect();
+            let _ = writeln!(f, "HEX START: {:?}", bytes);
+        }
+
+        cleaned.push_str(line);
+        cleaned.push('\n');
+    }
+    
+    cleaned
+}
+
+fn extract_utf16_strings(buffer: &[u8]) -> String {
+    let mut text = String::new();
+    let mut current_seq = Vec::new();
+    
+    for chunk in buffer.chunks_exact(2) {
+        let unit = u16::from_le_bytes([chunk[0], chunk[1]]);
+        let is_valid = (unit >= 32 && unit != 0xFFFF) || unit == 10 || unit == 13 || unit == 9;
+        
+        if is_valid {
+            current_seq.push(unit);
+            // Safety break for extremely long valid-looking sequences
+            if current_seq.len() > 10000 {
+                let s = String::from_utf16_lossy(&current_seq);
+                if !is_likely_garbage(&s) {
+                    text.push_str(&s);
+                    text.push('\n');
+                }
+                current_seq.clear();
+            }
+        } else {
+            if current_seq.len() > 5 {
+                let s = String::from_utf16_lossy(&current_seq);
+                if !is_likely_garbage(&s) {
+                    text.push_str(&s);
+                    text.push('\n');
+                }
+            }
+            current_seq.clear();
+        }
+    }
+    
+    if current_seq.len() > 5 {
+        let s = String::from_utf16_lossy(&current_seq);
+        if !is_likely_garbage(&s) {
+            text.push_str(&s);
+        }
+    }
+    
+    text
+}
+
+fn extract_ascii_strings(buffer: &[u8]) -> String {
+    let mut text = String::new();
+    let mut current_seq = Vec::new();
+    
+    for &byte in buffer {
+        if (byte >= 32 && byte <= 126) || byte == 10 || byte == 13 || byte == 9 {
+            current_seq.push(byte);
+            if current_seq.len() > 10000 {
+                if let Ok(s) = String::from_utf8(current_seq.clone()) {
+                     if !is_likely_garbage(&s) {
+                        text.push_str(&s);
+                        text.push('\n');
+                     }
+                }
+                current_seq.clear();
+            }
+        } else {
+            if current_seq.len() > 5 {
+                if let Ok(s) = String::from_utf8(current_seq.clone()) {
+                     if !is_likely_garbage(&s) {
+                        text.push_str(&s);
+                        text.push('\n');
+                     }
+                }
+            }
+            current_seq.clear();
+        }
+    }
+    text
+}
+
+fn is_likely_garbage(s: &str) -> bool {
+    // Trim whitespace AND control characters (including nulls)
+    let trimmed = s.trim_matches(|c: char| c.is_whitespace() || c.is_control());
+    
+    // 1. Check for specific garbage signatures found in the user's file
+    if s.contains("1125211") || s.contains("11252") || s.contains("Arial;") || s.contains("Times New Roman;") || s.contains("Courier New;") {
+        return true;
+    }
+    
+    // 2. Check for style definitions pattern (*numbers... Name)
+    if trimmed.starts_with('*') && trimmed.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
+        return true;
+    }
+
+    // 3. Check for the pattern "numbers... Text|number" (e.g., 101000... Header or footer|2)
+    if s.contains("|") && trimmed.chars().take(5).all(|c| c.is_ascii_digit()) {
+        return true;
+    }
+
+    // 4. Check for '01', '02' patterns
+    if s.contains("'01") || s.contains("'02") || s.contains("'03") {
+        return true;
+    }
+
+    // 5. Ratio check: Real text usually has more letters than symbols/numbers
+    let letter_count = s.chars().filter(|c| c.is_alphabetic()).count();
+    let digit_count = s.chars().filter(|c| c.is_ascii_digit()).count();
+    let symbol_count = s.chars().filter(|c| !c.is_alphanumeric() && !c.is_whitespace()).count();
+    
+    if letter_count == 0 {
+        return true;
+    }
+
+    // If noise (digits + symbols) is greater than 40% of letters, discard it (stricter)
+    if (digit_count + symbol_count) * 2 > letter_count {
+        return true;
+    }
+
+    // 6. Check for long runs of digits
+    let mut max_digit_run = 0;
+    let mut current_digit_run = 0;
+    for c in s.chars() {
+        if c.is_ascii_digit() {
+            current_digit_run += 1;
+        } else {
+            max_digit_run = max_digit_run.max(current_digit_run);
+            current_digit_run = 0;
+        }
+    }
+    max_digit_run = max_digit_run.max(current_digit_run);
+    
+    if max_digit_run > 4 {
+        return true;
+    }
+
+    false
+}
+
+fn extract_rtf_text(bytes: &[u8]) -> String {
+    fn is_skip_destination(keyword: &str) -> bool {
+        matches!(
+            keyword,
+            "fonttbl"
+                | "colortbl"
+                | "stylesheet"
+                | "info"
+                | "pict"
+                | "object"
+                | "filetbl"
+                | "datastore"
+                | "themedata"
+                | "header"
+                | "headerl"
+                | "headerr"
+                | "headerf"
+                | "footer"
+                | "footerl"
+                | "footerr"
+                | "footerf"
+                | "generator"
+                | "xmlopen"
+                | "xmlattrname"
+                | "xmlattrvalue"
+        )
+    }
+
+    fn hex_val(b: u8) -> Option<u8> {
+        match b {
+            b'0'..=b'9' => Some(b - b'0'),
+            b'a'..=b'f' => Some(b - b'a' + 10),
+            b'A'..=b'F' => Some(b - b'A' + 10),
+            _ => None,
+        }
+    }
+
+    fn emit_char(out: &mut String, skip_output: &mut usize, in_skip: bool, ch: char) {
+        if *skip_output > 0 {
+            *skip_output -= 1;
+            return;
+        }
+        if in_skip {
+            return;
+        }
+        match ch {
+            '\r' | '\0' => {}
+            '\n' => out.push('\n'),
+            _ => out.push(ch),
+        }
+    }
+
+    fn emit_str(out: &mut String, skip_output: &mut usize, in_skip: bool, s: &str) {
+        for ch in s.chars() {
+            emit_char(out, skip_output, in_skip, ch);
+        }
+    }
+
+    fn encoding_from_codepage(codepage: i32) -> Option<&'static Encoding> {
+        let label = if codepage == 65001 {
+            "utf-8".to_string()
+        } else {
+            format!("windows-{}", codepage)
+        };
+        Encoding::for_label(label.as_bytes())
+    }
+
+    let mut out = String::new();
+    let mut i = 0usize;
+    let mut group_stack = vec![false];
+    let mut uc_skip = 1usize;
+    let mut skip_output = 0usize;
+    let mut encoding: &'static Encoding = WINDOWS_1252;
+
+    while i < bytes.len() {
+        match bytes[i] {
+            b'{' => {
+                let current = *group_stack.last().unwrap_or(&false);
+                group_stack.push(current);
+                i += 1;
+            }
+            b'}' => {
+                if group_stack.len() > 1 {
+                    group_stack.pop();
+                }
+                i += 1;
+            }
+            b'\\' => {
+                i += 1;
+                if i >= bytes.len() {
+                    break;
+                }
+                match bytes[i] {
+                    b'\\' | b'{' | b'}' => {
+                        emit_char(&mut out, &mut skip_output, *group_stack.last().unwrap(), bytes[i] as char);
+                        i += 1;
+                    }
+                    b'~' => {
+                        emit_char(&mut out, &mut skip_output, *group_stack.last().unwrap(), ' ');
+                        i += 1;
+                    }
+                    b'-' | b'_' => {
+                        emit_char(&mut out, &mut skip_output, *group_stack.last().unwrap(), '-');
+                        i += 1;
+                    }
+                    b'*' => {
+                        if let Some(last) = group_stack.last_mut() {
+                            *last = true;
+                        }
+                        i += 1;
+                    }
+                    b'\'' => {
+                        if i + 2 < bytes.len() {
+                            let h1 = bytes[i + 1];
+                            let h2 = bytes[i + 2];
+                            if let (Some(n1), Some(n2)) = (hex_val(h1), hex_val(h2)) {
+                                let byte = (n1 << 4) | n2;
+                                let buf = [byte];
+                                let (decoded, _, _) = encoding.decode(&buf);
+                                emit_str(&mut out, &mut skip_output, *group_stack.last().unwrap(), &decoded);
+                                i += 3;
+                            } else {
+                                i += 1;
+                            }
+                        } else {
+                            i += 1;
+                        }
+                    }
+                    b if b.is_ascii_alphabetic() => {
+                        let start = i;
+                        while i < bytes.len() && bytes[i].is_ascii_alphabetic() {
+                            i += 1;
+                        }
+                        let keyword = std::str::from_utf8(&bytes[start..i]).unwrap_or("");
+                        let mut sign = 1i32;
+                        if i < bytes.len() && bytes[i] == b'-' {
+                            sign = -1;
+                            i += 1;
+                        }
+                        let mut value = 0i32;
+                        let mut has_digit = false;
+                        while i < bytes.len() && bytes[i].is_ascii_digit() {
+                            has_digit = true;
+                            value = value * 10 + (bytes[i] - b'0') as i32;
+                            i += 1;
+                        }
+                        let num = if has_digit { Some(value * sign) } else { None };
+                        if i < bytes.len() && bytes[i] == b' ' {
+                            i += 1;
+                        }
+
+                        match keyword {
+                            "par" | "line" => emit_char(&mut out, &mut skip_output, *group_stack.last().unwrap(), '\n'),
+                            "tab" => emit_char(&mut out, &mut skip_output, *group_stack.last().unwrap(), '\t'),
+                            "emdash" => emit_str(&mut out, &mut skip_output, *group_stack.last().unwrap(), "--"),
+                            "endash" => emit_char(&mut out, &mut skip_output, *group_stack.last().unwrap(), '-'),
+                            "bullet" => emit_char(&mut out, &mut skip_output, *group_stack.last().unwrap(), '*'),
+                            "u" => {
+                                if let Some(n) = num {
+                                    let mut code = n;
+                                    if code < 0 {
+                                        code += 65536;
+                                    }
+                                    if let Some(ch) = char::from_u32(code as u32) {
+                                        emit_char(&mut out, &mut skip_output, *group_stack.last().unwrap(), ch);
+                                    }
+                                    skip_output = uc_skip;
+                                }
+                            }
+                            "uc" => {
+                                if let Some(n) = num {
+                                    if n >= 0 {
+                                        uc_skip = n as usize;
+                                    }
+                                }
+                            }
+                            "ansicpg" => {
+                                if let Some(n) = num {
+                                    if let Some(enc) = encoding_from_codepage(n) {
+                                        encoding = enc;
+                                    }
+                                }
+                            }
+                            _ => {
+                                if is_skip_destination(keyword) {
+                                    if let Some(last) = group_stack.last_mut() {
+                                        *last = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        i += 1;
+                    }
+                }
+            }
+            b'\r' | b'\n' => {
+                i += 1;
+            }
+            b => {
+                if b >= 0x80 {
+                    let buf = [b];
+                    let (decoded, _, _) = encoding.decode(&buf);
+                    emit_str(&mut out, &mut skip_output, *group_stack.last().unwrap(), &decoded);
+                } else {
+                    emit_char(&mut out, &mut skip_output, *group_stack.last().unwrap(), b as char);
+                }
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+fn read_spreadsheet_text(path: &Path, language: Language) -> Result<String, String> {
+    let mut workbook = open_workbook_auto(path)
+        .map_err(|err| error_open_excel_message(language, err))?;
+    
+    let mut out = String::new();
+    
+    if let Some(Ok(range)) = workbook.worksheet_range_at(0) {
+        for row in range.rows() {
+            let mut first = true;
+            for cell in row {
+                if !first {
+                    out.push('\t');
+                }
+                first = false;
+                match cell {
+                    CalamineData::Empty => {},
+                    CalamineData::String(s) => out.push_str(s),
+                    CalamineData::Float(f) => out.push_str(&f.to_string()),
+                    CalamineData::Int(i) => out.push_str(&i.to_string()),
+                    CalamineData::Bool(b) => out.push_str(&b.to_string()),
+                    CalamineData::Error(e) => out.push_str(&format!("{:?}", e)),
+                    CalamineData::DateTime(f) => out.push_str(&f.to_string()),
+                    CalamineData::DateTimeIso(s) | CalamineData::DurationIso(s) => out.push_str(s),
+                }
+            }
+            out.push('\n');
+        }
+    } else {
+        return Err(error_no_sheet_message(language).to_string());
+    }
+    
+    Ok(out)
+}
+
+fn read_docx_text(path: &Path, language: Language) -> Result<String, String> {
+    let bytes = std::fs::read(path).map_err(|err| error_open_file_message(language, err))?;
+    let docx = read_docx(&bytes).map_err(|err| error_read_docx_message(language, err))?;
+    Ok(extract_docx_text(&docx))
+}
+
+fn read_pdf_text(path: &Path, language: Language) -> Result<String, String> {
+    let text = extract_text(path).map_err(|err| error_read_pdf_message(language, err))?;
+    Ok(normalize_pdf_paragraphs(&text))
+}
+
+fn write_docx_text(path: &Path, text: &str, language: Language) -> Result<(), String> {
+    let file = std::fs::File::create(path).map_err(|err| error_save_file_message(language, err))?;
+    let mut docx = Docx::new();
+    for line in text.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        let paragraph = if line.is_empty() {
+            Paragraph::new()
+        } else {
+            Paragraph::new().add_run(Run::new().add_text(line))
+        };
+        docx = docx.add_paragraph(paragraph);
+    }
+    docx.build()
+        .pack(file)
+        .map_err(|err| error_save_docx_message(language, err))?;
+    Ok(())
+}
+
+fn write_pdf_text(path: &Path, title: &str, text: &str, language: Language) -> Result<(), String> {
+    let page_width = Mm(210.0);
+    let page_height = Mm(297.0);
+    let margin: f32 = 18.0;
+    let header_height: f32 = 18.0;
+    let footer_height: f32 = 12.0;
+    let body_font_size: f32 = 12.0;
+    let header_font_size: f32 = 14.0;
+    let line_height: f32 = 14.0;
+    let bullet_indent_mm: f32 = 6.0;
+    let bullet_indent_chars = 4usize;
+    let max_chars = estimate_max_chars(page_width.0, margin, body_font_size);
+
+    let title = if title.trim().is_empty() {
+        "Novapad"
+    } else {
+        title
+    };
+
+    let (doc, page1, layer1) = PdfDocument::new(title, page_width, page_height, "Layer 1");
+    let font = doc
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|err| error_pdf_font_message(language, err))?;
+    let font_bold = doc
+        .add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(|err| error_pdf_font_message(language, err))?;
+
+    let lines = layout_pdf_lines(
+        text,
+        max_chars,
+        bullet_indent_chars,
+        body_font_size,
+        bullet_indent_mm,
+    );
+
+    let content_top = page_height.0 - margin - header_height;
+    let content_bottom = margin + footer_height;
+    let mut pages: Vec<Vec<PdfLine>> = Vec::new();
+    let mut current: Vec<PdfLine> = Vec::new();
+    let mut y = content_top;
+
+    for line in lines {
+        if y < content_bottom + line_height {
+            pages.push(current);
+            current = Vec::new();
+            y = content_top;
+        }
+        current.push(line);
+        y -= line_height;
+    }
+    if !current.is_empty() {
+        pages.push(current);
+    } else if pages.is_empty() {
+        pages.push(Vec::new());
+    }
+
+    for (page_index, page_lines) in pages.iter().enumerate() {
+        let (page, layer_id) = if page_index == 0 {
+            (page1, layer1)
+        } else {
+            doc.add_page(page_width, page_height, "Layer")
+        };
+        let layer = doc.get_page(page).get_layer(layer_id);
+
+        let header_y = page_height.0 - margin - 8.0;
+        layer.use_text(title, header_font_size, Mm(margin), Mm(header_y), &font_bold);
+
+        let page_label = format!("Pagina {} di {}", page_index + 1, pages.len());
+        layer.use_text(page_label, 9.0, Mm(margin), Mm(margin - 6.0), &font);
+
+        let mut y = content_top;
+        for line in page_lines {
+            if line.is_blank {
+                y -= line_height;
+                continue;
+            }
+            layer.use_text(
+                &line.text,
+                line.font_size,
+                Mm(margin + line.indent),
+                Mm(y),
+                &font,
+            );
+            y -= line_height;
+        }
+    }
+
+    let file = std::fs::File::create(path).map_err(|err| error_save_file_message(language, err))?;
+    doc.save(&mut BufWriter::new(file))
+        .map_err(|err| error_save_pdf_message(language, err))?;
+    Ok(())
+}
+
+struct PdfLine {
+    text: String,
+    indent: f32,
+    font_size: f32,
+    is_blank: bool,
+}
+
+fn estimate_max_chars(page_width: f32, margin: f32, font_size: f32) -> usize {
+    let usable_mm = page_width - (margin * 2.0);
+    let avg_char_mm = (font_size * 0.3528) * 0.5;
+    let estimate = (usable_mm / avg_char_mm) as usize;
+    estimate.min(110).max(60)
+}
+
+fn layout_pdf_lines(
+    text: &str,
+    max_chars: usize,
+    bullet_indent_chars: usize,
+    font_size: f32,
+    bullet_indent_mm: f32,
+) -> Vec<PdfLine> {
+    let mut lines = Vec::new();
+    for raw_line in text.lines() {
+        let line = raw_line.trim_end_matches('\r');
+        if line.trim().is_empty() {
+            lines.push(PdfLine {
+                text: String::new(),
+                indent: 0.0,
+                font_size,
+                is_blank: true,
+            });
+            continue;
+        }
+
+        if let Some((prefix, content)) = split_list_prefix(line) {
+            let first_max = max_chars.saturating_sub(prefix.len());
+            let next_max = max_chars.saturating_sub(bullet_indent_chars);
+            let mut wrapped = wrap_list_item(content, first_max, next_max);
+            if wrapped.is_empty() {
+                wrapped.push(String::new());
+            }
+            let first = format!("{}{}", prefix, wrapped[0]);
+            lines.push(PdfLine {
+                text: first,
+                indent: 0.0,
+                font_size,
+                is_blank: false,
+            });
+            for rest in wrapped.into_iter().skip(1) {
+                lines.push(PdfLine {
+                    text: rest,
+                    indent: bullet_indent_mm,
+                    font_size,
+                    is_blank: false,
+                });
+            }
+            continue;
+        }
+
+        for wrapped in wrap_words(line, max_chars) {
+            lines.push(PdfLine {
+                text: wrapped,
+                indent: 0.0,
+                font_size,
+                is_blank: false,
+            });
+        }
+    }
+    lines
+}
+
+fn split_list_prefix(line: &str) -> Option<(String, &str)> {
+    let trimmed = line.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("- ") {
+        return Some(("- ".to_string(), rest));
+    }
+    if let Some(rest) = trimmed.strip_prefix("* ") {
+        return Some(("* ".to_string(), rest));
+    }
+    let bytes = trimmed.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i > 0 && i + 1 < bytes.len() && bytes[i] == b'.' && bytes[i + 1] == b' ' {
+        let prefix = trimmed[..i + 2].to_string();
+        let rest = &trimmed[i + 2..];
+        return Some((prefix, rest));
+    }
+    None
+}
+
+fn extract_docx_text(docx: &Docx) -> String {
+    let mut out = String::new();
+    for child in &docx.document.children {
+        append_document_child_text(&mut out, child);
+    }
+    if out.ends_with('\n') {
+        out.pop();
+    }
+    out
+}
+
+fn normalize_pdf_paragraphs(text: &str) -> String {
+    let mut out = String::new();
+    let mut current = String::new();
+    let avg_len = average_pdf_line_len(text);
+    let mut last_line = String::new();
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            flush_pdf_paragraph(&mut out, &mut current);
+            last_line.clear();
+            continue;
+        }
+
+        if current.is_empty() {
+            current.push_str(line);
+            last_line.clear();
+            last_line.push_str(line);
+            continue;
+        }
+
+        if looks_like_list_item(line) {
+            flush_pdf_paragraph(&mut out, &mut current);
+            current.push_str(line);
+            last_line.clear();
+            last_line.push_str(line);
+            continue;
+        }
+
+        if should_break_pdf_paragraph(&last_line, line, avg_len) {
+            flush_pdf_paragraph(&mut out, &mut current);
+            current.push_str(line);
+            last_line.clear();
+            last_line.push_str(line);
+            continue;
+        }
+
+        if last_line.ends_with('-') {
+            current.pop();
+            current.push_str(line);
+        } else {
+            current.push(' ');
+            current.push_str(line);
+        }
+        last_line.clear();
+        last_line.push_str(line);
+    }
+    flush_pdf_paragraph(&mut out, &mut current);
+    out
+}
+
+fn flush_pdf_paragraph(out: &mut String, current: &mut String) {
+    if current.is_empty() {
+        return;
+    }
+    if !out.is_empty() {
+        out.push_str("\n\n");
+    }
+    out.push_str(current.trim());
+    current.clear();
+}
+
+fn should_break_pdf_paragraph(prev: &str, next: &str, avg_len: usize) -> bool {
+    if prev.is_empty() || avg_len == 0 {
+        return false;
+    }
+    let prev_end = prev.chars().last().unwrap_or(' ');
+    let ends_sentence = matches!(prev_end, '.' | '!' | '?' | ':' | ';');
+    if !ends_sentence {
+        return false;
+    }
+    let next_start = next.chars().next().unwrap_or(' ');
+    let starts_new = next_start.is_ascii_uppercase() || matches!(next_start, '"' | '\'' | '(');
+    if !starts_new {
+        return false;
+    }
+    let threshold = avg_len.saturating_mul(7) / 10;
+    prev.len() <= threshold
+}
+
+fn looks_like_list_item(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+        return true;
+    }
+    let mut chars = trimmed.chars();
+    let mut digits = 0usize;
+    while let Some(c) = chars.next() {
+        if c.is_ascii_digit() {
+            digits += 1;
+            continue;
+        }
+        if c == '.' && digits > 0 {
+            return chars.next().map(|c| c == ' ').unwrap_or(false);
+        }
+        break;
+    }
+    false
+}
+
+fn average_pdf_line_len(text: &str) -> usize {
+    let mut total = 0usize;
+    let mut count = 0usize;
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || looks_like_list_item(line) {
+            continue;
+        }
+        total = total.saturating_add(line.len());
+        count += 1;
+    }
+    if count == 0 {
+        0
+    } else {
+        total / count
+    }
+}
+
+fn normalize_to_crlf(text: &str) -> String {
+    if !text.contains('\r') && !text.contains('\n') {
+        return text.to_string();
+    }
+    
+    let mut out = String::with_capacity(text.len() + text.len() / 10);
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\r' => {
+                out.push('\r');
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                out.push('\n');
+            }
+            '\n' => {
+                out.push('\r');
+                out.push('\n');
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+fn normalize_for_tts(text: &str, split_on_newline: bool) -> String {
+    if split_on_newline {
+        // Uniforma CRLF -> LF, ma mantiene i newline come separatori
+        text.replace("\r\n", "\n")
+    } else {
+        // I newline NON devono spezzare: diventano spazi
+        let t = text
+            .replace("\r\n", " ")
+            .replace('\n', " ")
+            .replace('\r', " ");
+        // Collassa spazi multipli
+        t.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+}
+
+
+fn wrap_words(text: &str, max_chars: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        if current.is_empty() {
+            current.push_str(word);
+            continue;
+        }
+        if current.len() + 1 + word.len() <= max_chars {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(current);
+            current = word.to_string();
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
+fn wrap_list_item(content: &str, first_max: usize, next_max: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    let mut limit = first_max.max(1);
+    for word in content.split_whitespace() {
+        if current.is_empty() {
+            current.push_str(word);
+            continue;
+        }
+        if current.len() + 1 + word.len() <= limit {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(current);
+            current = word.to_string();
+            limit = next_max.max(1);
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
+fn append_document_child_text(out: &mut String, child: &DocumentChild) {
+    match child {
+        DocumentChild::Paragraph(p) => {
+            append_paragraph_text(out, p);
+            out.push('\n');
+        }
+        DocumentChild::Table(t) => {
+            append_table_text(out, t);
+            out.push('\n');
+        }
+        _ => {}
+    }
+}
+
+fn append_paragraph_text(out: &mut String, paragraph: &Paragraph) {
+    for child in &paragraph.children {
+        append_paragraph_child_text(out, child);
+    }
+}
+
+fn append_paragraph_child_text(out: &mut String, child: &ParagraphChild) {
+    match child {
+        ParagraphChild::Run(run) => append_run_text(out, run),
+        ParagraphChild::Hyperlink(link) => {
+            for child in &link.children {
+                append_paragraph_child_text(out, child);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn append_run_text(out: &mut String, run: &Run) {
+    for child in &run.children {
+        match child {
+            RunChild::Text(text) => out.push_str(&text.text),
+            RunChild::InstrTextString(text) => out.push_str(text),
+            RunChild::Tab(_) => out.push('\t'),
+            RunChild::Break(_) => out.push('\n'),
+            _ => {}
+        }
+    }
+}
+
+fn append_table_text(out: &mut String, table: &Table) {
+    for row in &table.rows {
+        let TableChild::TableRow(row) = row;
+        let mut first_cell = true;
+        for cell in &row.cells {
+            let TableRowChild::TableCell(cell) = cell;
+            if !first_cell {
+                out.push('\t');
+            }
+            first_cell = false;
+            let cell_text = extract_table_cell_text(cell);
+            out.push_str(&cell_text);
+        }
+        out.push('\n');
+    }
+}
+
+fn extract_table_cell_text(cell: &docx_rs::TableCell) -> String {
+    let mut out = String::new();
+    for content in &cell.children {
+        match content {
+            TableCellContent::Paragraph(p) => {
+                append_paragraph_text(&mut out, p);
+                out.push('\n');
+            }
+            TableCellContent::Table(t) => {
+                append_table_text(&mut out, t);
+            }
+            _ => {}
+        }
+    }
+    if out.ends_with('\n') {
+        out.pop();
+    }
+    out
+}
+
+fn recent_store_path() -> Option<PathBuf> {
+    let base = std::env::var_os("APPDATA")?;
+    let mut path = PathBuf::from(base);
+    path.push("Novapad");
+    path.push("recent.json");
+    Some(path)
+}
+
+fn settings_store_path() -> Option<PathBuf> {
+    let mut path = log_path()?.parent()?.to_path_buf();
+    path.push("settings.json");
+    Some(path)
+}
+
+fn bookmark_store_path() -> Option<PathBuf> {
+    let mut path = log_path()?.parent()?.to_path_buf();
+    path.push("bookmarks.json");
+    Some(path)
+}
+
+fn load_bookmarks() -> BookmarkStore {
+    let Some(path) = bookmark_store_path() else {
+        return BookmarkStore::default();
+    };
+    let data = std::fs::read_to_string(path).ok();
+    let Some(data) = data else {
+        return BookmarkStore::default();
+    };
+    serde_json::from_str(&data).unwrap_or_default()
+}
+
+fn save_bookmarks(bookmarks: &BookmarkStore) {
+    let Some(path) = bookmark_store_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(bookmarks) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+
+fn load_settings() -> AppSettings {
+    let Some(path) = settings_store_path() else {
+        return AppSettings::default();
+    };
+    let data = std::fs::read_to_string(path).ok();
+    let Some(data) = data else {
+        return AppSettings::default();
+    };
+    serde_json::from_str(&data).unwrap_or_default()
+}
+
+fn save_settings(settings: AppSettings) {
+    let Some(path) = settings_store_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(&settings) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+fn load_recent_files() -> Vec<PathBuf> {
+    let Some(path) = recent_store_path() else {
+        return Vec::new();
+    };
+    let data = std::fs::read_to_string(path).ok();
+    let Some(data) = data else {
+        return Vec::new();
+    };
+    let store: RecentFileStore = serde_json::from_str(&data).unwrap_or_default();
+    store
+        .files
+        .into_iter()
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .collect()
+}
+
+fn save_recent_files(files: &[PathBuf]) {
+    let Some(path) = recent_store_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let store = RecentFileStore {
+        files: files.iter().map(|p| p.to_string_lossy().to_string()).collect(),
+    };
+    if let Ok(json) = serde_json::to_string_pretty(&store) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+fn abbreviate_recent_label(path: &Path) -> String {
+    let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("File");
+    let parent = path.parent().and_then(|p| p.to_str()).unwrap_or("");
+    if parent.is_empty() {
+        return filename.to_string();
+    }
+    let mut suffix = parent.to_string();
+    if suffix.len() > 24 {
+        suffix = format!("...{}", &suffix[suffix.len().saturating_sub(24)..]);
+    }
+    format!("{filename} - {suffix}")
+}
+
+fn decode_text(bytes: &[u8], language: Language) -> Result<(String, TextEncoding), String> {
+    if bytes.len() >= 2 {
+        if bytes[0] == 0xFF && bytes[1] == 0xFE {
+            if (bytes.len() - 2) % 2 != 0 {
+                return Err(error_invalid_utf16le_message(language).to_string());
+            }
+            let mut utf16 = Vec::with_capacity((bytes.len() - 2) / 2);
+            let mut i = 2;
+            while i + 1 < bytes.len() {
+                utf16.push(u16::from_le_bytes([bytes[i], bytes[i + 1]]));
+                i += 2;
+            }
+            return Ok((String::from_utf16_lossy(&utf16), TextEncoding::Utf16Le));
+        }
+        if bytes[0] == 0xFE && bytes[1] == 0xFF {
+            if (bytes.len() - 2) % 2 != 0 {
+                return Err(error_invalid_utf16be_message(language).to_string());
+            }
+            let mut utf16 = Vec::with_capacity((bytes.len() - 2) / 2);
+            let mut i = 2;
+            while i + 1 < bytes.len() {
+                utf16.push(u16::from_be_bytes([bytes[i], bytes[i + 1]]));
+                i += 2;
+            }
+            return Ok((String::from_utf16_lossy(&utf16), TextEncoding::Utf16Be));
+        }
+    }
+
+    if let Ok(text) = String::from_utf8(bytes.to_vec()) {
+        return Ok((text, TextEncoding::Utf8));
+    }
+
+    let (text, _, _) = WINDOWS_1252.decode(bytes);
+    Ok((text.into_owned(), TextEncoding::Windows1252))
+}
+
+fn encode_text(text: &str, encoding: TextEncoding) -> Vec<u8> {
+    match encoding {
+        TextEncoding::Utf8 => text.as_bytes().to_vec(),
+        TextEncoding::Utf16Le => {
+            let mut out = Vec::with_capacity(2 + text.len() * 2);
+            out.extend_from_slice(&[0xFF, 0xFE]);
+            for unit in text.encode_utf16() {
+                out.extend_from_slice(&unit.to_le_bytes());
+            }
+            out
+        }
+        TextEncoding::Utf16Be => {
+            let mut out = Vec::with_capacity(2 + text.len() * 2);
+            out.extend_from_slice(&[0xFE, 0xFF]);
+            for unit in text.encode_utf16() {
+                out.extend_from_slice(&unit.to_be_bytes());
+            }
+            out
+        }
+        TextEncoding::Windows1252 => {
+            let (encoded, _, _) = WINDOWS_1252.encode(text);
+            encoded.into_owned()
+        }
+    }
+}

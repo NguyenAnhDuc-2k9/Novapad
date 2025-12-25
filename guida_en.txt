@@ -1,0 +1,47 @@
+Program Guide
+
+File:
+New: Create a new document (Ctrl+N).
+Open: Open text files, PDF, EPUB, MP3, and other supported formats (Ctrl+O).
+Save: Save the document (Ctrl+S).
+Save As: Save with a new name.
+Save All: Save all documents (Ctrl+Shift+S).
+Close Tab: Close the current document (Ctrl+W).
+Recent Files: Open a recent file.
+Reading: F5 Start reading, F4 Pause/Resume, F6 Stop reading.
+Record Audiobook: Create an MP3 file from the current text (Ctrl+R).
+
+Edit:
+Undo: Undo the last operation (Ctrl+Z).
+Cut: Remove selected text and copy it to clipboard (Ctrl+X).
+Copy: Copy selected text to clipboard (Ctrl+C).
+Paste: Paste clipboard content into document (Ctrl+V).
+Select All: Select all text (Ctrl+A).
+Find: Search text in the document (Ctrl+F).
+Find Next: Find next occurrence (F3).
+Replace: Find and replace text (Ctrl+H).
+
+Insert:
+Insert Bookmark: Save the current cursor position or audiobook time (Ctrl+B).
+Manage Bookmarks: View, jump to, or delete saved bookmarks. When opening a file with bookmarks, the cursor or playback will automatically resume from the first available one.
+
+MP3 Audiobooks:
+When you open an MP3 file, Novapad acts as an audio player.
+Keyboard controls:
+- SPACE: Play / Pause.
+- RIGHT ARROW: Fast forward 1 minute.
+- LEFT ARROW: Rewind 1 minute.
+- UP ARROW: Increase volume.
+- DOWN ARROW: Decrease volume.
+- CTRL+B: Insert a bookmark at the exact time.
+
+Options:
+Language: Change interface language.
+Open Behavior: Open files in new tab or new window.
+Voice: Choose voice for reading.
+Multilingual Voices: Filter voice list.
+Move cursor during reading: Visually follow the text as it is being read.
+
+Help:
+Guide: Open this guide.
+About: Show program information.

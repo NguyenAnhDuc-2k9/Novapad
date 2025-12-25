@@ -1,0 +1,8 @@
+/target
+**/*.rs.bac
+**/*.rs.segnalibri.bac
+**/*.rs.audiobook.bac
+**/*.pdb
+**/*.d
+.cargo-packager
+*.log

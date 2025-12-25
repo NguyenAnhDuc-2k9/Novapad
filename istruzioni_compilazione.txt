@@ -1,0 +1,50 @@
+ISTRUZIONI PER LA COMPILAZIONE E CREAZIONE INSTALLER - NOVAPAD
+
+1. REQUISITI UNA TANTUM (Se non già installati)
+--------------------------------------------------
+- Installa cargo-packager:
+  cargo install cargo-packager --locked
+
+- Installa NSIS (per l'installer .exe):
+  https://nsis.sourceforge.io/Download
+
+- Installa WiX Toolset v3 (per l'installer .msi):
+  https://wixtoolset.org/releases/
+
+
+2. COMPILAZIONE STANDARD (DEBUG)
+--------------------------------------------------
+Per testare velocemente le modifiche:
+cargo build
+
+
+3. CREAZIONE ESEGUIBILE OTTIMIZZATO (RELEASE)
+--------------------------------------------------
+Per creare il file .exe finale super veloce:
+cargo build --release
+
+L'eseguibile si troverà in: target\release\novapad.exe
+
+
+4. CREAZIONE INSTALLATORI (SETUP.EXE / .MSI)
+--------------------------------------------------
+Per generare gli installer professionali di Windows:
+cargo packager --release
+
+Gli installer verranno creati in: target\release\
+- Novapad_0.1.0_x64-setup.exe (Installer classico)
+- Novapad_0.1.0_x64_en-US.msi (Installer MSI)
+
+
+5. PULIZIA FILES TEMPORANEI E BACKUP
+--------------------------------------------------
+Per liberare spazio e pulire il progetto:
+
+- Rimuovere tutti i file compilati (cartella target):
+  cargo clean
+
+- Rimuovere i file di backup del codice (.bac):
+  del src\*.bac
+
+- Rimuovere i file di log dell'applicazione:
+  del %APPDATA%\Novapad\Novapad.log

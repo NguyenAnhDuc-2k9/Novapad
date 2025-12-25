@@ -1,0 +1,47 @@
+Guida al programma
+
+File:
+Nuovo: crea un nuovo documento (Ctrl+N).
+Apri: apre file di testo, PDF, EPUB, MP3 e altri formati supportati (Ctrl+O).
+Salva: salva il documento (Ctrl+S).
+Salva con nome: salva con un nuovo nome.
+Salva tutto: salva tutti i documenti (Ctrl+Shift+S).
+Chiudi tab: chiude il documento corrente (Ctrl+W).
+File recenti: apre un file recente.
+Lettura: F5 avvia la lettura, F4 pausa/riprendi, F6 ferma la lettura.
+Registra audiolibro: crea un file MP3 dal testo corrente (Ctrl+R).
+
+Modifica:
+Annulla: annulla l'ultima operazione (Ctrl+Z).
+Taglia: rimuove il testo selezionato e lo copia negli appunti (Ctrl+X).
+Copia: copia il testo selezionato negli appunti (Ctrl+C).
+Incolla: incolla il contenuto degli appunti nel documento (Ctrl+V).
+Seleziona tutto: seleziona tutto il testo (Ctrl+A).
+Trova: cerca un testo nel documento (Ctrl+F).
+Trova successivo: trova la prossima occorrenza (F3).
+Sostituisci: cerca e sostituisce il testo (Ctrl+H).
+
+Inserisci:
+Inserisci segnalibro: salva la posizione attuale del cursore o il tempo dell'audiolibro (Ctrl+B).
+Gestisci segnalibri: visualizza, salta o elimina i segnalibri salvati. All'apertura di un file con segnalibri, il cursore o la riproduzione ripartiranno automaticamente dal primo disponibile.
+
+Audiolibri MP3:
+Quando apri un file MP3, Novapad diventa un lettore audio.
+Comandi da tastiera:
+- SPAZIO: Play / Pausa.
+- FRECCIA DESTRA: Avanti di 1 minuto.
+- FRECCIA SINISTRA: Indietro di 1 minuto.
+- FRECCIA SU: Aumenta il volume.
+- FRECCIA GIU: Diminuisce il volume.
+- CTRL+B: Inserisce un segnalibro nel minuto esatto.
+
+Opzioni:
+Lingua: cambia la lingua dell'interfaccia.
+Apertura file: apre i file in nuova scheda o nuova finestra.
+Seleziona voce: sceglie la voce per la lettura.
+Solo voci multilingua: filtra l'elenco delle voci.
+Sposta cursore durante la lettura: segue visivamente il testo mentre viene letto.
+
+Aiuto:
+Guida: apre questa guida.
+Informazioni sul programma: mostra informazioni sul programma.
