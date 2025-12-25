@@ -59,7 +59,7 @@ use windows::Win32::UI::Controls::Dialogs::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetFocus, GetKeyState, SetFocus, VK_CONTROL, VK_ESCAPE, VK_F3, VK_F4, VK_F5,
-    VK_F6, VK_RETURN, VK_TAB, VK_SHIFT, VK_SPACE, VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN, VK_HOME,
+    VK_F6, VK_RETURN, VK_TAB, VK_SPACE, VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN, VK_HOME,
     VK_END, VK_PRIOR, VK_NEXT
 };
 use windows::Win32::UI::Shell::{DragAcceptFiles, DragFinish, DragQueryFileW, HDROP};
@@ -569,6 +569,20 @@ fn main() -> windows::core::Result<()> {
                 }
 
                 if state.help_window.0 != 0 {
+                    // Manual TAB handling for Help window
+                    if msg.message == WM_KEYDOWN && msg.wParam.0 as u32 == VK_TAB.0 as u32 {
+                        let _ = with_help_state(state.help_window, |h| {
+                            let focus = GetFocus();
+                            if focus == h.edit {
+                                SetFocus(h.ok_button);
+                            } else {
+                                SetFocus(h.edit);
+                            }
+                        });
+                        handled = true;
+                        return;
+                    }
+
                     if IsDialogMessageW(state.help_window, &msg).as_bool() {
                         handled = true;
                         return;
@@ -1761,37 +1775,6 @@ unsafe extern "system" fn help_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpa
             let cmd_id = (wparam.0 & 0xffff) as usize;
             if cmd_id == HELP_ID_OK || cmd_id == IDCANCEL.0 as usize {
                 let _ = DestroyWindow(hwnd);
-                return LRESULT(0);
-            }
-            DefWindowProcW(hwnd, msg, wparam, lparam)
-        }
-        WM_KEYDOWN => {
-            if wparam.0 as u32 == VK_TAB.0 as u32 {
-                let shift_down = (GetKeyState(VK_SHIFT.0 as i32) as u16) & 0x8000 != 0;
-                let _ = with_help_state(hwnd, |state| {
-                    let focus = GetFocus();
-                    if shift_down {
-                        if focus == state.edit {
-                            SetFocus(state.ok_button);
-                        } else {
-                            SetFocus(state.edit);
-                        }
-                    } else {
-                        if focus == state.ok_button {
-                            SetFocus(state.edit);
-                        } else {
-                            SetFocus(state.ok_button);
-                        }
-                    }
-                });
-                return LRESULT(0);
-            }
-            if wparam.0 as u32 == VK_RETURN.0 as u32 {
-                let _ = with_help_state(hwnd, |state| {
-                    if GetFocus() == state.ok_button {
-                        let _ = DestroyWindow(hwnd);
-                    }
-                });
                 return LRESULT(0);
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
