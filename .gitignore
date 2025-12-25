@@ -6,3 +6,5 @@
 **/*.d
 .cargo-packager
 *.log
+istruzioni_compilazione.txt
+filedocapertocometxt.txt
