@@ -19,7 +19,8 @@ use windows::Win32::UI::Controls::RichEdit::{CHARRANGE};
 use windows::Win32::Graphics::Gdi::{HBRUSH, COLOR_WINDOW, HFONT};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus, VK_RETURN, EnableWindow};
-use crate::{with_state, start_audiobook_at};
+use crate::{with_state};
+use crate::audio_player::start_audiobook_at;
 use crate::settings::{Language, FileFormat};
 use crate::accessibility::{to_wide, handle_accessibility, EM_SCROLLCARET};
 
