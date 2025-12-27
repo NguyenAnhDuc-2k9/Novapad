@@ -100,7 +100,7 @@ jobs:
     - name: Create release
       run: |
         gh release create "${{ env.RELEASE_VERSION }}" \
-          --title "RustNotepad Release ${{ env.RELEASE_VERSION }}" \
+          --title "Novapad Release ${{ env.RELEASE_VERSION }}" \
           --notes "Build: ${{ steps.get_run.outputs.run_id }} (${{ steps.get_run.outputs.run_sha }})"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
