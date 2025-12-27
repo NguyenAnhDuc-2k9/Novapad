@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 env:
-  RELEASE_VERSION: v0.5
+  RELEASE_VERSION: v0.5.0
 
 jobs:
   create-release:

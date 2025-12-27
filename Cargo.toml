@@ -1,6 +1,6 @@
 [package]
 name = "novapad"
-version = "0.5"
+version = "0.5.0"
 edition = "2024"
 authors = ["Ambrogio Riili"]
 description = "A modern Notepad with PDF support and TTS capabilities."
@@ -8,7 +8,7 @@ description = "A modern Notepad with PDF support and TTS capabilities."
 [package.metadata.packager]
 product_name = "Novapad"
 identifier = "com.ambrogioriili.novapad"
-version = "0.1.0"
+version = "0.5.0"
 authors = ["Ambrogio Riili"]
 publisher = "Ambrogio Riili"
 description = "A modern Notepad with PDF support and TTS capabilities."
