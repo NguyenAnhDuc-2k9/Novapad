@@ -6,6 +6,9 @@
 It extends traditional text editing with multi-format document support,
 advanced accessibility features, and Text-to-Speech (TTS) capabilities.
 
+It also includes an integrated **MP3 audiobook player**, a **bookmark system for both text and audio**,
+and the ability to **create audiobooks directly from text using system voices**.
+
 > ⚠️ **License Notice**
 > This project is **source-available but NOT open source**.
 > Commercial use, redistribution, and derivative works are strictly prohibited.
@@ -22,8 +25,17 @@ advanced accessibility features, and Text-to-Speech (TTS) capabilities.
   - Microsoft Word (DOCX)
   - Spreadsheets (Excel / ODS via `calamine`)
   - EPUB e-books
-- **Text-to-Speech (TTS)**
-  Read documents aloud using system voices.
+- **Text-to-Speech (TTS) & Audiobook Creation**
+  - Read documents aloud using system voices
+  - Create MP3 audiobooks directly from text
+- **MP3 Audiobook Player**
+  - Open and play MP3 files
+  - Seek forward/backward using arrow keys
+  - Play/Pause with the Space bar
+  - Volume up/down using arrow keys
+- **Bookmarks**
+  - Create and manage bookmarks for both text files and MP3 playback
+  - Quickly jump to saved positions in documents or audio
 - **Accessibility-Focused**
   Designed to work correctly with screen readers such as NVDA and JAWS.
 - **Modern Tech Stack**

@@ -6,6 +6,9 @@
 Estende il classico editor di testo con il supporto a più formati di documento,
 funzionalità avanzate di accessibilità e capacità di Text-to-Speech (TTS).
 
+Include inoltre un **player MP3 per audiolibri**, un **sistema di segnalibri per testo e audio**
+e la possibilità di **creare audiolibri direttamente dal testo utilizzando le voci di sistema**.
+
 > ⚠️ **Avviso di licenza**
 > Questo progetto è **source-available ma NON open source**.
 > L’uso commerciale, la redistribuzione e la creazione di opere derivate
@@ -24,8 +27,17 @@ funzionalità avanzate di accessibilità e capacità di Text-to-Speech (TTS).
   - Documenti Microsoft Word (DOCX)
   - Fogli di calcolo (Excel / ODS tramite `calamine`)
   - E-book EPUB
-- **Text-to-Speech (TTS)**
-  Lettura vocale dei documenti tramite le voci di sistema.
+- **Text-to-Speech (TTS) e creazione di audiolibri**
+  - Lettura vocale dei documenti tramite le voci di sistema
+  - Creazione di audiolibri in formato MP3 direttamente dal testo
+- **Player MP3 (audiolibri)**
+  - Apertura e riproduzione di file MP3
+  - Avanzamento e riavvolgimento con i tasti freccia
+  - Play/Pausa con la barra spaziatrice
+  - Volume su/giù con i tasti freccia
+- **Segnalibri**
+  - Creazione e gestione di segnalibri sia per file di testo sia per la riproduzione MP3
+  - Salto rapido alle posizioni salvate nei documenti o nell’audio
 - **Accessibilità**
   Progettato per funzionare correttamente con screen reader
   come NVDA e JAWS.
