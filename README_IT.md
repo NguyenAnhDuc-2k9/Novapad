@@ -1,54 +1,88 @@
-[Read in English 🇺🇸](README.md)
-
 # Novapad
 
-**Novapad** è una moderna alternativa al Blocco Note per Windows ricca di funzionalità, costruita con Rust. Estende l'editing di testo tradizionale con il supporto per vari formati di documenti, funzionalità Text-to-Speech (TTS) e altro ancora.
+[Leggilo in Inglese 🇬🇧](README.md)
+
+**Novapad** è un Notepad moderno e avanzato per Windows, sviluppato in Rust.
+Estende il classico editor di testo con il supporto a più formati di documento,
+funzionalità avanzate di accessibilità e capacità di Text-to-Speech (TTS).
+
+> ⚠️ **Avviso di licenza**
+> Questo progetto è **source-available ma NON open source**.
+> L’uso commerciale, la redistribuzione e la creazione di opere derivate
+> sono espressamente vietati.
+
+---
 
 ## Funzionalità
 
-- **Interfaccia Nativa Windows:** Costruita utilizzando le API di Windows per un aspetto leggero e nativo.
-- **Supporto Multi-Formato:**
-    - Lettura e scrittura di file di testo semplice.
-    - Visualizzazione ed estrazione testo da documenti **PDF**.
-    - Supporto per file **Microsoft Word (DOCX)**.
-    - Supporto per **Fogli di calcolo** (Excel/ODS tramite `calamine`).
-    - Supporto per e-book **EPUB**.
-- **Text-to-Speech (TTS):** Funzionalità di riproduzione audio integrate.
-- **Stack Tecnologico Moderno:** Basato su Rust per prestazioni e sicurezza.
+- **Interfaccia nativa Windows**
+  Costruita direttamente sulle Windows API per garantire prestazioni elevate
+  e piena integrazione con le tecnologie di accessibilità.
+- **Supporto multi-formato**
+  - File di testo semplice
+  - Documenti PDF (estrazione del testo)
+  - Documenti Microsoft Word (DOCX)
+  - Fogli di calcolo (Excel / ODS tramite `calamine`)
+  - E-book EPUB
+- **Text-to-Speech (TTS)**
+  Lettura vocale dei documenti tramite le voci di sistema.
+- **Accessibilità**
+  Progettato per funzionare correttamente con screen reader
+  come NVDA e JAWS.
+- **Tecnologia moderna**
+  Scritto in Rust per garantire sicurezza, affidabilità e ottime prestazioni.
 
-## Installazione / Compilazione
+---
 
-Questo progetto è costruito con Rust. Assicurati di avere installato la toolchain Rust.
+## Compilazione e utilizzo
 
-1.  Clona il repository:
-    ```bash
-    git clone https://github.com/Ambro86/Novapad.git
-    cd Novapad
-    ```
+Assicurati di avere installato il toolchain Rust.
 
-2.  Compila il progetto:
-    ```bash
-    cargo build --release
-    ```
+Clona il repository:
 
-3.  Esegui l'applicazione:
-    ```bash
-    cargo run --release
-    ```
+```bash
+git clone https://github.com/Ambro86/Novapad.git
+cd Novapad
+```
 
-## Dipendenze
+Compila il progetto:
 
-Novapad si affida a diverse potenti librerie Rust (crates), tra cui:
-- `windows-rs`: Per l'integrazione nativa con le API di Windows.
-- `printpdf` & `pdf-extract`: Per la gestione dei PDF.
-- `docx-rs`: Per il supporto ai documenti Word.
-- `rodio`: Per la riproduzione audio.
-- `tokio`: Per le operazioni asincrone.
+```bash
+cargo build --release
+```
 
-## Licenza
+Avvia l’applicazione:
 
-Questo progetto è concesso in licenza sotto la [Licenza Creative Commons](https://creativecommons.org/licenses/by/4.0/).
+```bash
+cargo run --release
+```
+
+---
+
+## Aspetti legali e licenza
+
+Questo repository è pubblicato **esclusivamente per scopi di trasparenza,
+studio, valutazione e uso personale**.
+
+### È consentito:
+- Visualizzare e studiare il codice sorgente
+- Compilare ed eseguire il software per uso personale o di test
+
+### NON è consentito:
+- Utilizzare il software per scopi commerciali
+- Redistribuire il codice sorgente o i binari
+- Effettuare fork del repository per la distribuzione
+- Integrare Novapad in altri progetti o prodotti
+- Creare e distribuire opere derivate senza autorizzazione scritta
+
+Le funzionalità di Text-to-Speech possono utilizzare voci Microsoft
+e sono soggette ai termini di servizio Microsoft.
+**L’uso commerciale è espressamente vietato.**
+
+Per i dettagli completi fare riferimento al file `LICENSE`.
+
+---
 
 ## Autore
 
-Ambrogio Riili
+**Ambrogio Riili**

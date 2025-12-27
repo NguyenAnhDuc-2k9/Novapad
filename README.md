@@ -1,54 +1,77 @@
-[Leggilo in Italiano 🇮🇹](README_IT.md)
-
 # Novapad
 
-**Novapad** is a modern, feature-rich Notepad alternative for Windows, built with Rust. It extends traditional text editing with support for various document formats, Text-to-Speech (TTS) capabilities, and more.
+[Read it in Italian 🇮🇹](README_IT.md)
+
+**Novapad** is a modern, feature-rich Notepad alternative for Windows, built with Rust.
+It extends traditional text editing with multi-format document support,
+advanced accessibility features, and Text-to-Speech (TTS) capabilities.
+
+> ⚠️ **License Notice**
+> This project is **source-available but NOT open source**.
+> Commercial use, redistribution, and derivative works are strictly prohibited.
+
+---
 
 ## Features
 
-- **Native Windows UI:** Built using the Windows API for a lightweight and native feel.
-- **Multi-Format Support:**
-    - Read and write plain text files.
-    - View and extract text from **PDF** documents.
-    - Support for **Microsoft Word (DOCX)** files.
-    - Support for **Spreadsheets** (Excel/ODS via `calamine`).
-    - Support for **EPUB** e-books.
-- **Text-to-Speech (TTS):** Integrated audio playback features.
-- **Modern Tech Stack:** Powered by Rust for performance and safety.
+- **Native Windows UI**
+  Built directly on the Windows API for maximum performance and accessibility.
+- **Multi-Format Support**
+  - Plain text files
+  - PDF documents (text extraction)
+  - Microsoft Word (DOCX)
+  - Spreadsheets (Excel / ODS via `calamine`)
+  - EPUB e-books
+- **Text-to-Speech (TTS)**
+  Read documents aloud using system voices.
+- **Accessibility-Focused**
+  Designed to work correctly with screen readers such as NVDA and JAWS.
+- **Modern Tech Stack**
+  Written in Rust for safety, performance, and reliability.
 
-## Installation / Build
+---
 
-This project is built with Rust. Ensure you have the Rust toolchain installed.
+## Build Instructions
 
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/Ambro86/Novapad.git
-    cd Novapad
-    ```
+Ensure you have the Rust toolchain installed.
 
-2.  Build the project:
-    ```bash
-    cargo build --release
-    ```
+```bash
+git clone https://github.com/Ambro86/Novapad.git
+cd Novapad
+cargo build --release
+```
 
-3.  Run the application:
-    ```bash
-    cargo run --release
-    ```
+Run the application:
 
-## Dependencies
+```bash
+cargo run --release
+```
 
-Novapad relies on several powerful Rust crates, including:
-- `windows-rs`: For native Windows API integration.
-- `printpdf` & `pdf-extract`: For PDF handling.
-- `docx-rs`: For Word document support.
-- `rodio`: For audio playback.
-- `tokio`: For asynchronous operations.
+---
 
-## License
+## Legal & Licensing
 
-This project is licensed under the [Creative Commons License](https://creativecommons.org/licenses/by/4.0/).
+This repository is published for **transparency, evaluation, and personal use only**.
+
+### You MAY:
+- View and study the source code
+- Build and run the software for personal or evaluation purposes
+
+### You MAY NOT:
+- Use the software for commercial purposes
+- Redistribute the source code or binaries
+- Fork this repository for redistribution
+- Include this software in other products or projects
+- Create or distribute derivative works without written permission
+
+Text-to-Speech features may rely on Microsoft voices and are subject to
+Microsoft Terms of Service.
+**Commercial usage is explicitly prohibited.**
+
+Refer to the `LICENSE` file for full terms.
+
+---
 
 ## Author
 
-Ambrogio Riili
+**Ambrogio Riili**
