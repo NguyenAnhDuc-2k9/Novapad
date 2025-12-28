@@ -594,10 +594,21 @@ pub fn split_into_tts_chunks(text: &str, split_on_newline: bool) -> Vec<TtsChunk
     let mut sentences = Vec::new();
     let mut current_sentence = String::new();
     let mut current_orig_len = 0usize;
-    for ch in text.chars() {
+    let chars: Vec<char> = text.chars().collect();
+    for (idx, ch) in chars.iter().copied().enumerate() {
         current_sentence.push(ch);
         current_orig_len += 1;
-        let is_terminal = matches!(ch, '.' | '!' | '?') || (split_on_newline && ch == '\n');
+        let next_ch = chars.get(idx + 1).copied();
+        let punct_before_newline = split_on_newline
+            && matches!(
+                ch,
+                '.' | '!' | '?' | ',' | ';' | ':' | ')' | ']' | '}' | '"' | '\'' | '-'
+                    | '…' | '—' | '«' | '»' | '“' | '”' | '‘' | '’'
+                    | '‐' | '‑' | '–' | '·'
+            )
+            && matches!(next_ch, Some('\n') | Some('\r'));
+        let is_terminal = !punct_before_newline
+            && (matches!(ch, '.' | '!' | '?') || (split_on_newline && ch == '\n'));
         if is_terminal {
             if !current_sentence.trim().is_empty() { sentences.push((current_sentence.clone(), current_orig_len)); }
             current_sentence.clear();
