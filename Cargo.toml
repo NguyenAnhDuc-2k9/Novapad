@@ -56,3 +56,11 @@ tokio-tungstenite = { version = "0.21", features = ["rustls-tls-native-roots"] }
 url = "2.5"
 uuid = { version = "1.6", features = ["v4"] }
 epub = "2.1"
+
+
+[profile.release]
+opt-level = 3          # MASSIME performance
+lto = true             # ottimizzazione cross-crate
+codegen-units = 1      # migliora performance
+panic = "abort"        # meno overhead a runtime
+debug = 0

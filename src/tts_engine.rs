@@ -635,8 +635,9 @@ pub fn start_audiobook(hwnd: HWND) {
         })
     };
 
-    let split_on_newline = unsafe { with_state(hwnd, |state| state.settings.split_on_newline) }
-        .unwrap_or(true);
+    let (split_on_newline, audiobook_split) = unsafe { 
+        with_state(hwnd, |state| (state.settings.split_on_newline, state.settings.audiobook_split)) 
+    }.unwrap_or((true, 0));
 
     let cleaned = strip_dashed_lines(&text);
     let prepared = normalize_for_tts(&cleaned, split_on_newline);
@@ -656,7 +657,7 @@ pub fn start_audiobook(hwnd: HWND) {
 
     let cancel_clone = cancel_token.clone();
     std::thread::spawn(move || {
-        let result = run_tts_audiobook(&chunks, &voice, &output, progress_hwnd, cancel_clone);
+        let result = run_split_audiobook(&chunks, &voice, &output, audiobook_split, progress_hwnd, cancel_clone);
         let success = result.is_ok();
         let message = match result {
             Ok(()) => match language {
@@ -680,12 +681,57 @@ pub fn start_audiobook(hwnd: HWND) {
     });
 }
 
-pub fn run_tts_audiobook(
+fn run_split_audiobook(
+    chunks: &[String],
+    voice: &str,
+    output: &Path,
+    split_parts: u32,
+    progress_hwnd: HWND,
+    cancel: Arc<AtomicBool>,
+) -> Result<(), String> {
+    let parts = if split_parts == 0 { 1 } else { split_parts as usize };
+    let total_chunks = chunks.len();
+    
+    // Se ci sono meno chunks delle parti richieste, riduciamo le parti
+    let parts = if total_chunks < parts { total_chunks } else { parts };
+    let chunks_per_part = (total_chunks + parts - 1) / parts; // Ceiling division
+
+    let mut current_global_progress = 0;
+
+    for part_idx in 0..parts {
+        let start_idx = part_idx * chunks_per_part;
+        let end_idx = std::cmp::min(start_idx + chunks_per_part, total_chunks);
+        if start_idx >= end_idx { break; }
+
+        let part_chunks = &chunks[start_idx..end_idx];
+        
+        let part_output = if parts > 1 {
+            let stem = output.file_stem().and_then(|s| s.to_str()).unwrap_or("audiobook");
+            let ext = output.extension().and_then(|s| s.to_str()).unwrap_or("mp3");
+            output.with_file_name(format!("{}_part{}.{}", stem, part_idx + 1, ext))
+        } else {
+            output.to_path_buf()
+        };
+
+        run_tts_audiobook_part(
+            part_chunks,
+            voice,
+            &part_output,
+            progress_hwnd,
+            cancel.clone(),
+            &mut current_global_progress
+        )?;
+    }
+    Ok(())
+}
+
+fn run_tts_audiobook_part(
     chunks: &[String],
     voice: &str,
     output: &Path,
     progress_hwnd: HWND,
     cancel: Arc<AtomicBool>,
+    current_global_progress: &mut usize,
 ) -> Result<(), String> {
     let file = std::fs::File::create(output).map_err(|err| err.to_string())?;
     let mut writer = BufWriter::new(file);
@@ -731,7 +777,7 @@ pub fn run_tts_audiobook(
         });
 
         let mut stream = futures_util::stream::iter(tasks).buffered(30);
-        let mut completed = 0;
+        
         while let Some(result) = stream.next().await {
             if cancel.load(Ordering::Relaxed) {
                 return Err("Operazione annullata.".to_string());
@@ -743,10 +789,10 @@ pub fn run_tts_audiobook(
             };
             
             writer.write_all(&audio).map_err(|err| err.to_string())?;
-            completed += 1;
+            *current_global_progress += 1;
             if progress_hwnd.0 != 0 {
                 if cancel.load(Ordering::Relaxed) { return Err("Operazione annullata.".to_string()); }
-                unsafe { let _ = PostMessageW(progress_hwnd, crate::WM_UPDATE_PROGRESS, WPARAM(completed), LPARAM(0)); }
+                unsafe { let _ = PostMessageW(progress_hwnd, crate::WM_UPDATE_PROGRESS, WPARAM(*current_global_progress), LPARAM(0)); }
             }
         }
         writer.flush().map_err(|err| err.to_string())?;

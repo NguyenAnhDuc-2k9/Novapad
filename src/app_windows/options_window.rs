@@ -31,6 +31,7 @@ const OPTIONS_ID_SPLIT_ON_NEWLINE: usize = 6007;
 const OPTIONS_ID_WORD_WRAP: usize = 6008;
 const OPTIONS_ID_MOVE_CURSOR: usize = 6009;
 const OPTIONS_ID_AUDIO_SKIP: usize = 6010;
+const OPTIONS_ID_AUDIO_SPLIT: usize = 6011;
 const OPTIONS_ID_OK: usize = 6005;
 const OPTIONS_ID_CANCEL: usize = 6006;
 
@@ -58,6 +59,7 @@ struct OptionsDialogState {
     combo_open: HWND,
     combo_voice: HWND,
     combo_audio_skip: HWND,
+    combo_audio_split: HWND,
     checkbox_multilingual: HWND,
     checkbox_split_on_newline: HWND,
     checkbox_word_wrap: HWND,
@@ -75,10 +77,13 @@ struct OptionsLabels {
     label_word_wrap: &'static str,
     label_move_cursor: &'static str,
     label_audio_skip: &'static str,
+    label_audio_split: &'static str,
     lang_it: &'static str,
     lang_en: &'static str,
     open_new_tab: &'static str,
     open_new_window: &'static str,
+    split_none: &'static str,
+    split_parts: &'static str,
     ok: &'static str,
     cancel: &'static str,
     voices_loading: &'static str,
@@ -97,10 +102,13 @@ fn options_labels(language: Language) -> OptionsLabels {
             label_word_wrap: "A capo automatico nella finestra",
             label_move_cursor: "Sposta il cursore durante la lettura",
             label_audio_skip: "Spostamento MP3 (frecce):",
+            label_audio_split: "Dividi l'audiolibro in:",
             lang_it: "Italiano",
             lang_en: "Inglese",
             open_new_tab: "Apri file in nuovo tab",
             open_new_window: "Apri file in nuova finestra",
+            split_none: "Nessuna divisione",
+            split_parts: "parti",
             ok: "OK",
             cancel: "Annulla",
             voices_loading: "Caricamento voci...",
@@ -116,10 +124,13 @@ fn options_labels(language: Language) -> OptionsLabels {
             label_word_wrap: "Word wrap in editor",
             label_move_cursor: "Move cursor during reading",
             label_audio_skip: "MP3 skip interval:",
+            label_audio_split: "Split audiobook into:",
             lang_it: "Italian",
             lang_en: "English",
             open_new_tab: "Open files in new tab",
             open_new_window: "Open files in new window",
+            split_none: "No split",
+            split_parts: "parts",
             ok: "OK",
             cancel: "Cancel",
             voices_loading: "Loading voices...",
@@ -159,7 +170,7 @@ pub unsafe fn open(parent: HWND) {
         CW_USEDEFAULT,
         CW_USEDEFAULT,
         520,
-        400,
+        450,
         parent,
         None,
         hinstance,
@@ -216,23 +227,26 @@ unsafe extern "system" fn options_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             let label_audio_skip = CreateWindowExW(Default::default(), WC_STATIC, PCWSTR(to_wide(labels.label_audio_skip).as_ptr()), WS_CHILD | WS_VISIBLE, 20, 170, 140, 20, hwnd, HMENU(0), HINSTANCE(0), None);
             let combo_audio_skip = CreateWindowExW(WS_EX_CLIENTEDGE, WC_COMBOBOXW, PCWSTR::null(), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32), 170, 168, 300, 140, hwnd, HMENU(OPTIONS_ID_AUDIO_SKIP as isize), HINSTANCE(0), None);
 
-            let checkbox_split_on_newline = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.label_split_on_newline).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32), 170, 202, 300, 20, hwnd, HMENU(OPTIONS_ID_SPLIT_ON_NEWLINE as isize), HINSTANCE(0), None);
+            let label_audio_split = CreateWindowExW(Default::default(), WC_STATIC, PCWSTR(to_wide(labels.label_audio_split).as_ptr()), WS_CHILD | WS_VISIBLE, 20, 210, 140, 20, hwnd, HMENU(0), HINSTANCE(0), None);
+            let combo_audio_split = CreateWindowExW(WS_EX_CLIENTEDGE, WC_COMBOBOXW, PCWSTR::null(), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32), 170, 208, 300, 140, hwnd, HMENU(OPTIONS_ID_AUDIO_SPLIT as isize), HINSTANCE(0), None);
 
-            let checkbox_word_wrap = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.label_word_wrap).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32), 170, 226, 300, 20, hwnd, HMENU(OPTIONS_ID_WORD_WRAP as isize), HINSTANCE(0), None);
+            let checkbox_split_on_newline = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.label_split_on_newline).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32), 170, 250, 300, 20, hwnd, HMENU(OPTIONS_ID_SPLIT_ON_NEWLINE as isize), HINSTANCE(0), None);
 
-            let checkbox_move_cursor = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.label_move_cursor).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32), 170, 250, 300, 20, hwnd, HMENU(OPTIONS_ID_MOVE_CURSOR as isize), HINSTANCE(0), None);
+            let checkbox_word_wrap = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.label_word_wrap).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32), 170, 274, 300, 20, hwnd, HMENU(OPTIONS_ID_WORD_WRAP as isize), HINSTANCE(0), None);
 
-            let ok_button = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.ok).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32), 280, 300, 90, 28, hwnd, HMENU(OPTIONS_ID_OK as isize), HINSTANCE(0), None);
-            let cancel_button = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.cancel).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 380, 300, 90, 28, hwnd, HMENU(OPTIONS_ID_CANCEL as isize), HINSTANCE(0), None);
+            let checkbox_move_cursor = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.label_move_cursor).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32), 170, 298, 300, 20, hwnd, HMENU(OPTIONS_ID_MOVE_CURSOR as isize), HINSTANCE(0), None);
 
-            for control in [label_lang, combo_lang, label_open, combo_open, label_voice, combo_voice, label_audio_skip, combo_audio_skip, checkbox_multilingual, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor, ok_button, cancel_button] {
+            let ok_button = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.ok).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32), 280, 340, 90, 28, hwnd, HMENU(OPTIONS_ID_OK as isize), HINSTANCE(0), None);
+            let cancel_button = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.cancel).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 380, 340, 90, 28, hwnd, HMENU(OPTIONS_ID_CANCEL as isize), HINSTANCE(0), None);
+
+            for control in [label_lang, combo_lang, label_open, combo_open, label_voice, combo_voice, label_audio_skip, combo_audio_skip, label_audio_split, combo_audio_split, checkbox_multilingual, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor, ok_button, cancel_button] {
                 if control.0 != 0 && hfont.0 != 0 {
                     let _ = SendMessageW(control, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
                 }
             }
 
             let dialog_state = Box::new(OptionsDialogState {
-                parent, combo_lang, combo_open, combo_voice, combo_audio_skip, checkbox_multilingual, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor, ok_button
+                parent, combo_lang, combo_open, combo_voice, combo_audio_skip, combo_audio_split, checkbox_multilingual, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor, ok_button
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(dialog_state) as isize);
             initialize_options_dialog(hwnd);
@@ -310,9 +324,9 @@ where
 }
 
 unsafe fn initialize_options_dialog(hwnd: HWND) {
-    let (parent, combo_lang, combo_open, _combo_voice, combo_audio_skip, checkbox_multilingual, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor) = match with_options_state(hwnd, |state| {
+    let (parent, combo_lang, combo_open, _combo_voice, combo_audio_skip, combo_audio_split, checkbox_multilingual, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor) = match with_options_state(hwnd, |state| {
         (
-            state.parent, state.combo_lang, state.combo_open, state.combo_voice, state.combo_audio_skip,
+            state.parent, state.combo_lang, state.combo_open, state.combo_voice, state.combo_audio_skip, state.combo_audio_split,
             state.checkbox_multilingual, state.checkbox_split_on_newline, state.checkbox_word_wrap, state.checkbox_move_cursor
         )
     }) {
@@ -358,6 +372,24 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
     }
     let _ = SendMessageW(combo_audio_skip, CB_SETCURSEL, WPARAM(selected_idx), LPARAM(0));
 
+    let _ = SendMessageW(combo_audio_split, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
+    let split_options = [
+        (0, labels.split_none.to_string()),
+        (2, format!("2 {}", labels.split_parts)),
+        (4, format!("4 {}", labels.split_parts)),
+        (6, format!("6 {}", labels.split_parts)),
+        (8, format!("8 {}", labels.split_parts)),
+    ];
+    let mut selected_split_idx = 0;
+    for (parts, label) in split_options.iter() {
+        let idx = SendMessageW(combo_audio_split, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(label).as_ptr() as isize)).0 as usize;
+        let _ = SendMessageW(combo_audio_split, CB_SETITEMDATA, WPARAM(idx), LPARAM(*parts as isize));
+        if *parts == settings.audiobook_split {
+            selected_split_idx = idx;
+        }
+    }
+    let _ = SendMessageW(combo_audio_split, CB_SETCURSEL, WPARAM(selected_split_idx), LPARAM(0));
+
     refresh_voices(hwnd);
 }
 
@@ -400,8 +432,8 @@ unsafe fn populate_voice_combo(combo_voice: HWND, voices: &[VoiceInfo], selected
 }
 
 unsafe fn apply_options_dialog(hwnd: HWND) {
-    let (parent, combo_lang, combo_open, combo_voice, combo_audio_skip, checkbox_multilingual, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor) = match with_options_state(hwnd, |state| {
-        (state.parent, state.combo_lang, state.combo_open, state.combo_voice, state.combo_audio_skip, state.checkbox_multilingual, state.checkbox_split_on_newline, state.checkbox_word_wrap, state.checkbox_move_cursor)
+    let (parent, combo_lang, combo_open, combo_voice, combo_audio_skip, combo_audio_split, checkbox_multilingual, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor) = match with_options_state(hwnd, |state| {
+        (state.parent, state.combo_lang, state.combo_open, state.combo_voice, state.combo_audio_skip, state.combo_audio_split, state.checkbox_multilingual, state.checkbox_split_on_newline, state.checkbox_word_wrap, state.checkbox_move_cursor)
     }) { Some(values) => values, None => return };
 
     let mut settings = with_state(parent, |state| state.settings.clone()).unwrap_or_default();
@@ -432,6 +464,12 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     if skip_sel >= 0 {
         let skip_secs = SendMessageW(combo_audio_skip, CB_GETITEMDATA, WPARAM(skip_sel as usize), LPARAM(0)).0;
         settings.audiobook_skip_seconds = skip_secs as u32;
+    }
+
+    let split_sel = SendMessageW(combo_audio_split, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+    if split_sel >= 0 {
+        let split_parts = SendMessageW(combo_audio_split, CB_GETITEMDATA, WPARAM(split_sel as usize), LPARAM(0)).0;
+        settings.audiobook_split = split_parts as u32;
     }
 
     let _ = with_state(parent, |state| { state.settings = settings.clone(); });

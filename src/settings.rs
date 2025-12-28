@@ -87,6 +87,7 @@ pub struct AppSettings {
     pub word_wrap: bool,
     pub move_cursor_during_reading: bool,
     pub audiobook_skip_seconds: u32,
+    pub audiobook_split: u32,
 }
 
 impl Default for AppSettings {
@@ -100,6 +101,7 @@ impl Default for AppSettings {
             word_wrap: true,
             move_cursor_during_reading: false,
             audiobook_skip_seconds: 60,
+            audiobook_split: 0,
         }
     }
 }
