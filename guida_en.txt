@@ -41,6 +41,7 @@ Open Behavior: Open files in new tab or new window.
 Voice: Choose voice for reading.
 Multilingual Voices: Filter voice list.
 Move cursor during reading: Visually follow the text as it is being read.
+Audiobook split by text: Split when the marker appears at the start of a line (case sensitive). If not found, no split.
 
 Help:
 Guide: Open this guide.

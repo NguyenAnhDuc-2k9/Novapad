@@ -28,6 +28,7 @@ and the ability to **create audiobooks directly from text using Microsoft voices
 - **Text-to-Speech (TTS) & Audiobook Creation**
   - Read documents aloud using Microsoft voices (Edge Neural) and SAPI5 (including OneCore)
   - Create MP3 audiobooks directly from text
+  - Split audiobooks by fixed parts or by marker text (case sensitive, line start)
   - Supports both Microsoft voices and SAPI5/OneCore for playback and audiobook saving
 - **MP3 Audiobook Player**
   - Open and play MP3 files

@@ -41,6 +41,7 @@ Apertura file: apre i file in nuova scheda o nuova finestra.
 Seleziona voce: sceglie la voce per la lettura.
 Solo voci multilingua: filtra l'elenco delle voci.
 Sposta cursore durante la lettura: segue visivamente il testo mentre viene letto.
+Divisione audiolibro per testo: divide l'audiolibro quando il testo indicato compare a inizio riga (case sensitive). Se non trovato, nessuna divisione.
 
 Aiuto:
 Guida: apre questa guida.
