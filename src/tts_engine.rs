@@ -539,6 +539,66 @@ pub fn normalize_for_tts(text: &str, split_on_newline: bool) -> String {
     if split_on_newline { text.to_string() } else { text.replace('\n', " ").replace('\r', "") }
 }
 
+fn normalize_newlines(text: &str) -> String {
+    text.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+fn split_text_by_marker(text: &str, marker: &str) -> Option<Vec<String>> {
+    if marker.trim().is_empty() {
+        return None;
+    }
+
+    let normalized = normalize_newlines(text);
+    let mut positions: Vec<usize> = Vec::new();
+
+    if normalized.starts_with(marker) {
+        positions.push(0);
+    }
+
+    let needle = format!("\n{marker}");
+    for (idx, _) in normalized.match_indices(&needle) {
+        positions.push(idx + 1);
+    }
+
+    positions.sort_unstable();
+    positions.dedup();
+    if positions.is_empty() {
+        return None;
+    }
+
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    for pos in positions.iter().skip(1) {
+        if *pos > start && *pos <= normalized.len() {
+            parts.push(normalized[start..*pos].to_string());
+            start = *pos;
+        }
+    }
+    if start <= normalized.len() {
+        parts.push(normalized[start..].to_string());
+    }
+    Some(parts)
+}
+
+fn build_audiobook_parts_by_marker(text: &str, marker: &str, split_on_newline: bool) -> Option<Vec<Vec<String>>> {
+    let parts_text = split_text_by_marker(text, marker)?;
+    let mut parts_chunks = Vec::new();
+
+    for part_text in parts_text {
+        let prepared = normalize_for_tts(&part_text, split_on_newline);
+        let chunks = split_text(&prepared);
+        if !chunks.is_empty() {
+            parts_chunks.push(chunks);
+        }
+    }
+
+    if parts_chunks.is_empty() {
+        None
+    } else {
+        Some(parts_chunks)
+    }
+}
+
 pub fn split_text(text: &str) -> Vec<String> {
     let mut chunks = Vec::new();
     let char_indices: Vec<(usize, char)> = text.char_indices().collect();
@@ -671,15 +731,44 @@ pub fn start_audiobook(hwnd: HWND) {
         })
     };
 
-    let (split_on_newline, audiobook_split, tts_engine) = unsafe { 
-        with_state(hwnd, |state| (state.settings.split_on_newline, state.settings.audiobook_split, state.settings.tts_engine)) 
-    }.unwrap_or((true, 0, TtsEngine::Edge));
+    let (split_on_newline, audiobook_split, audiobook_split_by_text, audiobook_split_text, tts_engine) = unsafe { 
+        with_state(hwnd, |state| {
+            (
+                state.settings.split_on_newline,
+                state.settings.audiobook_split,
+                state.settings.audiobook_split_by_text,
+                state.settings.audiobook_split_text.clone(),
+                state.settings.tts_engine,
+            )
+        }) 
+    }.unwrap_or((true, 0, false, String::new(), TtsEngine::Edge));
 
     let cleaned = strip_dashed_lines(&text);
-    let prepared = normalize_for_tts(&cleaned, split_on_newline);
+    let mut split_parts = audiobook_split;
+    let mut marker_parts: Option<Vec<Vec<String>>> = None;
+    if audiobook_split_by_text {
+        marker_parts = build_audiobook_parts_by_marker(&cleaned, &audiobook_split_text, split_on_newline);
+        if marker_parts.is_none() {
+            split_parts = 0;
+        }
+    }
 
-    let chunks = split_text(&prepared);
-    let chunks_len = chunks.len();
+    let prepared = if marker_parts.is_some() {
+        String::new()
+    } else {
+        normalize_for_tts(&cleaned, split_on_newline)
+    };
+
+    let chunks = if marker_parts.is_some() {
+        Vec::new()
+    } else {
+        split_text(&prepared)
+    };
+    let chunks_len = if let Some(parts) = &marker_parts {
+        parts.iter().map(|part| part.len()).sum()
+    } else {
+        chunks.len()
+    };
     
     let cancel_token = Arc::new(AtomicBool::new(false));
     let progress_hwnd = unsafe {
@@ -694,8 +783,20 @@ pub fn start_audiobook(hwnd: HWND) {
     let cancel_clone = cancel_token.clone();
     std::thread::spawn(move || {
         let result = match tts_engine {
-            TtsEngine::Edge => run_split_audiobook(&chunks, &voice, &output, audiobook_split, progress_hwnd, cancel_clone),
-            TtsEngine::Sapi5 => run_split_sapi_audiobook(&chunks, &voice, &output, audiobook_split, progress_hwnd, cancel_clone, language),
+            TtsEngine::Edge => {
+                if let Some(parts) = marker_parts {
+                    run_marker_split_audiobook(&parts, &voice, &output, progress_hwnd, cancel_clone)
+                } else {
+                    run_split_audiobook(&chunks, &voice, &output, split_parts, progress_hwnd, cancel_clone)
+                }
+            }
+            TtsEngine::Sapi5 => {
+                if let Some(parts) = marker_parts {
+                    run_marker_split_sapi_audiobook(&parts, &voice, &output, progress_hwnd, cancel_clone, language)
+                } else {
+                    run_split_sapi_audiobook(&chunks, &voice, &output, split_parts, progress_hwnd, cancel_clone, language)
+                }
+            }
         };
         let success = result.is_ok();
         let message = match result {
@@ -764,6 +865,40 @@ fn run_split_audiobook(
     Ok(())
 }
 
+fn run_marker_split_audiobook(
+    parts: &[Vec<String>],
+    voice: &str,
+    output: &Path,
+    progress_hwnd: HWND,
+    cancel: Arc<AtomicBool>,
+) -> Result<(), String> {
+    let parts_len = parts.len();
+    let mut current_global_progress = 0;
+
+    for (part_idx, part_chunks) in parts.iter().enumerate() {
+        if part_chunks.is_empty() {
+            continue;
+        }
+        let part_output = if parts_len > 1 {
+            let stem = output.file_stem().and_then(|s| s.to_str()).unwrap_or("audiobook");
+            let ext = output.extension().and_then(|s| s.to_str()).unwrap_or("mp3");
+            output.with_file_name(format!("{}_part{}.{}", stem, part_idx + 1, ext))
+        } else {
+            output.to_path_buf()
+        };
+
+        run_tts_audiobook_part(
+            part_chunks,
+            voice,
+            &part_output,
+            progress_hwnd,
+            cancel.clone(),
+            &mut current_global_progress
+        )?;
+    }
+    Ok(())
+}
+
 fn run_split_sapi_audiobook(
     chunks: &[String],
     voice: &str,
@@ -797,6 +932,54 @@ fn run_split_sapi_audiobook(
         let progress_hwnd_clone = progress_hwnd;
         let cancel_clone = cancel.clone();
         
+        crate::sapi5_engine::speak_sapi_to_file(
+            part_chunks,
+            voice,
+            &part_output,
+            language,
+            cancel_clone,
+            |_chunk_idx| { 
+                 current_global_progress += 1;
+                 if progress_hwnd_clone.0 != 0 {
+                     unsafe { 
+                         let _ = PostMessageW(progress_hwnd_clone, crate::WM_UPDATE_PROGRESS, WPARAM(current_global_progress), LPARAM(0)); 
+                     }
+                 }
+            }
+        ).map_err(|e| {
+             let _ = std::fs::remove_file(&part_output);
+             e
+        })?;
+    }
+    Ok(())
+}
+
+fn run_marker_split_sapi_audiobook(
+    parts: &[Vec<String>],
+    voice: &str,
+    output: &Path,
+    progress_hwnd: HWND,
+    cancel: Arc<AtomicBool>,
+    language: Language,
+) -> Result<(), String> {
+    let parts_len = parts.len();
+    let mut current_global_progress = 0;
+
+    for (part_idx, part_chunks) in parts.iter().enumerate() {
+        if part_chunks.is_empty() {
+            continue;
+        }
+        let part_output = if parts_len > 1 {
+            let stem = output.file_stem().and_then(|s| s.to_str()).unwrap_or("audiobook");
+            let ext = output.extension().and_then(|s| s.to_str()).unwrap_or("mp3");
+            output.with_file_name(format!("{}_part{}.{}", stem, part_idx + 1, ext))
+        } else {
+            output.to_path_buf()
+        };
+
+        let progress_hwnd_clone = progress_hwnd;
+        let cancel_clone = cancel.clone();
+
         crate::sapi5_engine::speak_sapi_to_file(
             part_chunks,
             voice,

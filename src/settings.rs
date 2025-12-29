@@ -103,6 +103,8 @@ pub struct AppSettings {
     pub move_cursor_during_reading: bool,
     pub audiobook_skip_seconds: u32,
     pub audiobook_split: u32,
+    pub audiobook_split_by_text: bool,
+    pub audiobook_split_text: String,
 }
 
 impl Default for AppSettings {
@@ -118,6 +120,8 @@ impl Default for AppSettings {
             move_cursor_during_reading: false,
             audiobook_skip_seconds: 60,
             audiobook_split: 0,
+            audiobook_split_by_text: false,
+            audiobook_split_text: String::new(),
         }
     }
 }
