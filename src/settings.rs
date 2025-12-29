@@ -115,7 +115,7 @@ impl Default for AppSettings {
             tts_engine: TtsEngine::Edge,
             tts_voice: "it-IT-IsabellaNeural".to_string(),
             tts_only_multilingual: false,
-            split_on_newline: true,
+            split_on_newline: false,
             word_wrap: true,
             move_cursor_during_reading: false,
             audiobook_skip_seconds: 60,

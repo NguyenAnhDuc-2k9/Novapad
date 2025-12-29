@@ -30,7 +30,7 @@ e la possibilit… di **creare audiolibri direttamente dal testo utilizzando le 
 - **Text-to-Speech (TTS) e creazione di audiolibri**
   - Lettura vocale dei documenti tramite le voci Microsoft (Edge Neural) e SAPI5 (incluse OneCore)
   - Creazione di audiolibri in formato MP3 direttamente dal testo
-  - Divisione audiolibri in parti fisse o in base a testo (case sensitive, inizio riga)
+  - Divisione audiolibri in parti fisse o in base a testo (case sensitive, inizio riga). Esempio: con "Capitolo" crea una parte per ogni capitolo; include autore e introduzione nella prima parte fino al primo Capitolo. Altre opzioni: 2, 4, 6, 8 parti
   - Supporto voci Microsoft e SAPI5/OneCore per lettura e salvataggio audiolibri
 - **Player MP3 (audiolibri)**
   - Apertura e riproduzione di file MP3

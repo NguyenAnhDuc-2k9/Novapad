@@ -536,7 +536,12 @@ pub fn strip_dashed_lines(text: &str) -> String {
 }
 
 pub fn normalize_for_tts(text: &str, split_on_newline: bool) -> String {
-    if split_on_newline { text.to_string() } else { text.replace('\n', " ").replace('\r', "") }
+    let normalized = if split_on_newline {
+        text.to_string()
+    } else {
+        text.replace('\n', " ").replace('\r', "")
+    };
+    normalized.replace('«', "").replace('»', "")
 }
 
 fn normalize_newlines(text: &str) -> String {

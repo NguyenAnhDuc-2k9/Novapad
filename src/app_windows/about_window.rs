@@ -26,7 +26,8 @@ fn about_title(language: Language) -> &'static str {
 
 fn about_message(language: Language) -> &'static str {
     match language {
-        Language::Italian => "Questo programma è un piccolo Notepad, creato da Ambrogio Riili, che permette di aprire i files più comuni, tra cui anche pdf, e di creare degli audiolibri.",
-        Language::English => "This program is a small Notepad, created by Ambrogio Riili, that can open common files, including PDF, and can create audiobooks.",
+        Language::Italian => "Novapad è un editor di testo per Windows con supporto multi-formato. Apre file TXT, PDF, DOCX, EPUB e fogli di calcolo; legge il testo con sintesi vocale, crea audiolibri MP3 e riproduce audiolibri. Versione: 0.5.0. Autore: Ambrogio Riili.",
+        Language::English => "Novapad is a Windows text editor with multi-format support. It opens TXT, PDF, DOCX, EPUB, and spreadsheet files; reads text with TTS, creates MP3 audiobooks, and plays audiobooks. Version: 0.5.0. Author: Ambrogio Riili.",
     }
 }
+

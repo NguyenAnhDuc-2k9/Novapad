@@ -41,7 +41,8 @@ Apertura file: apre i file in nuova scheda o nuova finestra.
 Seleziona voce: sceglie la voce per la lettura.
 Solo voci multilingua: filtra l'elenco delle voci.
 Sposta cursore durante la lettura: segue visivamente il testo mentre viene letto.
-Divisione audiolibro per testo: divide l'audiolibro quando il testo indicato compare a inizio riga (case sensitive). Se non trovato, nessuna divisione.
+Divisione audiolibro per testo: divide l'audiolibro quando il testo indicato compare a inizio riga (case sensitive: "Capitolo" e "capitolo" sono diversi). Esempio: con "Capitolo" crea una parte per ogni capitolo, includendo autore e introduzione nella prima parte fino al primo Capitolo. Se non trovato, nessuna divisione.
+Altre opzioni per dividere l'audiolibro: 2 parti, 4 parti, 6 parti, 8 parti.
 
 Aiuto:
 Guida: apre questa guida.

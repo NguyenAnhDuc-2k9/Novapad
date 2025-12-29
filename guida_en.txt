@@ -41,7 +41,8 @@ Open Behavior: Open files in new tab or new window.
 Voice: Choose voice for reading.
 Multilingual Voices: Filter voice list.
 Move cursor during reading: Visually follow the text as it is being read.
-Audiobook split by text: Split when the marker appears at the start of a line (case sensitive). If not found, no split.
+Audiobook split by text: Split when the marker appears at the start of a line (case sensitive: "Chapter" and "chapter" are different). Example: with "Chapter" it creates one part per chapter, including author and introduction in the first part up to the first Chapter. If not found, no split.
+Other options to split the audiobook: 2 parts, 4 parts, 6 parts, 8 parts.
 
 Help:
 Guide: Open this guide.
