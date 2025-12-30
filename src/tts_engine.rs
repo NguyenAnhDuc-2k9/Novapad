@@ -24,7 +24,6 @@ use crate::{with_state, get_active_edit, log_debug, show_error, save_audio_dialo
 use crate::settings;
 use crate::editor_manager::get_edit_text;
 use crate::settings::{Language, AudiobookResult, TRUSTED_CLIENT_TOKEN, TtsEngine};
-use crate::accessibility::{EM_GETSEL};
 
 pub const WSS_URL_BASE: &str = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
 pub const MAX_TTS_TEXT_LEN: usize = 3000;
