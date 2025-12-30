@@ -44,6 +44,8 @@ and the ability to **create audiobooks directly from text using Microsoft voices
   Designed to work correctly with screen readers such as NVDA and JAWS.
 - **Readable UI Options**
   - Text color and text size controls for better readability, including light/dark colors and larger sizes
+- **Voice Tuning Options**
+  - Set pitch, speed, and volume for voices (Microsoft and SAPI5), applied to reading and audiobook creation
 - **Modern Tech Stack**
   Written in Rust for safety, performance, and reliability.
 

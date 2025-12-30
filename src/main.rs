@@ -106,7 +106,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_CREATE, WM_DESTROY, WM_DROPFILES, WM_KEYDOWN, WM_NOTIFY, WM_SIZE, WM_TIMER, WNDCLASSW, WS_CHILD,
     WS_CLIPCHILDREN, WS_OVERLAPPEDWINDOW, WS_VISIBLE, WS_TABSTOP, ACCEL, FVIRTKEY,
     FCONTROL, FSHIFT, WM_SETFOCUS, WM_NCDESTROY, HACCEL, WM_UNDO, WM_CUT, WM_COPY,
-    WM_PASTE, WM_COPYDATA, KillTimer, SetTimer, SetWindowTextW, WS_EX_CLIENTEDGE,
+    WM_PASTE, WM_COPYDATA, KillTimer, SetTimer, SetWindowTextW, WS_EX_CLIENTEDGE, WM_NEXTDLGCTL,
 };
 
 
@@ -120,6 +120,9 @@ const WM_TTS_PLAYBACK_ERROR: u32 = WM_APP + 5;
 const WM_UPDATE_PROGRESS: u32 = WM_APP + 6;
 const WM_TTS_CHUNK_START: u32 = WM_APP + 7;
 const WM_TTS_SAPI_VOICES_LOADED: u32 = WM_APP + 8;
+pub const WM_FOCUS_EDITOR: u32 = WM_APP + 30;
+const FOCUS_EDITOR_TIMER_ID: usize = 1;
+const FOCUS_EDITOR_TIMER_ID2: usize = 2;
 const COPYDATA_OPEN_FILE: usize = 1;
 const VOICE_PANEL_ID_ENGINE: usize = 8001;
 const VOICE_PANEL_ID_VOICE: usize = 8002;
@@ -127,6 +130,19 @@ const VOICE_PANEL_ID_MULTILINGUAL: usize = 8003;
 const VOICE_PANEL_ID_FAVORITES: usize = 8004;
 const VOICE_MENU_ID_ADD_FAVORITE: u32 = 9001;
 const VOICE_MENU_ID_REMOVE_FAVORITE: u32 = 9002;
+
+fn focus_editor(hwnd: HWND) {
+    unsafe {
+        SetForegroundWindow(hwnd);
+        if let Some(hwnd_edit) = with_state(hwnd, |state| {
+            state.docs.get(state.current).map(|doc| doc.hwnd_edit)
+        }).flatten() {
+            SetFocus(hwnd_edit);
+            let _ = SendMessageW(hwnd_edit, WM_SETFOCUS, WPARAM(0), LPARAM(0));
+            let _ = PostMessageW(hwnd, WM_NEXTDLGCTL, WPARAM(hwnd_edit.0 as usize), LPARAM(1));
+        }
+    }
+}
 
 struct PdfLoadResult {
     hwnd_edit: HWND,
@@ -184,6 +200,7 @@ pub(crate) struct AppState {
     bookmarks_window: HWND,
     dictionary_window: HWND,
     dictionary_entry_dialog: HWND,
+    tts_tuning_dialog: HWND,
     find_msg: u32,
     find_text: Vec<u16>,
     replace_text: Vec<u16>,
@@ -319,7 +336,9 @@ fn main() -> windows::core::Result<()> {
                         || state.options_dialog.0 != 0
                         || state.help_window.0 != 0
                         || state.dictionary_window.0 != 0;
-                    let secondary_open = secondary_open || state.dictionary_entry_dialog.0 != 0;
+                    let secondary_open = secondary_open
+                        || state.dictionary_entry_dialog.0 != 0
+                        || state.tts_tuning_dialog.0 != 0;
                     
                     if is_audiobook && !secondary_open {
                         match handle_player_keyboard(&msg, state.settings.audiobook_skip_seconds) {
@@ -402,6 +421,13 @@ fn main() -> windows::core::Result<()> {
 
                 if state.dictionary_entry_dialog.0 != 0 {
                     if handle_accessibility(state.dictionary_entry_dialog, &msg) {
+                        handled = true;
+                        return;
+                    }
+                }
+
+                if state.tts_tuning_dialog.0 != 0 {
+                    if app_windows::tts_tuning_window::handle_navigation(state.tts_tuning_dialog, &msg) {
                         handled = true;
                         return;
                     }
@@ -582,6 +608,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 bookmarks_window: HWND(0),
                 dictionary_window: HWND(0),
                 dictionary_entry_dialog: HWND(0),
+                tts_tuning_dialog: HWND(0),
                 find_msg,
                 find_text: vec![0u16; 256],
                 replace_text: vec![0u16; 256],
@@ -667,6 +694,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_TIMER => {
+            if wparam.0 == FOCUS_EDITOR_TIMER_ID || wparam.0 == FOCUS_EDITOR_TIMER_ID2 {
+                let _ = KillTimer(hwnd, wparam.0);
+                focus_editor(hwnd);
+                return LRESULT(0);
+            }
             handle_pdf_loading_timer(hwnd, wparam.0 as usize);
             LRESULT(0)
         }
@@ -801,6 +833,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let message = to_wide(&payload.message);
             let flags = if payload.success { MB_OK | MB_ICONINFORMATION } else { MB_OK | MB_ICONERROR };
             MessageBoxW(hwnd, PCWSTR(message.as_ptr()), PCWSTR(title.as_ptr()), flags);
+            LRESULT(0)
+        }
+        WM_FOCUS_EDITOR => {
+            focus_editor(hwnd);
+            let _ = SetTimer(hwnd, FOCUS_EDITOR_TIMER_ID, 80, None);
+            let _ = SetTimer(hwnd, FOCUS_EDITOR_TIMER_ID2, 200, None);
             LRESULT(0)
         }
         WM_KEYDOWN => {

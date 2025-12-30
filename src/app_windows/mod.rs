@@ -4,3 +4,4 @@ pub mod bookmarks_window;
 pub mod audiobook_window;
 pub mod about_window;
 pub mod dictionary_window;
+pub mod tts_tuning_window;

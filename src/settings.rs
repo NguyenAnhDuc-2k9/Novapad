@@ -122,6 +122,9 @@ pub struct AppSettings {
     pub dictionary: Vec<DictionaryEntry>,
     pub text_color: u32,
     pub text_size: i32,
+    pub tts_rate: i32,
+    pub tts_pitch: i32,
+    pub tts_volume: i32,
     pub show_voice_panel: bool,
     pub show_favorite_panel: bool,
 }
@@ -145,6 +148,9 @@ impl Default for AppSettings {
             dictionary: Vec::new(),
             text_color: 0x000000,
             text_size: 12,
+            tts_rate: 0,
+            tts_pitch: 0,
+            tts_volume: 100,
             show_voice_panel: false,
             show_favorite_panel: false,
         }

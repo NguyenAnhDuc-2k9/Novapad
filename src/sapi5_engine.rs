@@ -6,7 +6,7 @@ use windows::core::{w, PCWSTR, GUID};
 use windows::Win32::Media::Speech::{
     SpVoice, ISpVoice, SpObjectTokenCategory, ISpObjectTokenCategory,
     ISpObjectToken, IEnumSpObjectTokens, SpFileStream, ISpStream,
-    SPFM_CREATE_ALWAYS, SPVOICESTATUS, SPRS_DONE, SPF_ASYNC, SPF_IS_NOT_XML, SPF_PURGEBEFORESPEAK,
+    SPFM_CREATE_ALWAYS, SPVOICESTATUS, SPRS_DONE, SPF_ASYNC, SPF_IS_XML, SPF_PURGEBEFORESPEAK,
 };
 use windows::Win32::Media::Audio::{WAVEFORMATEX, WAVE_FORMAT_PCM};
 use windows::Win32::System::Com::{
@@ -123,6 +123,9 @@ pub fn list_sapi_voices() -> Result<Vec<VoiceInfo>, String> {
 pub fn play_sapi(
     chunks: Vec<String>,
     voice_name: String,
+    tts_rate: i32,
+    tts_pitch: i32,
+    tts_volume: i32,
     cancel: Arc<AtomicBool>,
     mut command_rx: mpsc::UnboundedReceiver<TtsCommand>,
 ) -> Result<(), String> {
@@ -146,6 +149,8 @@ pub fn play_sapi(
             if let Some(token) = find_voice_token(&voice_name) {
                 let _ = voice.SetVoice(&token);
             }
+            let _ = voice.SetRate(map_sapi_rate(tts_rate));
+            let _ = voice.SetVolume(map_sapi_volume(tts_volume));
 
             let mut paused = false;
             let mut pending: VecDeque<String> = VecDeque::from(chunks);
@@ -178,10 +183,11 @@ pub fn play_sapi(
                 }
 
                 let current_chunk = chunk;
-                let chunk_wide = to_wide(&current_chunk);
+                let ssml = mk_sapi_ssml(&current_chunk, tts_rate, tts_pitch, tts_volume);
+                let chunk_wide = to_wide(&ssml);
                 let _ = voice.Speak(
                     PCWSTR(chunk_wide.as_ptr()),
-                    (SPF_ASYNC.0 | SPF_IS_NOT_XML.0) as u32,
+                    (SPF_ASYNC.0 | SPF_IS_XML.0) as u32,
                     None,
                 );
 
@@ -246,6 +252,9 @@ pub fn speak_sapi_to_file(
     voice_name: &str,
     output_path: &Path,
     language: Language,
+    tts_rate: i32,
+    tts_pitch: i32,
+    tts_volume: i32,
     cancel: Arc<AtomicBool>,
     mut progress_callback: impl FnMut(usize),
 ) -> Result<(), String> {
@@ -277,6 +286,8 @@ pub fn speak_sapi_to_file(
             let voice_token = find_voice_token(voice_name)
                 .ok_or_else(|| "Selected SAPI voice not found. Please select a voice in Options.".to_string())?;
             voice.SetVoice(&voice_token).map_err(|e| format!("SetVoice failed: {}", e))?;
+            let _ = voice.SetRate(map_sapi_rate(tts_rate));
+            let _ = voice.SetVolume(map_sapi_volume(tts_volume));
 
             let stream: ISpStream = CoCreateInstance(&SpFileStream, None, CLSCTX_ALL)
                 .map_err(|e| format!("Failed to create SpFileStream: {}", e))?;
@@ -308,8 +319,9 @@ pub fn speak_sapi_to_file(
                     let _ = std::fs::remove_file(&wav_path);
                     return Err("Cancelled".to_string());
                 }
-                let chunk_wide = to_wide(chunk);
-                voice.Speak(PCWSTR(chunk_wide.as_ptr()), 16, None)
+                let ssml = mk_sapi_ssml(chunk, tts_rate, tts_pitch, tts_volume);
+                let chunk_wide = to_wide(&ssml);
+                voice.Speak(PCWSTR(chunk_wide.as_ptr()), SPF_IS_XML.0 as u32, None)
                     .map_err(|e| format!("Speak failed: {}", e))?;
 
                 progress_callback(i + 1);
@@ -368,6 +380,54 @@ fn mf_error_message(language: Language, err: &str) -> String {
         Language::Italian => format!("Errore MP3 Media Foundation: {}. Salvato in WAV.", err),
         Language::English => format!("Media Foundation MP3 error: {}. Saved as WAV.", err),
     }
+}
+
+fn map_sapi_rate(rate_percent: i32) -> i32 {
+    (rate_percent / 10).clamp(-10, 10)
+}
+
+fn map_sapi_volume(volume: i32) -> u16 {
+    let vol = volume.clamp(0, 100);
+    vol as u16
+}
+
+fn escape_xml(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+fn format_rate(rate: i32) -> String {
+    format!("{:+}%", rate)
+}
+
+fn format_pitch(pitch: i32) -> String {
+    format!("{:+}Hz", pitch)
+}
+
+fn format_volume(volume: i32) -> String {
+    let delta = volume.saturating_sub(100);
+    format!("{:+}%", delta)
+}
+
+fn mk_sapi_ssml(text: &str, rate: i32, pitch: i32, volume: i32) -> String {
+    let escaped = escape_xml(text);
+    format!(
+        "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis'><prosody pitch='{}' rate='{}' volume='{}'>{}</prosody></speak>",
+        format_pitch(pitch),
+        format_rate(rate),
+        format_volume(volume),
+        escaped
+    )
 }
 
 fn wav_data_size(path: &Path) -> Result<u32, String> {

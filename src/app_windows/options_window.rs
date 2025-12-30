@@ -2,12 +2,12 @@ use windows::core::{PCWSTR, w};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM, LRESULT, HINSTANCE};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, RegisterClassW,
-    SendMessageW, SetWindowLongPtrW, SetForegroundWindow, SetWindowTextW,
+    KillTimer, PostMessageW, SendMessageW, SetTimer, SetWindowLongPtrW, SetForegroundWindow, SetWindowTextW,
     GWLP_USERDATA, WM_CREATE, WM_DESTROY, WM_NCDESTROY, WM_CLOSE, WM_COMMAND,
-    WM_KEYDOWN, WM_SETFONT, WM_APP,
+    WM_KEYDOWN, WM_SETFONT, WM_APP, WM_NEXTDLGCTL, WM_TIMER, WM_SETFOCUS,
     WS_CAPTION, WS_SYSMENU, WS_VISIBLE, WS_CHILD, WS_TABSTOP, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME,
     CW_USEDEFAULT, HMENU, WNDCLASSW, WS_EX_CLIENTEDGE,
-    BS_DEFPUSHBUTTON, BS_AUTOCHECKBOX, BM_SETCHECK, BM_GETCHECK,
+    BS_DEFPUSHBUTTON, BS_AUTOCHECKBOX, BM_SETCHECK, BM_GETCHECK, BM_CLICK,
     CB_ADDSTRING, CB_RESETCONTENT, CB_SETCURSEL, CB_GETCURSEL, CB_GETITEMDATA, CB_SETITEMDATA, CBS_DROPDOWNLIST,
     CB_GETDROPPEDSTATE, GetParent, MSG, GetWindowTextLengthW, GetWindowTextW, ShowWindow,
     CREATESTRUCTW, LoadCursorW, IDC_ARROW, WINDOW_STYLE, CBN_SELCHANGE, SW_HIDE, SW_SHOW,
@@ -29,6 +29,7 @@ const OPTIONS_ID_OPEN: usize = 6002;
 const OPTIONS_ID_TTS_ENGINE: usize = 6012;
 const OPTIONS_ID_VOICE: usize = 6003;
 const OPTIONS_ID_MULTILINGUAL: usize = 6004;
+const OPTIONS_ID_TTS_TUNING: usize = 6014;
 const OPTIONS_ID_SPLIT_ON_NEWLINE: usize = 6007;
 const OPTIONS_ID_WORD_WRAP: usize = 6008;
 const OPTIONS_ID_MOVE_CURSOR: usize = 6009;
@@ -37,6 +38,8 @@ const OPTIONS_ID_AUDIO_SPLIT: usize = 6011;
 const OPTIONS_ID_AUDIO_SPLIT_TEXT: usize = 6013;
 const OPTIONS_ID_OK: usize = 6005;
 const OPTIONS_ID_CANCEL: usize = 6006;
+const OPTIONS_FOCUS_LANG_MSG: u32 = WM_APP + 30;
+const OPTIONS_FOCUS_LANG_TIMER_ID: usize = 1;
 
 const WM_TTS_VOICES_LOADED: u32 = WM_APP + 2;
 const WM_TTS_SAPI_VOICES_LOADED: u32 = WM_APP + 8;
@@ -60,6 +63,7 @@ pub unsafe fn handle_navigation(hwnd: HWND, msg: &MSG) -> bool {
 
 struct OptionsDialogState {
     parent: HWND,
+    label_language: HWND,
     combo_lang: HWND,
     combo_open: HWND,
     combo_tts_engine: HWND,
@@ -69,6 +73,7 @@ struct OptionsDialogState {
     label_audio_split_text: HWND,
     edit_audio_split_text: HWND,
     checkbox_multilingual: HWND,
+    button_tts_tuning: HWND,
     checkbox_split_on_newline: HWND,
     checkbox_word_wrap: HWND,
     checkbox_move_cursor: HWND,
@@ -82,6 +87,7 @@ struct OptionsLabels {
     label_tts_engine: &'static str,
     label_voice: &'static str,
     label_multilingual: &'static str,
+    label_tts_tuning: &'static str,
     label_split_on_newline: &'static str,
     label_word_wrap: &'static str,
     label_move_cursor: &'static str,
@@ -111,6 +117,7 @@ fn options_labels(language: Language) -> OptionsLabels {
             label_tts_engine: "Sistema sintesi vocale:",
             label_voice: "Voce:",
             label_multilingual: "Mostra solo voci multilingua",
+            label_tts_tuning: "Scegli tono, velocita' e volume",
             label_split_on_newline: "Spezza la lettura quando si va a capo",
             label_word_wrap: "A capo automatico nella finestra",
             label_move_cursor: "Sposta il cursore durante la lettura",
@@ -137,6 +144,7 @@ fn options_labels(language: Language) -> OptionsLabels {
             label_tts_engine: "Text-to-Speech System:",
             label_voice: "Voice:",
             label_multilingual: "Show only multilingual voices",
+            label_tts_tuning: "Choose pitch, speed, and volume",
             label_split_on_newline: "Split reading on new lines",
             label_word_wrap: "Word wrap in editor",
             label_move_cursor: "Move cursor during reading",
@@ -276,7 +284,10 @@ unsafe extern "system" fn options_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             y += 40;
 
             let checkbox_multilingual = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.label_multilingual).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32), 170, y, 300, 20, hwnd, HMENU(OPTIONS_ID_MULTILINGUAL as isize), HINSTANCE(0), None);
-            y += 32;
+            y += 28;
+
+            let button_tts_tuning = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.label_tts_tuning).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 170, y, 300, 26, hwnd, HMENU(OPTIONS_ID_TTS_TUNING as isize), HINSTANCE(0), None);
+            y += 36;
 
             let label_audio_skip = CreateWindowExW(Default::default(), WC_STATIC, PCWSTR(to_wide(labels.label_audio_skip).as_ptr()), WS_CHILD | WS_VISIBLE, 20, y, 140, 20, hwnd, HMENU(0), HINSTANCE(0), None);
             let combo_audio_skip = CreateWindowExW(WS_EX_CLIENTEDGE, WC_COMBOBOXW, PCWSTR::null(), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32), 170, y - 2, 300, 140, hwnd, HMENU(OPTIONS_ID_AUDIO_SKIP as isize), HINSTANCE(0), None);
@@ -302,14 +313,29 @@ unsafe extern "system" fn options_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             let ok_button = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.ok).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32), 280, y, 90, 28, hwnd, HMENU(OPTIONS_ID_OK as isize), HINSTANCE(0), None);
             let cancel_button = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.cancel).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 380, y, 90, 28, hwnd, HMENU(OPTIONS_ID_CANCEL as isize), HINSTANCE(0), None);
 
-            for control in [label_lang, combo_lang, label_open, combo_open, label_tts_engine, combo_tts_engine, label_voice, combo_voice, label_audio_skip, combo_audio_skip, label_audio_split, combo_audio_split, label_audio_split_text, edit_audio_split_text, checkbox_multilingual, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor, ok_button, cancel_button] {
+            for control in [label_lang, combo_lang, label_open, combo_open, label_tts_engine, combo_tts_engine, label_voice, combo_voice, label_audio_skip, combo_audio_skip, label_audio_split, combo_audio_split, label_audio_split_text, edit_audio_split_text, checkbox_multilingual, button_tts_tuning, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor, ok_button, cancel_button] {
                 if control.0 != 0 && hfont.0 != 0 {
                     let _ = SendMessageW(control, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
                 }
             }
 
             let dialog_state = Box::new(OptionsDialogState {
-                parent, combo_lang, combo_open, combo_tts_engine, combo_voice, combo_audio_skip, combo_audio_split, label_audio_split_text, edit_audio_split_text, checkbox_multilingual, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor, ok_button
+                parent,
+                label_language: label_lang,
+                combo_lang,
+                combo_open,
+                combo_tts_engine,
+                combo_voice,
+                combo_audio_skip,
+                combo_audio_split,
+                label_audio_split_text,
+                edit_audio_split_text,
+                checkbox_multilingual,
+                button_tts_tuning,
+                checkbox_split_on_newline,
+                checkbox_word_wrap,
+                checkbox_move_cursor,
+                ok_button,
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(dialog_state) as isize);
             initialize_options_dialog(hwnd);
@@ -321,8 +347,18 @@ unsafe extern "system" fn options_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             let code = (wparam.0 >> 16) as u32;
             match cmd_id {
                 OPTIONS_ID_OK => {
-                    apply_options_dialog(hwnd);
-                    LRESULT(0)
+                    let focus = GetFocus();
+                    let is_tuning = with_options_state(hwnd, |state| focus == state.button_tts_tuning).unwrap_or(false);
+                    if is_tuning {
+                        let parent = with_options_state(hwnd, |s| s.parent).unwrap_or(HWND(0));
+                        if parent.0 != 0 {
+                            crate::app_windows::tts_tuning_window::open(parent, hwnd);
+                        }
+                        LRESULT(0)
+                    } else {
+                        apply_options_dialog(hwnd);
+                        LRESULT(0)
+                    }
                 }
                 OPTIONS_ID_CANCEL | 2 => {
                     let _ = DestroyWindow(hwnd);
@@ -330,6 +366,13 @@ unsafe extern "system" fn options_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
                 }
                 OPTIONS_ID_MULTILINGUAL => {
                     refresh_voices(hwnd);
+                    LRESULT(0)
+                }
+                OPTIONS_ID_TTS_TUNING => {
+                    let parent = with_options_state(hwnd, |s| s.parent).unwrap_or(HWND(0));
+                    if parent.0 != 0 {
+                        crate::app_windows::tts_tuning_window::open(parent, hwnd);
+                    }
                     LRESULT(0)
                 }
                 OPTIONS_ID_TTS_ENGINE => {
@@ -358,12 +401,29 @@ unsafe extern "system" fn options_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
                 _ => DefWindowProcW(hwnd, msg, wparam, lparam),
             }
         }
+        OPTIONS_FOCUS_LANG_MSG => {
+            focus_language_combo_once(hwnd);
+            LRESULT(0)
+        }
+        WM_TIMER => {
+            if wparam.0 == OPTIONS_FOCUS_LANG_TIMER_ID {
+                let _ = KillTimer(hwnd, OPTIONS_FOCUS_LANG_TIMER_ID);
+                focus_language_combo_once(hwnd);
+                return LRESULT(0);
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
         WM_KEYDOWN => {
             if wparam.0 as u32 == VK_RETURN.0 as u32 {
                 let focus = GetFocus();
                 let is_voice = with_options_state(hwnd, |state| focus == state.combo_voice).unwrap_or(false);
                 if is_voice {
                     apply_options_dialog(hwnd);
+                    return LRESULT(0);
+                }
+                let is_tuning = with_options_state(hwnd, |state| focus == state.button_tts_tuning).unwrap_or(false);
+                if is_tuning {
+                    let _ = SendMessageW(focus, BM_CLICK, WPARAM(0), LPARAM(0));
                     return LRESULT(0);
                 }
             } else if wparam.0 as u32 == VK_ESCAPE.0 as u32 {
@@ -377,6 +437,11 @@ unsafe extern "system" fn options_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             if parent.0 != 0 {
                 EnableWindow(parent, true);
                 SetForegroundWindow(parent);
+                SetFocus(parent);
+                if let Some(edit) = crate::get_active_edit(parent) {
+                    SetFocus(edit);
+                }
+                let _ = PostMessageW(parent, crate::WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
                 let _ = with_state(parent, |state| {
                     state.options_dialog = HWND(0);
                 });
@@ -411,10 +476,10 @@ where
 }
 
 unsafe fn initialize_options_dialog(hwnd: HWND) {
-    let (parent, combo_lang, combo_open, combo_tts_engine, _combo_voice, combo_audio_skip, combo_audio_split, _label_audio_split_text, edit_audio_split_text, checkbox_multilingual, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor) = match with_options_state(hwnd, |state| {
+    let (parent, combo_lang, combo_open, combo_tts_engine, _combo_voice, combo_audio_skip, combo_audio_split, _label_audio_split_text, edit_audio_split_text, checkbox_multilingual, _button_tts_tuning, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor) = match with_options_state(hwnd, |state| {
         (
             state.parent, state.combo_lang, state.combo_open, state.combo_tts_engine, state.combo_voice, state.combo_audio_skip, state.combo_audio_split, state.label_audio_split_text, state.edit_audio_split_text,
-            state.checkbox_multilingual, state.checkbox_split_on_newline, state.checkbox_word_wrap, state.checkbox_move_cursor
+            state.checkbox_multilingual, state.button_tts_tuning, state.checkbox_split_on_newline, state.checkbox_word_wrap, state.checkbox_move_cursor
         )
     }) {
         Some(values) => values,
@@ -534,8 +599,8 @@ unsafe fn populate_voice_combo(combo_voice: HWND, voices: &[VoiceInfo], selected
 }
 
 unsafe fn apply_options_dialog(hwnd: HWND) {
-    let (parent, combo_lang, combo_open, combo_tts_engine, combo_voice, combo_audio_skip, combo_audio_split, edit_audio_split_text, checkbox_multilingual, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor) = match with_options_state(hwnd, |state| {
-        (state.parent, state.combo_lang, state.combo_open, state.combo_tts_engine, state.combo_voice, state.combo_audio_skip, state.combo_audio_split, state.edit_audio_split_text, state.checkbox_multilingual, state.checkbox_split_on_newline, state.checkbox_word_wrap, state.checkbox_move_cursor)
+    let (parent, combo_lang, combo_open, combo_tts_engine, combo_voice, combo_audio_skip, combo_audio_split, edit_audio_split_text, checkbox_multilingual, _button_tts_tuning, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor) = match with_options_state(hwnd, |state| {
+        (state.parent, state.combo_lang, state.combo_open, state.combo_tts_engine, state.combo_voice, state.combo_audio_skip, state.combo_audio_split, state.edit_audio_split_text, state.checkbox_multilingual, state.button_tts_tuning, state.checkbox_split_on_newline, state.checkbox_word_wrap, state.checkbox_move_cursor)
     }) { Some(values) => values, None => return };
 
     let mut settings = with_state(parent, |state| state.settings.clone()).unwrap_or_default();
@@ -614,6 +679,9 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     refresh_voice_panel(parent);
     if was_tts_active && (old_engine != settings.tts_engine || old_voice != settings.tts_voice) {
         crate::restart_tts_from_current_offset(parent);
+    }
+    if parent.0 != 0 {
+        let _ = PostMessageW(parent, crate::WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
     }
     let _ = DestroyWindow(hwnd);
 }
@@ -711,4 +779,47 @@ fn fetch_voice_list() -> Result<Vec<VoiceInfo>, String> {
     }
     results.sort_by(|a, b| a.short_name.cmp(&b.short_name));
     Ok(results)
+}
+
+fn focus_language_combo_once(hwnd: HWND) {
+    unsafe {
+        let (combo, label, ok_button, language) = with_options_state(hwnd, |state| {
+            (state.combo_lang, state.label_language, state.ok_button, state.parent)
+        }).and_then(|(combo, label, ok_button, parent)| {
+            let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
+            Some((combo, label, ok_button, language))
+        }).unwrap_or((HWND(0), HWND(0), HWND(0), Language::Italian));
+        if combo.0 != 0 {
+            if label.0 != 0 {
+                let labels = options_labels(language);
+                let _ = SetWindowTextW(label, PCWSTR(to_wide(" ").as_ptr()));
+                let _ = SetWindowTextW(label, PCWSTR(to_wide(labels.label_language).as_ptr()));
+            }
+            SetForegroundWindow(hwnd);
+            if ok_button.0 != 0 {
+                SetFocus(ok_button);
+            }
+            SetFocus(combo);
+            let _ = PostMessageW(hwnd, WM_NEXTDLGCTL, WPARAM(combo.0 as usize), LPARAM(1));
+            let _ = PostMessageW(combo, WM_SETFOCUS, WPARAM(0), LPARAM(0));
+            let sel = SendMessageW(combo, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+            if sel >= 0 {
+                let _ = SendMessageW(combo, CB_SETCURSEL, WPARAM(sel as usize), LPARAM(0));
+                let _ = SendMessageW(
+                    hwnd,
+                    WM_COMMAND,
+                    WPARAM(OPTIONS_ID_LANG | ((CBN_SELCHANGE as usize) << 16)),
+                    LPARAM(combo.0),
+                );
+            }
+        }
+    }
+}
+
+pub(crate) fn focus_language_combo(hwnd: HWND) {
+    focus_language_combo_once(hwnd);
+    unsafe {
+        let _ = PostMessageW(hwnd, OPTIONS_FOCUS_LANG_MSG, WPARAM(0), LPARAM(0));
+        let _ = SetTimer(hwnd, OPTIONS_FOCUS_LANG_TIMER_ID, 80, None);
+    }
 }

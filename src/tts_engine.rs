@@ -82,17 +82,20 @@ pub fn start_tts_from_caret(hwnd: HWND) {
     let Some(hwnd_edit) = (unsafe { get_active_edit(hwnd) }) else {
         return;
     };
-    let (language, split_on_newline, tts_engine, dictionary) = unsafe {
+    let (language, split_on_newline, tts_engine, dictionary, tts_rate, tts_pitch, tts_volume) = unsafe {
         with_state(hwnd, |state| {
             (
                 state.settings.language,
                 state.settings.split_on_newline,
                 state.settings.tts_engine,
                 state.settings.dictionary.clone(),
+                state.settings.tts_rate,
+                state.settings.tts_pitch,
+                state.settings.tts_volume,
             )
         })
     }
-    .unwrap_or((Language::Italian, true, TtsEngine::Edge, Vec::new()));
+    .unwrap_or((Language::Italian, true, TtsEngine::Edge, Vec::new(), 0, 0, 100));
     
     let (text, initial_caret_pos) = unsafe { get_text_from_caret(hwnd_edit) };
     if text.trim().is_empty() {
@@ -109,7 +112,7 @@ pub fn start_tts_from_caret(hwnd: HWND) {
     let chunks = split_into_tts_chunks(&text, split_on_newline, &dictionary);
     
     match tts_engine {
-        TtsEngine::Edge => start_tts_playback_with_chunks(hwnd, text, voice, chunks, initial_caret_pos),
+        TtsEngine::Edge => start_tts_playback_with_chunks(hwnd, text, voice, chunks, initial_caret_pos, tts_rate, tts_pitch, tts_volume),
         TtsEngine::Sapi5 => {
             // Stop any existing playback
             stop_tts_playback(hwnd);
@@ -129,7 +132,7 @@ pub fn start_tts_from_caret(hwnd: HWND) {
             };
             
             let chunk_strings: Vec<String> = chunks.into_iter().map(|c| c.text_to_read).collect();
-            let _ = crate::sapi5_engine::play_sapi(chunk_strings, voice, cancel, command_rx);
+            let _ = crate::sapi5_engine::play_sapi(chunk_strings, voice, tts_rate, tts_pitch, tts_volume, cancel, command_rx);
         }
     }
 }
@@ -191,7 +194,7 @@ fn handle_tts_command(
     }
 }
 
-pub fn start_tts_playback_with_chunks(hwnd: HWND, cleaned: String, voice: String, chunks: Vec<TtsChunk>, initial_caret_pos: i32) {
+pub fn start_tts_playback_with_chunks(hwnd: HWND, cleaned: String, voice: String, chunks: Vec<TtsChunk>, initial_caret_pos: i32, tts_rate: i32, tts_pitch: i32, tts_volume: i32) {
     stop_tts_playback(hwnd);
     prevent_sleep(true);
     if chunks.is_empty() {
@@ -252,12 +255,15 @@ pub fn start_tts_playback_with_chunks(hwnd: HWND, cleaned: String, voice: String
         let cancel_downloader = cancel_flag.clone();
         let chunks_downloader = chunks.clone();
         let voice_downloader = voice.clone();
+        let rate = tts_rate;
+        let pitch = tts_pitch;
+        let volume = tts_volume;
 
         rt.spawn(async move {
             for chunk_obj in chunks_downloader {
                 if cancel_downloader.load(Ordering::SeqCst) { break; }
                 let request_id = Uuid::new_v4().simple().to_string();
-                match download_audio_chunk(&chunk_obj.text_to_read, &voice_downloader, &request_id).await {
+                match download_audio_chunk(&chunk_obj.text_to_read, &voice_downloader, &request_id, rate, pitch, volume).await {
                     Ok(data) => {
                         if audio_tx.send(Ok((data, chunk_obj.original_len))).await.is_err() { break; }
                     }
@@ -369,12 +375,15 @@ pub async fn download_audio_chunk(
     text: &str,
     voice: &str,
     request_id: &str,
+    tts_rate: i32,
+    tts_pitch: i32,
+    tts_volume: i32,
 ) -> Result<Vec<u8>, String> {
     let max_retries = 5;
     let mut last_error = String::new();
 
     for attempt in 1..=max_retries {
-        match download_audio_chunk_attempt(text, voice, request_id).await {
+        match download_audio_chunk_attempt(text, voice, request_id, tts_rate, tts_pitch, tts_volume).await {
             Ok(data) => return Ok(data),
             Err(e) => {
                 last_error = e;
@@ -395,6 +404,9 @@ async fn download_audio_chunk_attempt(
     text: &str,
     voice: &str,
     request_id: &str,
+    tts_rate: i32,
+    tts_pitch: i32,
+    tts_volume: i32,
 ) -> Result<Vec<u8>, String> {
     let sec_ms_gec = generate_sec_ms_gec();
     let sec_ms_gec_version = "1-130.0.2849.68";
@@ -425,7 +437,7 @@ async fn download_audio_chunk_attempt(
     );
     write.send(Message::Text(config_msg)).await.map_err(|err| err.to_string())?;
 
-    let ssml = mkssml(text, voice);
+    let ssml = mkssml(text, voice, tts_rate, tts_pitch, tts_volume);
     let ssml_msg = format!(
         "X-RequestId:{}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:{}Z\r\nPath:ssml\r\n\r\n{}",
         request_id,
@@ -561,10 +573,23 @@ fn get_date_string() -> String {
     Local::now().format("%a %b %d %Y %H:%M:%S GMT+0000 (Coordinated Universal Time)").to_string()
 }
 
-fn mkssml(text: &str, voice: &str) -> String {
+fn format_rate(rate: i32) -> String {
+    format!("{:+}%", rate)
+}
+
+fn format_pitch(pitch: i32) -> String {
+    format!("{:+}Hz", pitch)
+}
+
+fn format_volume(volume: i32) -> String {
+    let delta = volume.saturating_sub(100);
+    format!("{:+}%", delta)
+}
+
+fn mkssml(text: &str, voice: &str, tts_rate: i32, tts_pitch: i32, tts_volume: i32) -> String {
     let lang = voice.split('-').collect::<Vec<_>>();
     let lang = if lang.len() >= 3 { lang[0..2].join("-") } else { "en-US".to_string() };
-    format!("<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{}'><voice name='{}'><prosody pitch='+0Hz' rate='+0%' volume='+0%'>{}</prosody></voice></speak>", lang, voice, text)
+    format!("<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{}'><voice name='{}'><prosody pitch='{}' rate='{}' volume='{}'>{}</prosody></voice></speak>", lang, voice, format_pitch(tts_pitch), format_rate(tts_rate), format_volume(tts_volume), text)
 }
 
 pub fn remove_long_dash_runs(line: &str) -> String {
@@ -808,7 +833,7 @@ pub fn start_audiobook(hwnd: HWND) {
         })
     };
 
-    let (split_on_newline, audiobook_split, audiobook_split_by_text, audiobook_split_text, tts_engine, dictionary) = unsafe { 
+    let (split_on_newline, audiobook_split, audiobook_split_by_text, audiobook_split_text, tts_engine, dictionary, tts_rate, tts_pitch, tts_volume) = unsafe { 
         with_state(hwnd, |state| {
             (
                 state.settings.split_on_newline,
@@ -817,9 +842,12 @@ pub fn start_audiobook(hwnd: HWND) {
                 state.settings.audiobook_split_text.clone(),
                 state.settings.tts_engine,
                 state.settings.dictionary.clone(),
+                state.settings.tts_rate,
+                state.settings.tts_pitch,
+                state.settings.tts_volume,
             )
         }) 
-    }.unwrap_or((true, 0, false, String::new(), TtsEngine::Edge, Vec::new()));
+    }.unwrap_or((true, 0, false, String::new(), TtsEngine::Edge, Vec::new(), 0, 0, 100));
 
     let cleaned = strip_dashed_lines(&text);
     let mut split_parts = audiobook_split;
@@ -863,16 +891,16 @@ pub fn start_audiobook(hwnd: HWND) {
         let result = match tts_engine {
             TtsEngine::Edge => {
                 if let Some(parts) = marker_parts {
-                    run_marker_split_audiobook(&parts, &voice, &output, progress_hwnd, cancel_clone)
+                    run_marker_split_audiobook(&parts, &voice, &output, progress_hwnd, cancel_clone, tts_rate, tts_pitch, tts_volume)
                 } else {
-                    run_split_audiobook(&chunks, &voice, &output, split_parts, progress_hwnd, cancel_clone)
+                    run_split_audiobook(&chunks, &voice, &output, split_parts, progress_hwnd, cancel_clone, tts_rate, tts_pitch, tts_volume)
                 }
             }
             TtsEngine::Sapi5 => {
                 if let Some(parts) = marker_parts {
-                    run_marker_split_sapi_audiobook(&parts, &voice, &output, progress_hwnd, cancel_clone, language)
+                    run_marker_split_sapi_audiobook(&parts, &voice, &output, progress_hwnd, cancel_clone, language, tts_rate, tts_pitch, tts_volume)
                 } else {
-                    run_split_sapi_audiobook(&chunks, &voice, &output, split_parts, progress_hwnd, cancel_clone, language)
+                    run_split_sapi_audiobook(&chunks, &voice, &output, split_parts, progress_hwnd, cancel_clone, language, tts_rate, tts_pitch, tts_volume)
                 }
             }
         };
@@ -906,6 +934,9 @@ fn run_split_audiobook(
     split_parts: u32,
     progress_hwnd: HWND,
     cancel: Arc<AtomicBool>,
+    tts_rate: i32,
+    tts_pitch: i32,
+    tts_volume: i32,
 ) -> Result<(), String> {
     let parts = if split_parts == 0 { 1 } else { split_parts as usize };
     let total_chunks = chunks.len();
@@ -937,7 +968,10 @@ fn run_split_audiobook(
             &part_output,
             progress_hwnd,
             cancel.clone(),
-            &mut current_global_progress
+            &mut current_global_progress,
+            tts_rate,
+            tts_pitch,
+            tts_volume
         )?;
     }
     Ok(())
@@ -949,6 +983,9 @@ fn run_marker_split_audiobook(
     output: &Path,
     progress_hwnd: HWND,
     cancel: Arc<AtomicBool>,
+    tts_rate: i32,
+    tts_pitch: i32,
+    tts_volume: i32,
 ) -> Result<(), String> {
     let parts_len = parts.len();
     let mut current_global_progress = 0;
@@ -971,7 +1008,10 @@ fn run_marker_split_audiobook(
             &part_output,
             progress_hwnd,
             cancel.clone(),
-            &mut current_global_progress
+            &mut current_global_progress,
+            tts_rate,
+            tts_pitch,
+            tts_volume
         )?;
     }
     Ok(())
@@ -985,6 +1025,9 @@ fn run_split_sapi_audiobook(
     progress_hwnd: HWND,
     cancel: Arc<AtomicBool>,
     language: Language,
+    tts_rate: i32,
+    tts_pitch: i32,
+    tts_volume: i32,
 ) -> Result<(), String> {
     let parts = if split_parts == 0 { 1 } else { split_parts as usize };
     let total_chunks = chunks.len();
@@ -1015,6 +1058,9 @@ fn run_split_sapi_audiobook(
             voice,
             &part_output,
             language,
+            tts_rate,
+            tts_pitch,
+            tts_volume,
             cancel_clone,
             |_chunk_idx| { 
                  current_global_progress += 1;
@@ -1039,6 +1085,9 @@ fn run_marker_split_sapi_audiobook(
     progress_hwnd: HWND,
     cancel: Arc<AtomicBool>,
     language: Language,
+    tts_rate: i32,
+    tts_pitch: i32,
+    tts_volume: i32,
 ) -> Result<(), String> {
     let parts_len = parts.len();
     let mut current_global_progress = 0;
@@ -1063,6 +1112,9 @@ fn run_marker_split_sapi_audiobook(
             voice,
             &part_output,
             language,
+            tts_rate,
+            tts_pitch,
+            tts_volume,
             cancel_clone,
             |_chunk_idx| { 
                  current_global_progress += 1;
@@ -1087,6 +1139,9 @@ fn run_tts_audiobook_part(
     progress_hwnd: HWND,
     cancel: Arc<AtomicBool>,
     current_global_progress: &mut usize,
+    tts_rate: i32,
+    tts_pitch: i32,
+    tts_volume: i32,
 ) -> Result<(), String> {
     let file = std::fs::File::create(output).map_err(|err| err.to_string())?;
     let mut writer = BufWriter::new(file);
@@ -1106,7 +1161,7 @@ fn run_tts_audiobook_part(
                     if cancel.load(Ordering::Relaxed) {
                         return Err("Cancelled".to_string());
                     }
-                    match download_audio_chunk(&chunk, &voice, &request_id).await {
+                    match download_audio_chunk(&chunk, &voice, &request_id, tts_rate, tts_pitch, tts_volume).await {
                         Ok(data) => return Ok::<Vec<u8>, String>(data),
                         Err(err) => {
                             if cancel.load(Ordering::Relaxed) {
