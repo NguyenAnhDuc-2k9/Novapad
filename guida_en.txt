@@ -9,6 +9,7 @@ Save All: Save all documents (Ctrl+Shift+S).
 Close Tab: Close the current document (Ctrl+W).
 Recent Files: Open a recent file.
 Reading: F5 Start reading, F4 Pause/Resume, F6 Stop reading.
+Favorites during reading: F1 previous favorite voice, F2 next favorite voice.
 Record Audiobook: Create an MP3 file from the current text (Ctrl+R).
 
 Edit:
@@ -20,6 +21,13 @@ Select All: Select all text (Ctrl+A).
 Find: Search text in the document (Ctrl+F).
 Find Next: Find next occurrence (F3).
 Replace: Find and replace text (Ctrl+H).
+
+View:
+Show voices in editor: Show voice system, voice list, and multilingual filter.
+Show favorite voices: Show the favorite voices list in the editor.
+When the list of entries is visible, pressing Tab moves the focus between the editor and the controls, while Shift+Tab moves it backward.
+To add or remove an entry from favorites, use Tab to move to the list of entries and add or remove it using the Applications key or the right mouse button. From the list of favorite entries, you can also press the Applications key to remove entries that have already been added.
+Keyboard shortcuts: it is possible to press F1 and F2 to switch between entries during reading, cycling through those added to favorites.
 
 Insert:
 Insert Bookmark: Save the current cursor position or audiobook time (Ctrl+B).

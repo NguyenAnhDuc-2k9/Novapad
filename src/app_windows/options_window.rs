@@ -17,7 +17,7 @@ use windows::Win32::UI::Controls::{WC_BUTTON, WC_STATIC, WC_COMBOBOXW, BST_CHECK
 use windows::Win32::Graphics::Gdi::{HBRUSH, COLOR_WINDOW, HFONT};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus, VK_RETURN, VK_ESCAPE, EnableWindow};
-use crate::{with_state, rebuild_menus};
+use crate::{with_state, rebuild_menus, refresh_voice_panel};
 use crate::editor_manager::apply_word_wrap_to_all_edits;
 use crate::settings::{Language, OpenBehavior, VoiceInfo, TtsEngine, save_settings, TRUSTED_CLIENT_TOKEN, VOICE_LIST_URL};
 use crate::accessibility::{to_wide, handle_accessibility};
@@ -608,6 +608,7 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     if old_word_wrap != settings.word_wrap {
         apply_word_wrap_to_all_edits(parent, settings.word_wrap);
     }
+    refresh_voice_panel(parent);
     let _ = DestroyWindow(hwnd);
 }
 
@@ -633,7 +634,7 @@ unsafe fn update_audio_split_text_visibility(hwnd: HWND) {
     EnableWindow(edit_audio_split_text, selected);
 }
 
-fn ensure_voice_lists_loaded(hwnd: HWND, language: Language) {
+pub(crate) fn ensure_voice_lists_loaded(hwnd: HWND, language: Language) {
     let (has_edge, has_sapi) = unsafe { with_state(hwnd, |state| (!state.edge_voices.is_empty(), !state.sapi_voices.is_empty())) }.unwrap_or((false, false));
     
     if !has_edge {

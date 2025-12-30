@@ -5,7 +5,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     ShowWindow, SW_HIDE, SW_SHOW, SendMessageW, GetClientRect, MoveWindow, SetWindowTextW,
     WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE, WS_VSCROLL, WS_HSCROLL, HMENU,
     WM_SETFONT, IDYES, IDNO, MessageBoxW, MB_YESNOCANCEL, MB_ICONWARNING,
-    GetWindowTextLengthW, GetWindowTextW, DestroyWindow,
+    GetWindowTextLengthW, GetWindowTextW, DestroyWindow, WS_GROUP,
     ES_MULTILINE, ES_AUTOVSCROLL, ES_AUTOHSCROLL, ES_WANTRETURN
 };
 use windows::Win32::UI::Controls::{
@@ -23,6 +23,11 @@ use crate::{with_state, log_debug};
 use crate::file_handler::*;
 
 const EM_LIMITTEXT: u32 = 0x00C5;
+const VOICE_PANEL_PADDING: i32 = 6;
+const VOICE_PANEL_ROW_HEIGHT: i32 = 22;
+const VOICE_PANEL_SPACING: i32 = 6;
+const VOICE_PANEL_LABEL_WIDTH: i32 = 140;
+const VOICE_PANEL_COMBO_HEIGHT: i32 = 140;
 
 fn apply_text_limit(hwnd_edit: HWND) {
     unsafe {
@@ -309,10 +314,23 @@ pub unsafe fn update_window_title(hwnd: HWND) {
 
 pub unsafe fn layout_children(hwnd: HWND) {
     let state_data = with_state(hwnd, |state| {
-        (state.hwnd_tab, state.docs.iter().map(|d| d.hwnd_edit).collect::<Vec<_>>())
+        (
+            state.hwnd_tab,
+            state.docs.iter().map(|d| d.hwnd_edit).collect::<Vec<_>>(),
+            state.voice_panel_visible,
+            state.voice_favorites_visible,
+            state.settings.tts_engine,
+            state.voice_label_engine,
+            state.voice_combo_engine,
+            state.voice_label_voice,
+            state.voice_combo_voice,
+            state.voice_checkbox_multilingual,
+            state.voice_label_favorites,
+            state.voice_combo_favorites,
+        )
     });
 
-    let Some((hwnd_tab, edit_handles)) = state_data else {
+    let Some((hwnd_tab, edit_handles, voice_panel_visible, favorites_visible, tts_engine, label_engine, combo_engine, label_voice, combo_voice, checkbox_multilingual, label_favorites, combo_favorites)) = state_data else {
         return;
     };
 
@@ -329,14 +347,62 @@ pub unsafe fn layout_children(hwnd: HWND) {
     let mut tab_rc = rc;
     SendMessageW(hwnd_tab, TCM_ADJUSTRECT, WPARAM(0), LPARAM(&mut tab_rc as *mut _ as isize));
 
+    let mut panel_height = 0;
+    let panel_visible = voice_panel_visible || favorites_visible;
+    if panel_visible {
+        let show_multilingual = voice_panel_visible && matches!(tts_engine, crate::settings::TtsEngine::Edge);
+        let mut rows = 0;
+        if voice_panel_visible {
+            rows += 2;
+            if show_multilingual {
+                rows += 1;
+            }
+        }
+        if favorites_visible {
+            rows += 1;
+        }
+        panel_height = VOICE_PANEL_PADDING * 2
+            + VOICE_PANEL_ROW_HEIGHT * rows
+            + VOICE_PANEL_SPACING * (rows - 1);
+        let label_x = tab_rc.left + VOICE_PANEL_PADDING;
+        let combo_x = label_x + VOICE_PANEL_LABEL_WIDTH + VOICE_PANEL_PADDING;
+        let combo_width = (tab_rc.right - VOICE_PANEL_PADDING) - combo_x;
+        let combo_width = if combo_width < 120 { 120 } else { combo_width };
+        let row1_top = tab_rc.top + VOICE_PANEL_PADDING;
+        let row2_top = row1_top + VOICE_PANEL_ROW_HEIGHT + VOICE_PANEL_SPACING;
+        let row3_top = row2_top + VOICE_PANEL_ROW_HEIGHT + VOICE_PANEL_SPACING;
+        let row4_top = row3_top + VOICE_PANEL_ROW_HEIGHT + VOICE_PANEL_SPACING;
+
+        if voice_panel_visible {
+            let _ = MoveWindow(label_engine, label_x, row1_top, VOICE_PANEL_LABEL_WIDTH, VOICE_PANEL_ROW_HEIGHT, true);
+            let _ = MoveWindow(combo_engine, combo_x, row1_top - 2, combo_width, VOICE_PANEL_COMBO_HEIGHT, true);
+            let _ = MoveWindow(label_voice, label_x, row2_top, VOICE_PANEL_LABEL_WIDTH, VOICE_PANEL_ROW_HEIGHT, true);
+            let _ = MoveWindow(combo_voice, combo_x, row2_top - 2, combo_width, VOICE_PANEL_COMBO_HEIGHT, true);
+            if show_multilingual {
+                let _ = MoveWindow(checkbox_multilingual, label_x, row3_top, combo_width + VOICE_PANEL_LABEL_WIDTH + VOICE_PANEL_PADDING, VOICE_PANEL_ROW_HEIGHT, true);
+                if favorites_visible {
+                    let _ = MoveWindow(label_favorites, label_x, row4_top, VOICE_PANEL_LABEL_WIDTH, VOICE_PANEL_ROW_HEIGHT, true);
+                    let _ = MoveWindow(combo_favorites, combo_x, row4_top - 2, combo_width, VOICE_PANEL_COMBO_HEIGHT, true);
+                }
+            } else if favorites_visible {
+                let _ = MoveWindow(label_favorites, label_x, row3_top, VOICE_PANEL_LABEL_WIDTH, VOICE_PANEL_ROW_HEIGHT, true);
+                let _ = MoveWindow(combo_favorites, combo_x, row3_top - 2, combo_width, VOICE_PANEL_COMBO_HEIGHT, true);
+            }
+        } else if favorites_visible {
+            let _ = MoveWindow(label_favorites, label_x, row1_top, VOICE_PANEL_LABEL_WIDTH, VOICE_PANEL_ROW_HEIGHT, true);
+            let _ = MoveWindow(combo_favorites, combo_x, row1_top - 2, combo_width, VOICE_PANEL_COMBO_HEIGHT, true);
+        }
+    }
+
+    let panel_offset = panel_height;
     for hwnd_edit in edit_handles {
         if hwnd_edit.0 != 0 {
             let _ = MoveWindow(
                 hwnd_edit,
                 tab_rc.left,
-                tab_rc.top,
+                tab_rc.top + panel_offset,
                 tab_rc.right - tab_rc.left,
-                tab_rc.bottom - tab_rc.top,
+                tab_rc.bottom - tab_rc.top - panel_offset,
                 true,
             );
         }
@@ -344,7 +410,7 @@ pub unsafe fn layout_children(hwnd: HWND) {
 }
 
 pub unsafe fn create_edit(parent: HWND, hfont: HFONT, word_wrap: bool) -> HWND {
-    let mut style = WS_CHILD | WS_CLIPCHILDREN | WS_VSCROLL | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_MULTILINE as u32) | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_AUTOVSCROLL as u32) | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_WANTRETURN as u32);
+    let mut style = WS_CHILD | WS_CLIPCHILDREN | WS_VSCROLL | WS_GROUP | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_MULTILINE as u32) | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_AUTOVSCROLL as u32) | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_WANTRETURN as u32);
     if !word_wrap {
         style |= WS_HSCROLL | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_AUTOHSCROLL as u32);
     }

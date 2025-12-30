@@ -58,7 +58,7 @@ use windows::Win32::UI::Controls::{
 
     InitCommonControlsEx, ICC_TAB_CLASSES, INITCOMMONCONTROLSEX, NMHDR, TCM_GETCURSEL,
 
-    TCN_SELCHANGE, WC_TABCONTROLW,
+    TCN_SELCHANGE, WC_TABCONTROLW, WC_COMBOBOXW, WC_STATIC, WC_BUTTON, BST_CHECKED,
 
 };
 
@@ -76,9 +76,9 @@ use windows::Win32::UI::Controls::Dialogs::{
 
 use windows::Win32::UI::Input::KeyboardAndMouse::{
 
-    GetKeyState, SetFocus, VK_CONTROL, VK_F3, VK_F4, VK_F5,
+    EnableWindow, GetFocus, GetKeyState, SetFocus, VK_CONTROL, VK_F1, VK_F2, VK_F3, VK_F4, VK_F5,
 
-    VK_F6, VK_TAB
+    VK_F6, VK_TAB, VK_SHIFT
 
 };
 
@@ -92,15 +92,21 @@ use windows::Win32::UI::WindowsAndMessaging::{
     RegisterWindowMessageW, SetForegroundWindow, SetWindowLongPtrW,
     PostMessageW, WM_APP,
     TranslateAcceleratorW, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
-    GWLP_USERDATA, CREATESTRUCTW, EN_CHANGE,
+    GWLP_USERDATA, CREATESTRUCTW, EN_CHANGE, CheckMenuItem, GetMenu, MF_BYCOMMAND,
+    MF_CHECKED, MF_UNCHECKED, MF_STRING, ShowWindow, SW_HIDE, SW_SHOW, WINDOW_STYLE, CBN_SELCHANGE,
+    CB_ADDSTRING, CB_RESETCONTENT, CB_SETCURSEL, CB_GETCURSEL, CB_GETITEMDATA,
+    CB_SETITEMDATA, CB_GETDROPPEDSTATE, CBS_DROPDOWNLIST, WM_SETFONT, BS_AUTOCHECKBOX,
+    BM_GETCHECK, BM_SETCHECK,
+    CreatePopupMenu, TrackPopupMenu, TPM_RIGHTBUTTON, WM_CONTEXTMENU, WM_NULL,
+    AppendMenuW, GetCursorPos,
     HMENU, HCURSOR, HICON, IDC_ARROW, IDI_APPLICATION,
     MB_ICONERROR, MB_ICONINFORMATION, MB_OK,
     MSG, WM_CLOSE,
     WM_COMMAND,
     WM_CREATE, WM_DESTROY, WM_DROPFILES, WM_KEYDOWN, WM_NOTIFY, WM_SIZE, WM_TIMER, WNDCLASSW, WS_CHILD,
-    WS_CLIPCHILDREN, WS_OVERLAPPEDWINDOW, WS_VISIBLE, ACCEL, FVIRTKEY,
+    WS_CLIPCHILDREN, WS_OVERLAPPEDWINDOW, WS_VISIBLE, WS_TABSTOP, ACCEL, FVIRTKEY,
     FCONTROL, FSHIFT, WM_SETFOCUS, WM_NCDESTROY, HACCEL, WM_UNDO, WM_CUT, WM_COPY,
-    WM_PASTE, WM_COPYDATA, KillTimer, SetTimer,
+    WM_PASTE, WM_COPYDATA, KillTimer, SetTimer, SetWindowTextW, WS_EX_CLIENTEDGE,
 };
 
 
@@ -115,6 +121,12 @@ const WM_UPDATE_PROGRESS: u32 = WM_APP + 6;
 const WM_TTS_CHUNK_START: u32 = WM_APP + 7;
 const WM_TTS_SAPI_VOICES_LOADED: u32 = WM_APP + 8;
 const COPYDATA_OPEN_FILE: usize = 1;
+const VOICE_PANEL_ID_ENGINE: usize = 8001;
+const VOICE_PANEL_ID_VOICE: usize = 8002;
+const VOICE_PANEL_ID_MULTILINGUAL: usize = 8003;
+const VOICE_PANEL_ID_FAVORITES: usize = 8004;
+const VOICE_MENU_ID_ADD_FAVORITE: u32 = 9001;
+const VOICE_MENU_ID_REMOVE_FAVORITE: u32 = 9002;
 
 struct PdfLoadResult {
     hwnd_edit: HWND,
@@ -180,11 +192,22 @@ pub(crate) struct AppState {
     next_timer_id: usize,
     tts_session: Option<TtsSession>,
     tts_next_session_id: u64,
+    tts_last_offset: i32,
     edge_voices: Vec<VoiceInfo>,
     sapi_voices: Vec<VoiceInfo>,
     audiobook_progress: HWND,
     audiobook_cancel: Option<Arc<AtomicBool>>,
     active_audiobook: Option<AudiobookPlayer>,
+    voice_panel_visible: bool,
+    voice_label_engine: HWND,
+    voice_combo_engine: HWND,
+    voice_label_voice: HWND,
+    voice_combo_voice: HWND,
+    voice_checkbox_multilingual: HWND,
+    voice_favorites_visible: bool,
+    voice_label_favorites: HWND,
+    voice_combo_favorites: HWND,
+    voice_context_voice: Option<FavoriteVoice>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -263,6 +286,25 @@ fn main() -> windows::core::Result<()> {
                 if (GetKeyState(VK_CONTROL.0 as i32) & (0x8000u16 as i16)) != 0 {
                     next_tab_with_prompt(hwnd);
                     continue;
+                }
+            }
+            if msg.message == WM_KEYDOWN && msg.wParam.0 as u32 == u32::from(VK_F1.0) {
+                if is_tts_active(hwnd) {
+                    cycle_favorite_voice(hwnd, -1);
+                    continue;
+                }
+            }
+            if msg.message == WM_KEYDOWN && msg.wParam.0 as u32 == u32::from(VK_F2.0) {
+                if is_tts_active(hwnd) {
+                    cycle_favorite_voice(hwnd, 1);
+                    continue;
+                }
+            }
+            if msg.message == WM_KEYDOWN && msg.wParam.0 as u32 == VK_TAB.0 as u32 {
+                if (GetKeyState(VK_CONTROL.0 as i32) & (0x8000u16 as i16)) == 0 {
+                    if handle_voice_panel_tab(hwnd) {
+                        continue;
+                    }
                 }
             }
 
@@ -396,6 +438,113 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let bookmarks = load_bookmarks();
             let (_, recent_menu) = create_menus(hwnd, settings.language);
             let recent_files = load_recent_files();
+            let panel_labels = voice_panel_labels(settings.language);
+            let _panel_labels = panel_labels;
+            let empty_label = to_wide("");
+            let label_engine = CreateWindowExW(
+                Default::default(),
+                WC_STATIC,
+                PCWSTR(empty_label.as_ptr()),
+                WS_CHILD,
+                0,
+                0,
+                0,
+                0,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
+            let combo_engine = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                WC_COMBOBOXW,
+                PCWSTR::null(),
+                WS_CHILD | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
+                0,
+                0,
+                0,
+                140,
+                hwnd,
+                HMENU(VOICE_PANEL_ID_ENGINE as isize),
+                HINSTANCE(0),
+                None,
+            );
+            let label_voice = CreateWindowExW(
+                Default::default(),
+                WC_STATIC,
+                PCWSTR(empty_label.as_ptr()),
+                WS_CHILD,
+                0,
+                0,
+                0,
+                0,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
+            let combo_voice = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                WC_COMBOBOXW,
+                PCWSTR::null(),
+                WS_CHILD | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
+                0,
+                0,
+                0,
+                160,
+                hwnd,
+                HMENU(VOICE_PANEL_ID_VOICE as isize),
+                HINSTANCE(0),
+                None,
+            );
+            let checkbox_multilingual = CreateWindowExW(
+                Default::default(),
+                WC_BUTTON,
+                PCWSTR(empty_label.as_ptr()),
+                WS_CHILD | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
+                0,
+                0,
+                0,
+                0,
+                hwnd,
+                HMENU(VOICE_PANEL_ID_MULTILINGUAL as isize),
+                HINSTANCE(0),
+                None,
+            );
+            let label_favorites = CreateWindowExW(
+                Default::default(),
+                WC_STATIC,
+                PCWSTR(empty_label.as_ptr()),
+                WS_CHILD,
+                0,
+                0,
+                0,
+                0,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
+            let combo_favorites = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                WC_COMBOBOXW,
+                PCWSTR::null(),
+                WS_CHILD | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
+                0,
+                0,
+                0,
+                160,
+                hwnd,
+                HMENU(VOICE_PANEL_ID_FAVORITES as isize),
+                HINSTANCE(0),
+                None,
+            );
+            for control in [label_engine, combo_engine, label_voice, combo_voice, checkbox_multilingual, label_favorites, combo_favorites] {
+                if control.0 != 0 && hfont.0 != 0 {
+                    let _ = SendMessageW(control, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
+                }
+                ShowWindow(control, SW_HIDE);
+            }
             let state = Box::new(AppState {
                 hwnd_tab,
                 docs: Vec::new(),
@@ -404,7 +553,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 hfont,
                 hmenu_recent: recent_menu,
                 recent_files,
-                settings,
+                settings: settings.clone(),
                 bookmarks,
                 find_dialog: HWND(0),
                 replace_dialog: HWND(0),
@@ -421,15 +570,32 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 next_timer_id: 1,
                 tts_session: None,
                 tts_next_session_id: 1,
+                tts_last_offset: 0,
                 edge_voices: Vec::new(),
                 sapi_voices: Vec::new(),
                 audiobook_progress: HWND(0),
                 audiobook_cancel: None,
                 active_audiobook: None,
+                voice_panel_visible: false,
+                voice_label_engine: label_engine,
+                voice_combo_engine: combo_engine,
+                voice_label_voice: label_voice,
+                voice_combo_voice: combo_voice,
+                voice_checkbox_multilingual: checkbox_multilingual,
+                voice_favorites_visible: false,
+                voice_label_favorites: label_favorites,
+                voice_combo_favorites: combo_favorites,
+                voice_context_voice: None,
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
 
             update_recent_menu(hwnd, recent_menu);
+            if settings.show_voice_panel {
+                set_voice_panel_visible_internal(hwnd, true, false);
+            }
+            if settings.show_favorite_panel {
+                set_favorites_panel_visible_internal(hwnd, true, false);
+            }
             
             let create_struct = lparam.0 as *const CREATESTRUCTW;
             let lp_create_params = (*create_struct).lpCreateParams as *const Option<String>;
@@ -504,6 +670,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     app_windows::options_window::refresh_voices(dialog);
                 }
             }
+            refresh_voice_panel(hwnd);
             LRESULT(0)
         }
         WM_TTS_SAPI_VOICES_LOADED => {
@@ -520,6 +687,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     app_windows::options_window::refresh_voices(dialog);
                 }
             }
+            refresh_voice_panel(hwnd);
             LRESULT(0)
         }
         WM_TTS_PLAYBACK_DONE => {
@@ -528,6 +696,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 if let Some(current) = &state.tts_session {
                     if current.id == session_id {
                         state.tts_session = None;
+                        state.tts_last_offset = 0;
                         prevent_sleep(false);
                     }
                 }
@@ -539,6 +708,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let offset = lparam.0 as i32;
             let _ = with_state(hwnd, |state| {
                 if let Some(current) = &state.tts_session {
+                    if current.id == session_id {
+                        state.tts_last_offset = offset;
+                    }
                     if current.id == session_id && state.settings.move_cursor_during_reading {
                         if let Some(doc) = state.docs.get(state.current) {
                             let new_pos = current.initial_caret_pos + offset;
@@ -565,6 +737,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 if let Some(current) = &state.tts_session {
                     if current.id == session_id {
                         state.tts_session = None;
+                        state.tts_last_offset = 0;
                         prevent_sleep(false);
                         should_show = true;
                     }
@@ -609,10 +782,32 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_KEYDOWN => {
+            if wparam.0 as u32 == u32::from(VK_F1.0) {
+                cycle_favorite_voice(hwnd, -1);
+                return LRESULT(0);
+            }
+            if wparam.0 as u32 == u32::from(VK_F2.0) {
+                cycle_favorite_voice(hwnd, 1);
+                return LRESULT(0);
+            }
             if wparam.0 as u32 == u32::from(VK_TAB.0)
                 && (GetKeyState(VK_CONTROL.0 as i32) & (0x8000u16 as i16)) != 0
             {
                 next_tab_with_prompt(hwnd);
+                return LRESULT(0);
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_CONTEXTMENU => {
+            let target = HWND(wparam.0 as isize);
+            let (combo_voice, combo_favorites) = with_state(hwnd, |state| {
+                (state.voice_combo_voice, state.voice_combo_favorites)
+            })
+            .unwrap_or((HWND(0), HWND(0)));
+            if (target == combo_voice && combo_voice.0 != 0)
+                || (target == combo_favorites && combo_favorites.0 != 0)
+            {
+                show_voice_context_menu(hwnd, target, lparam);
                 return LRESULT(0);
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -622,6 +817,30 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let notification = (wparam.0 >> 16) as u16;
             if u32::from(notification) == EN_CHANGE {
                 mark_dirty_from_edit(hwnd, HWND(lparam.0));
+                return LRESULT(0);
+            }
+            if cmd_id == VOICE_PANEL_ID_ENGINE && u32::from(notification) == CBN_SELCHANGE {
+                handle_voice_panel_engine_change(hwnd);
+                return LRESULT(0);
+            }
+            if cmd_id == VOICE_PANEL_ID_VOICE && u32::from(notification) == CBN_SELCHANGE {
+                handle_voice_panel_voice_change(hwnd);
+                return LRESULT(0);
+            }
+            if cmd_id == VOICE_PANEL_ID_FAVORITES && u32::from(notification) == CBN_SELCHANGE {
+                handle_voice_panel_favorite_change(hwnd);
+                return LRESULT(0);
+            }
+            if cmd_id == VOICE_PANEL_ID_MULTILINGUAL {
+                handle_voice_panel_multilingual_toggle(hwnd);
+                return LRESULT(0);
+            }
+            if cmd_id == VOICE_MENU_ID_ADD_FAVORITE as usize {
+                handle_voice_context_favorite(hwnd, true);
+                return LRESULT(0);
+            }
+            if cmd_id == VOICE_MENU_ID_REMOVE_FAVORITE as usize {
+                handle_voice_context_favorite(hwnd, false);
                 return LRESULT(0);
             }
 
@@ -728,6 +947,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     search::open_replace_dialog(hwnd);
                     LRESULT(0)
                 }
+                IDM_VIEW_SHOW_VOICES => {
+                    log_debug("Menu: Toggle voice panel");
+                    toggle_voice_panel(hwnd);
+                    LRESULT(0)
+                }
+                IDM_VIEW_SHOW_FAVORITES => {
+                    log_debug("Menu: Toggle favorite voices panel");
+                    toggle_favorites_panel(hwnd);
+                    LRESULT(0)
+                }
                 IDM_INSERT_BOOKMARK => {
                     log_debug("Menu: Insert Bookmark");
                     insert_bookmark(hwnd);
@@ -796,6 +1025,752 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
+}
+
+unsafe fn cycle_favorite_voice(hwnd: HWND, direction: i32) {
+    let (favorites, current_engine, current_voice) = with_state(hwnd, |state| {
+        (
+            state.settings.favorite_voices.clone(),
+            state.settings.tts_engine,
+            state.settings.tts_voice.clone(),
+        )
+    })
+    .unwrap_or((Vec::new(), TtsEngine::Edge, String::new()));
+    if favorites.is_empty() {
+        return;
+    }
+    let mut current_idx = favorites.iter().position(|fav| {
+        fav.engine == current_engine && fav.short_name == current_voice
+    });
+    if current_idx.is_none() {
+        current_idx = Some(if direction >= 0 { 0 } else { favorites.len().saturating_sub(1) });
+    }
+    let idx = current_idx.unwrap_or(0);
+    let len = favorites.len() as i32;
+    let mut next_idx = idx as i32 + direction;
+    if next_idx < 0 {
+        next_idx = len - 1;
+    } else if next_idx >= len {
+        next_idx = 0;
+    }
+    let Some(next_fav) = favorites.get(next_idx as usize).cloned() else { return; };
+    if next_fav.engine == current_engine && next_fav.short_name == current_voice {
+        return;
+    }
+    let _ = with_state(hwnd, |state| {
+        state.settings.tts_engine = next_fav.engine;
+        state.settings.tts_voice = next_fav.short_name.clone();
+    });
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    app_windows::options_window::ensure_voice_lists_loaded(hwnd, language);
+    refresh_voice_panel(hwnd);
+    if let Some(settings) = with_state(hwnd, |state| state.settings.clone()) {
+        save_settings(settings);
+    }
+    restart_tts_from_current_offset(hwnd);
+}
+
+unsafe fn is_tts_active(hwnd: HWND) -> bool {
+    with_state(hwnd, |state| state.tts_session.is_some()).unwrap_or(false)
+}
+
+struct VoicePanelLabels {
+    label_engine: &'static str,
+    label_voice: &'static str,
+    label_favorites: &'static str,
+    label_multilingual: &'static str,
+    engine_edge: &'static str,
+    engine_sapi: &'static str,
+    voices_empty: &'static str,
+    favorites_empty: &'static str,
+    add_favorite: &'static str,
+    remove_favorite: &'static str,
+}
+
+fn voice_panel_labels(language: Language) -> VoicePanelLabels {
+    match language {
+        Language::Italian => VoicePanelLabels {
+            label_engine: "Sistema di voci:",
+            label_voice: "Voce:",
+            label_favorites: "Voci preferite:",
+            label_multilingual: "Mostra solo voci multilingua",
+            engine_edge: "Voci Microsoft",
+            engine_sapi: "SAPI5",
+            voices_empty: "Nessuna voce disponibile",
+            favorites_empty: "Nessuna voce preferita",
+            add_favorite: "Aggiungi ai preferiti",
+            remove_favorite: "Rimuovi dai preferiti",
+        },
+        Language::English => VoicePanelLabels {
+            label_engine: "Voice system:",
+            label_voice: "Voice:",
+            label_favorites: "Favorite voices:",
+            label_multilingual: "Show only multilingual voices",
+            engine_edge: "Microsoft Voices",
+            engine_sapi: "SAPI5",
+            voices_empty: "No voices available",
+            favorites_empty: "No favorite voices",
+            add_favorite: "Add to favorites",
+            remove_favorite: "Remove from favorites",
+        },
+    }
+}
+
+unsafe fn update_voice_panel_menu_check(hwnd: HWND) {
+    let (visible, favorites_visible) = with_state(hwnd, |state| {
+        (state.voice_panel_visible, state.voice_favorites_visible)
+    })
+    .unwrap_or((false, false));
+    let hmenu = GetMenu(hwnd);
+    if hmenu.0 == 0 {
+        return;
+    }
+    let flags = if visible { MF_CHECKED } else { MF_UNCHECKED };
+    let _ = CheckMenuItem(hmenu, IDM_VIEW_SHOW_VOICES as u32, (MF_BYCOMMAND | flags).0);
+    let fav_flags = if favorites_visible { MF_CHECKED } else { MF_UNCHECKED };
+    let _ = CheckMenuItem(hmenu, IDM_VIEW_SHOW_FAVORITES as u32, (MF_BYCOMMAND | fav_flags).0);
+}
+
+unsafe fn toggle_voice_panel(hwnd: HWND) {
+    let visible = with_state(hwnd, |state| state.voice_panel_visible).unwrap_or(false);
+    set_voice_panel_visible(hwnd, !visible);
+}
+
+unsafe fn set_voice_panel_visible(hwnd: HWND, visible: bool) {
+    set_voice_panel_visible_internal(hwnd, visible, true);
+}
+
+unsafe fn set_voice_panel_visible_internal(hwnd: HWND, visible: bool, persist: bool) {
+    let (label_engine, combo_engine, label_voice, combo_voice, checkbox_multilingual, changed) = match with_state(hwnd, |state| {
+        let changed = state.settings.show_voice_panel != visible;
+        state.voice_panel_visible = visible;
+        state.settings.show_voice_panel = visible;
+        (
+            state.voice_label_engine,
+            state.voice_combo_engine,
+            state.voice_label_voice,
+            state.voice_combo_voice,
+            state.voice_checkbox_multilingual,
+            changed,
+        )
+    }) {
+        Some(values) => values,
+        None => return,
+    };
+
+    let show = if visible { SW_SHOW } else { SW_HIDE };
+    for control in [label_engine, combo_engine, label_voice, combo_voice, checkbox_multilingual] {
+        if control.0 != 0 {
+            ShowWindow(control, show);
+        }
+    }
+    update_voice_panel_menu_check(hwnd);
+    if visible {
+        let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+        app_windows::options_window::ensure_voice_lists_loaded(hwnd, language);
+        refresh_voice_panel(hwnd);
+    }
+    if persist && changed {
+        if let Some(settings) = with_state(hwnd, |state| state.settings.clone()) {
+            save_settings(settings);
+        }
+    }
+    clear_voice_labels_if_hidden(hwnd);
+    editor_manager::layout_children(hwnd);
+}
+
+unsafe fn toggle_favorites_panel(hwnd: HWND) {
+    let visible = with_state(hwnd, |state| state.voice_favorites_visible).unwrap_or(false);
+    set_favorites_panel_visible(hwnd, !visible);
+}
+
+unsafe fn set_favorites_panel_visible(hwnd: HWND, visible: bool) {
+    set_favorites_panel_visible_internal(hwnd, visible, true);
+}
+
+unsafe fn set_favorites_panel_visible_internal(hwnd: HWND, visible: bool, persist: bool) {
+    let (label_favorites, combo_favorites, changed) = match with_state(hwnd, |state| {
+        let changed = state.settings.show_favorite_panel != visible;
+        state.voice_favorites_visible = visible;
+        state.settings.show_favorite_panel = visible;
+        (
+            state.voice_label_favorites,
+            state.voice_combo_favorites,
+            changed,
+        )
+    }) {
+        Some(values) => values,
+        None => return,
+    };
+    let show = if visible { SW_SHOW } else { SW_HIDE };
+    for control in [label_favorites, combo_favorites] {
+        if control.0 != 0 {
+            ShowWindow(control, show);
+        }
+    }
+    update_voice_panel_menu_check(hwnd);
+    if visible {
+        let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+        app_windows::options_window::ensure_voice_lists_loaded(hwnd, language);
+        refresh_voice_panel(hwnd);
+    }
+    if persist && changed {
+        if let Some(settings) = with_state(hwnd, |state| state.settings.clone()) {
+            save_settings(settings);
+        }
+    }
+    clear_voice_labels_if_hidden(hwnd);
+    editor_manager::layout_children(hwnd);
+}
+
+pub(crate) unsafe fn refresh_voice_panel(hwnd: HWND) {
+    let (voice_visible, label_engine, combo_engine, label_voice, combo_voice, checkbox_multilingual, favorites_visible, label_favorites, combo_favorites) = match with_state(hwnd, |state| {
+        (
+            state.voice_panel_visible,
+            state.voice_label_engine,
+            state.voice_combo_engine,
+            state.voice_label_voice,
+            state.voice_combo_voice,
+            state.voice_checkbox_multilingual,
+            state.voice_favorites_visible,
+            state.voice_label_favorites,
+            state.voice_combo_favorites,
+        )
+    }) {
+        Some(values) => values,
+        None => return,
+    };
+    if !voice_visible && !favorites_visible {
+        return;
+    }
+
+    let settings = with_state(hwnd, |state| state.settings.clone()).unwrap_or_default();
+    let labels = voice_panel_labels(settings.language);
+    if voice_visible {
+        let label_engine_wide = to_wide(labels.label_engine);
+        let label_voice_wide = to_wide(labels.label_voice);
+        let _ = SetWindowTextW(label_engine, PCWSTR(label_engine_wide.as_ptr()));
+        let _ = SetWindowTextW(label_voice, PCWSTR(label_voice_wide.as_ptr()));
+        let label_multi_wide = to_wide(labels.label_multilingual);
+        let _ = SetWindowTextW(checkbox_multilingual, PCWSTR(label_multi_wide.as_ptr()));
+    }
+    if favorites_visible && label_favorites.0 != 0 {
+        let label_fav_wide = to_wide(labels.label_favorites);
+        let _ = SetWindowTextW(label_favorites, PCWSTR(label_fav_wide.as_ptr()));
+    }
+
+    if voice_visible && combo_engine.0 != 0 && combo_voice.0 != 0 {
+        let _ = SendMessageW(combo_engine, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
+        let _ = SendMessageW(combo_engine, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(labels.engine_edge).as_ptr() as isize));
+        let _ = SendMessageW(combo_engine, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(labels.engine_sapi).as_ptr() as isize));
+        let engine_index = match settings.tts_engine {
+            TtsEngine::Edge => 0,
+            TtsEngine::Sapi5 => 1,
+        };
+        let _ = SendMessageW(combo_engine, CB_SETCURSEL, WPARAM(engine_index), LPARAM(0));
+        let is_edge = matches!(settings.tts_engine, TtsEngine::Edge);
+        let _ = SendMessageW(
+            checkbox_multilingual,
+            BM_SETCHECK,
+            WPARAM(if settings.tts_only_multilingual { BST_CHECKED.0 as usize } else { 0 }),
+            LPARAM(0),
+        );
+        EnableWindow(checkbox_multilingual, is_edge);
+        let multi_show = if is_edge { SW_SHOW } else { SW_HIDE };
+        ShowWindow(checkbox_multilingual, multi_show);
+    }
+
+    if voice_visible {
+        let voices = with_state(hwnd, |state| {
+            match settings.tts_engine {
+                TtsEngine::Edge => state.edge_voices.clone(),
+                TtsEngine::Sapi5 => state.sapi_voices.clone(),
+            }
+        }).unwrap_or_default();
+        populate_voice_panel_combo(combo_voice, &voices, &settings.tts_voice, settings.tts_only_multilingual, labels.voices_empty);
+    }
+    if favorites_visible {
+        populate_favorites_combo(
+            combo_favorites,
+            &settings.favorite_voices,
+            settings.tts_engine,
+            &settings.tts_voice,
+            labels,
+        );
+    }
+}
+
+unsafe fn clear_voice_labels_if_hidden(hwnd: HWND) {
+    let (voice_visible, favorites_visible, label_engine, label_voice, checkbox_multilingual, label_favorites) = match with_state(hwnd, |state| {
+        (
+            state.voice_panel_visible,
+            state.voice_favorites_visible,
+            state.voice_label_engine,
+            state.voice_label_voice,
+            state.voice_checkbox_multilingual,
+            state.voice_label_favorites,
+        )
+    }) {
+        Some(values) => values,
+        None => return,
+    };
+    if voice_visible || favorites_visible {
+        return;
+    }
+    let empty = to_wide("");
+    let _ = SetWindowTextW(label_engine, PCWSTR(empty.as_ptr()));
+    let _ = SetWindowTextW(label_voice, PCWSTR(empty.as_ptr()));
+    let _ = SetWindowTextW(checkbox_multilingual, PCWSTR(empty.as_ptr()));
+    let _ = SetWindowTextW(label_favorites, PCWSTR(empty.as_ptr()));
+}
+
+unsafe fn populate_voice_panel_combo(
+    combo_voice: HWND,
+    voices: &[VoiceInfo],
+    selected: &str,
+    only_multilingual: bool,
+    empty_label: &str,
+) {
+    let _ = SendMessageW(combo_voice, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
+    if voices.is_empty() {
+        let _ = SendMessageW(combo_voice, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(empty_label).as_ptr() as isize));
+        let _ = SendMessageW(combo_voice, CB_SETCURSEL, WPARAM(0), LPARAM(0));
+        return;
+    }
+    let mut selected_index: Option<usize> = None;
+    let mut combo_index = 0usize;
+
+    for (voice_index, voice) in voices.iter().enumerate() {
+        if only_multilingual && !voice.is_multilingual {
+            continue;
+        }
+        let label = format!("{} ({})", voice.short_name, voice.locale);
+        let idx = SendMessageW(combo_voice, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(&label).as_ptr() as isize)).0;
+        if idx >= 0 {
+            let _ = SendMessageW(combo_voice, CB_SETITEMDATA, WPARAM(idx as usize), LPARAM(voice_index as isize));
+            if voice.short_name == selected {
+                selected_index = Some(combo_index);
+            }
+            combo_index += 1;
+        }
+    }
+
+    if let Some(idx) = selected_index {
+        let _ = SendMessageW(combo_voice, CB_SETCURSEL, WPARAM(idx), LPARAM(0));
+    } else if combo_index > 0 {
+        let _ = SendMessageW(combo_voice, CB_SETCURSEL, WPARAM(0), LPARAM(0));
+    }
+}
+
+unsafe fn populate_favorites_combo(
+    combo_favorites: HWND,
+    favorites: &[FavoriteVoice],
+    selected_engine: TtsEngine,
+    selected_voice: &str,
+    labels: VoicePanelLabels,
+) {
+    let _ = SendMessageW(combo_favorites, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
+    if favorites.is_empty() {
+        let _ = SendMessageW(combo_favorites, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(labels.favorites_empty).as_ptr() as isize));
+        let _ = SendMessageW(combo_favorites, CB_SETCURSEL, WPARAM(0), LPARAM(0));
+        return;
+    }
+    let mut selected_index: Option<usize> = None;
+    for (idx, fav) in favorites.iter().enumerate() {
+        let engine_label = match fav.engine {
+            TtsEngine::Edge => labels.engine_edge,
+            TtsEngine::Sapi5 => labels.engine_sapi,
+        };
+        let label = format!("{} ({})", fav.short_name, engine_label);
+        let cb_idx = SendMessageW(combo_favorites, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(&label).as_ptr() as isize)).0;
+        if cb_idx >= 0 {
+            let _ = SendMessageW(combo_favorites, CB_SETITEMDATA, WPARAM(cb_idx as usize), LPARAM(idx as isize));
+            if fav.short_name == selected_voice && fav.engine == selected_engine {
+                selected_index = Some(cb_idx as usize);
+            }
+        }
+    }
+    if let Some(idx) = selected_index {
+        let _ = SendMessageW(combo_favorites, CB_SETCURSEL, WPARAM(idx), LPARAM(0));
+    } else {
+        let _ = SendMessageW(combo_favorites, CB_SETCURSEL, WPARAM(0), LPARAM(0));
+    }
+}
+
+unsafe fn handle_voice_panel_engine_change(hwnd: HWND) {
+    let (combo_engine, language) = match with_state(hwnd, |state| {
+        (state.voice_combo_engine, state.settings.language)
+    }) {
+        Some(values) => values,
+        None => return,
+    };
+    let sel = SendMessageW(combo_engine, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+    let new_engine = if sel == 1 { TtsEngine::Sapi5 } else { TtsEngine::Edge };
+    let (old_engine, old_voice) = with_state(hwnd, |state| {
+        (state.settings.tts_engine, state.settings.tts_voice.clone())
+    })
+    .unwrap_or((TtsEngine::Edge, String::new()));
+    let _ = with_state(hwnd, |state| {
+        state.settings.tts_engine = new_engine;
+    });
+    app_windows::options_window::ensure_voice_lists_loaded(hwnd, language);
+    refresh_voice_panel(hwnd);
+    let mut new_voice = old_voice.clone();
+    if let Some(voice_name) = current_voice_selection(hwnd, new_engine) {
+        let _ = with_state(hwnd, |state| {
+            state.settings.tts_voice = voice_name.clone();
+        });
+        new_voice = voice_name;
+    }
+    let changed = new_engine != old_engine || new_voice != old_voice;
+    if changed {
+        if let Some(settings) = with_state(hwnd, |state| state.settings.clone()) {
+            save_settings(settings);
+        }
+        restart_tts_from_current_offset(hwnd);
+    }
+}
+
+unsafe fn handle_voice_panel_voice_change(hwnd: HWND) {
+    let engine = with_state(hwnd, |state| state.settings.tts_engine).unwrap_or_default();
+    if let Some(voice_name) = current_voice_selection(hwnd, engine) {
+        let old_voice = with_state(hwnd, |state| state.settings.tts_voice.clone()).unwrap_or_default();
+        if voice_name != old_voice {
+            let _ = with_state(hwnd, |state| {
+                state.settings.tts_voice = voice_name;
+            });
+            if let Some(settings) = with_state(hwnd, |state| state.settings.clone()) {
+                save_settings(settings);
+            }
+            restart_tts_from_current_offset(hwnd);
+        }
+    }
+}
+
+unsafe fn handle_voice_panel_multilingual_toggle(hwnd: HWND) {
+    let (checkbox, is_edge) = with_state(hwnd, |state| {
+        (state.voice_checkbox_multilingual, matches!(state.settings.tts_engine, TtsEngine::Edge))
+    })
+    .unwrap_or((HWND(0), false));
+    if checkbox.0 == 0 {
+        return;
+    }
+    if !is_edge {
+        return;
+    }
+    let checked = SendMessageW(checkbox, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32 == BST_CHECKED.0;
+    let _ = with_state(hwnd, |state| {
+        state.settings.tts_only_multilingual = checked;
+    });
+    if let Some(settings) = with_state(hwnd, |state| state.settings.clone()) {
+        save_settings(settings);
+    }
+    refresh_voice_panel(hwnd);
+}
+
+unsafe fn handle_voice_panel_favorite_change(hwnd: HWND) {
+    let (combo_favorites, favorites) = with_state(hwnd, |state| {
+        (state.voice_combo_favorites, state.settings.favorite_voices.clone())
+    })
+    .unwrap_or((HWND(0), Vec::new()));
+    if combo_favorites.0 == 0 || favorites.is_empty() {
+        return;
+    }
+    let sel = SendMessageW(combo_favorites, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+    if sel < 0 {
+        return;
+    }
+    let fav_idx = SendMessageW(combo_favorites, CB_GETITEMDATA, WPARAM(sel as usize), LPARAM(0)).0 as usize;
+    let Some(fav) = favorites.get(fav_idx).cloned() else { return; };
+    let (old_engine, old_voice) = with_state(hwnd, |state| {
+        (state.settings.tts_engine, state.settings.tts_voice.clone())
+    })
+    .unwrap_or((TtsEngine::Edge, String::new()));
+    if fav.engine == old_engine && fav.short_name == old_voice {
+        return;
+    }
+    let _ = with_state(hwnd, |state| {
+        state.settings.tts_engine = fav.engine;
+        state.settings.tts_voice = fav.short_name.clone();
+    });
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    app_windows::options_window::ensure_voice_lists_loaded(hwnd, language);
+    refresh_voice_panel(hwnd);
+    if let Some(settings) = with_state(hwnd, |state| state.settings.clone()) {
+        save_settings(settings);
+    }
+    restart_tts_from_current_offset(hwnd);
+}
+
+unsafe fn current_voice_selection(hwnd: HWND, engine: TtsEngine) -> Option<String> {
+    let (combo_voice, voices) = with_state(hwnd, |state| {
+        let list = match engine {
+            TtsEngine::Edge => state.edge_voices.clone(),
+            TtsEngine::Sapi5 => state.sapi_voices.clone(),
+        };
+        (state.voice_combo_voice, list)
+    })?;
+    if voices.is_empty() || combo_voice.0 == 0 {
+        return None;
+    }
+    let sel = SendMessageW(combo_voice, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+    if sel < 0 {
+        return None;
+    }
+    let voice_index = SendMessageW(combo_voice, CB_GETITEMDATA, WPARAM(sel as usize), LPARAM(0)).0 as usize;
+    voices.get(voice_index).map(|v| v.short_name.clone())
+}
+
+unsafe fn current_favorite_selection(hwnd: HWND) -> Option<FavoriteVoice> {
+    let (combo_favorites, favorites) = with_state(hwnd, |state| {
+        (state.voice_combo_favorites, state.settings.favorite_voices.clone())
+    })?;
+    if combo_favorites.0 == 0 || favorites.is_empty() {
+        return None;
+    }
+    let sel = SendMessageW(combo_favorites, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+    if sel < 0 {
+        return None;
+    }
+    let fav_idx = SendMessageW(combo_favorites, CB_GETITEMDATA, WPARAM(sel as usize), LPARAM(0)).0 as usize;
+    favorites.get(fav_idx).cloned()
+}
+
+unsafe fn restart_tts_from_current_offset(hwnd: HWND) {
+    let mut restart = None;
+    let _ = with_state(hwnd, |state| {
+        if let Some(session) = &state.tts_session {
+            if let Some(doc) = state.docs.get(state.current) {
+                if matches!(doc.format, FileFormat::Audiobook) {
+                    return;
+                }
+                let pos = (session.initial_caret_pos + state.tts_last_offset).max(0);
+                restart = Some((doc.hwnd_edit, pos));
+            }
+        }
+    });
+    let Some((hwnd_edit, pos)) = restart else { return; };
+    tts_engine::stop_tts_playback(hwnd);
+    let mut cr = CHARRANGE { cpMin: pos, cpMax: pos };
+    SendMessageW(hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize));
+    tts_engine::start_tts_from_caret(hwnd);
+}
+
+unsafe fn show_voice_context_menu(hwnd: HWND, target: HWND, lparam: LPARAM) {
+    let (combo_voice, combo_favorites, engine, language) = with_state(hwnd, |state| {
+        (
+            state.voice_combo_voice,
+            state.voice_combo_favorites,
+            state.settings.tts_engine,
+            state.settings.language,
+        )
+    })
+    .unwrap_or((HWND(0), HWND(0), TtsEngine::Edge, Language::Italian));
+    let labels = voice_panel_labels(language);
+
+    let mut action_id = VOICE_MENU_ID_ADD_FAVORITE;
+    let mut action_label = labels.add_favorite;
+    let mut ctx_voice: Option<FavoriteVoice> = None;
+
+    if target == combo_favorites {
+        if let Some(fav) = current_favorite_selection(hwnd) {
+            action_id = VOICE_MENU_ID_REMOVE_FAVORITE;
+            action_label = labels.remove_favorite;
+            ctx_voice = Some(fav);
+        }
+    } else if target == combo_voice {
+        let Some(voice_name) = current_voice_selection(hwnd, engine) else { return; };
+        let is_favorite = with_state(hwnd, |state| {
+            state.settings.favorite_voices.iter().any(|fav| fav.engine == engine && fav.short_name == voice_name)
+        })
+        .unwrap_or(false);
+        if is_favorite {
+            action_id = VOICE_MENU_ID_REMOVE_FAVORITE;
+            action_label = labels.remove_favorite;
+        }
+        ctx_voice = Some(FavoriteVoice {
+            engine,
+            short_name: voice_name,
+        });
+    } else {
+        return;
+    }
+
+    let Some(ctx) = ctx_voice else { return; };
+    let menu = CreatePopupMenu().unwrap_or(HMENU(0));
+    if menu.0 == 0 {
+        return;
+    }
+    let _ = AppendMenuW(menu, MF_STRING, action_id as usize, PCWSTR(to_wide(action_label).as_ptr()));
+    let _ = with_state(hwnd, |state| {
+        state.voice_context_voice = Some(ctx);
+    });
+
+    let mut x = (lparam.0 & 0xffff) as i32;
+    let mut y = ((lparam.0 >> 16) & 0xffff) as i32;
+    if x == -1 && y == -1 {
+        let mut pt = windows::Win32::Foundation::POINT::default();
+        let _ = GetCursorPos(&mut pt);
+        x = pt.x;
+        y = pt.y;
+    }
+
+    SetForegroundWindow(hwnd);
+    let _ = TrackPopupMenu(menu, TPM_RIGHTBUTTON, x, y, 0, hwnd, None);
+    let _ = PostMessageW(hwnd, WM_NULL, WPARAM(0), LPARAM(0));
+}
+
+unsafe fn handle_voice_context_favorite(hwnd: HWND, add: bool) {
+    let ctx = with_state(hwnd, |state| state.voice_context_voice.clone()).unwrap_or(None);
+    let Some(fav) = ctx else { return; };
+    if add {
+        add_favorite_voice(hwnd, fav.engine, &fav.short_name);
+    } else {
+        remove_favorite_voice(hwnd, fav.engine, &fav.short_name);
+    }
+    let _ = with_state(hwnd, |state| {
+        state.voice_context_voice = None;
+    });
+}
+
+unsafe fn add_favorite_voice(hwnd: HWND, engine: TtsEngine, voice_name: &str) {
+    let _ = with_state(hwnd, |state| {
+        if state.settings.favorite_voices.iter().any(|fav| fav.engine == engine && fav.short_name == voice_name) {
+            return;
+        }
+        state.settings.favorite_voices.push(FavoriteVoice {
+            engine,
+            short_name: voice_name.to_string(),
+        });
+    });
+    if let Some(settings) = with_state(hwnd, |state| state.settings.clone()) {
+        save_settings(settings);
+    }
+    refresh_voice_panel(hwnd);
+}
+
+unsafe fn remove_favorite_voice(hwnd: HWND, engine: TtsEngine, voice_name: &str) {
+    let _ = with_state(hwnd, |state| {
+        state.settings.favorite_voices.retain(|fav| !(fav.engine == engine && fav.short_name == voice_name));
+    });
+    if let Some(settings) = with_state(hwnd, |state| state.settings.clone()) {
+        save_settings(settings);
+    }
+    refresh_voice_panel(hwnd);
+}
+
+unsafe fn handle_voice_panel_tab(hwnd: HWND) -> bool {
+    let (visible, combo_engine, combo_voice, checkbox_multilingual, combo_favorites, favorites_visible, is_edge, hwnd_tab) = match with_state(hwnd, |state| {
+        (
+            state.voice_panel_visible,
+            state.voice_combo_engine,
+            state.voice_combo_voice,
+            state.voice_checkbox_multilingual,
+            state.voice_combo_favorites,
+            state.voice_favorites_visible,
+            matches!(state.settings.tts_engine, TtsEngine::Edge),
+            state.hwnd_tab,
+        )
+    }) {
+        Some(values) => values,
+        None => return false,
+    };
+    if !visible && !favorites_visible {
+        return false;
+    }
+    let focus = GetFocus();
+    if focus.0 == 0 {
+        return false;
+    }
+    let is_combo_focus = focus == combo_engine
+        || focus == combo_voice
+        || (is_edge && focus == checkbox_multilingual)
+        || (favorites_visible && focus == combo_favorites);
+    if is_combo_focus {
+        let dropped = SendMessageW(focus, CB_GETDROPPEDSTATE, WPARAM(0), LPARAM(0)).0 != 0;
+        if dropped {
+            return false;
+        }
+    }
+    let (mut hwnd_edit, is_audiobook) = with_state(hwnd, |state| {
+        let doc = state.docs.get(state.current);
+        let hwnd_edit = doc.map(|d| d.hwnd_edit).unwrap_or(HWND(0));
+        let is_audiobook = doc.map(|d| matches!(d.format, FileFormat::Audiobook)).unwrap_or(false);
+        (hwnd_edit, is_audiobook)
+    }).unwrap_or((HWND(0), false));
+    if is_audiobook {
+        hwnd_edit = hwnd_tab;
+    }
+    if focus != hwnd_edit
+        && focus != combo_engine
+        && focus != combo_voice
+        && focus != hwnd_tab
+        && !(is_edge && focus == checkbox_multilingual)
+        && !(favorites_visible && focus == combo_favorites)
+    {
+        return false;
+    }
+    let shift_down = (GetKeyState(VK_SHIFT.0 as i32) & (0x8000u16 as i16)) != 0;
+    if focus == hwnd_edit || focus == hwnd_tab {
+        if visible {
+            SetFocus(combo_engine);
+        } else if favorites_visible {
+            SetFocus(combo_favorites);
+        }
+        return true;
+    }
+    let fallback_edit = if hwnd_edit.0 != 0 { hwnd_edit } else { hwnd_tab };
+    if focus == combo_engine {
+        let target = if shift_down { fallback_edit } else { combo_voice };
+        if target.0 != 0 {
+            SetFocus(target);
+            return true;
+        }
+    }
+    if focus == combo_voice {
+        let target = if shift_down {
+            combo_engine
+        } else if is_edge {
+            checkbox_multilingual
+        } else if favorites_visible {
+            combo_favorites
+        } else {
+            fallback_edit
+        };
+        if target.0 != 0 {
+            SetFocus(target);
+            return true;
+        }
+    }
+    if is_edge && focus == checkbox_multilingual {
+        let target = if shift_down {
+            combo_voice
+        } else if favorites_visible {
+            combo_favorites
+        } else {
+            fallback_edit
+        };
+        if target.0 != 0 {
+            SetFocus(target);
+            return true;
+        }
+    }
+    if favorites_visible && focus == combo_favorites {
+        let target = if shift_down {
+            if visible {
+                if is_edge { checkbox_multilingual } else { combo_voice }
+            } else {
+                fallback_edit
+            }
+        } else {
+            fallback_edit
+        };
+        if target.0 != 0 {
+            SetFocus(target);
+            return true;
+        }
+    }
+    false
 }
 
 
@@ -1027,6 +2002,7 @@ pub(crate) unsafe fn rebuild_menus(hwnd: HWND) {
         state.hmenu_recent = recent_menu;
     });
     update_recent_menu(hwnd, recent_menu);
+    update_voice_panel_menu_check(hwnd);
 }
 
 pub(crate) unsafe fn push_recent_file(hwnd: HWND, path: &Path) {

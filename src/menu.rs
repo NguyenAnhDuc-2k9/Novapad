@@ -32,6 +32,8 @@ pub const IDM_EDIT_REPLACE: usize = 2008;
 pub const IDM_INSERT_BOOKMARK: usize = 2101;
 pub const IDM_MANAGE_BOOKMARKS: usize = 2102;
 pub const IDM_NEXT_TAB: usize = 3001;
+pub const IDM_VIEW_SHOW_VOICES: usize = 6101;
+pub const IDM_VIEW_SHOW_FAVORITES: usize = 6102;
 pub const IDM_FILE_RECENT_BASE: usize = 4000;
 pub const IDM_TOOLS_OPTIONS: usize = 5001;
 pub const IDM_HELP_GUIDE: usize = 7001;
@@ -41,10 +43,13 @@ pub const MAX_RECENT: usize = 5;
 pub struct MenuLabels {
     pub menu_file: &'static str,
     pub menu_edit: &'static str,
+    pub menu_view: &'static str,
     pub menu_insert: &'static str,
     pub menu_tools: &'static str,
     pub menu_help: &'static str,
     pub menu_options: &'static str,
+    pub view_show_voices: &'static str,
+    pub view_show_favorites: &'static str,
     pub file_new: &'static str,
     pub file_open: &'static str,
     pub file_save: &'static str,
@@ -77,10 +82,13 @@ pub fn menu_labels(language: Language) -> MenuLabels {
         Language::Italian => MenuLabels {
             menu_file: "&File",
             menu_edit: "&Modifica",
+            menu_view: "&Visualizza",
             menu_insert: "&Inserisci",
             menu_tools: "S&trumenti",
             menu_help: "&Aiuto",
             menu_options: "&Opzioni...",
+            view_show_voices: "Visualizza &voci nell'editor",
+            view_show_favorites: "Visualizza le voci &preferite",
             file_new: "&Nuovo\tCtrl+N",
             file_open: "&Apri...\tCtrl+O",
             file_save: "&Salva\tCtrl+S",
@@ -110,10 +118,13 @@ pub fn menu_labels(language: Language) -> MenuLabels {
         Language::English => MenuLabels {
             menu_file: "&File",
             menu_edit: "&Edit",
+            menu_view: "&View",
             menu_insert: "&Insert",
             menu_tools: "&Tools",
             menu_help: "&Help",
             menu_options: "&Options...",
+            view_show_voices: "Show &voices in editor",
+            view_show_favorites: "Show &favorite voices",
             file_new: "&New\tCtrl+N",
             file_open: "&Open...\tCtrl+O",
             file_save: "&Save\tCtrl+S",
@@ -148,6 +159,7 @@ pub unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
     let file_menu = CreateMenu().unwrap_or(HMENU(0));
     let recent_menu = CreateMenu().unwrap_or(HMENU(0));
     let edit_menu = CreateMenu().unwrap_or(HMENU(0));
+    let view_menu = CreateMenu().unwrap_or(HMENU(0));
     let insert_menu = CreateMenu().unwrap_or(HMENU(0));
     let tools_menu = CreateMenu().unwrap_or(HMENU(0));
     let help_menu = CreateMenu().unwrap_or(HMENU(0));
@@ -183,6 +195,10 @@ pub unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
     let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_FIND_NEXT, labels.edit_find_next);
     let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_REPLACE, labels.edit_replace);
     let _ = append_menu_string(hmenu, MF_POPUP, edit_menu.0 as usize, labels.menu_edit);
+
+    let _ = append_menu_string(view_menu, MF_STRING, IDM_VIEW_SHOW_VOICES, labels.view_show_voices);
+    let _ = append_menu_string(view_menu, MF_STRING, IDM_VIEW_SHOW_FAVORITES, labels.view_show_favorites);
+    let _ = append_menu_string(hmenu, MF_POPUP, view_menu.0 as usize, labels.menu_view);
 
     let _ = append_menu_string(insert_menu, MF_STRING, IDM_INSERT_BOOKMARK, labels.insert_bookmark);
     let _ = append_menu_string(insert_menu, MF_STRING, IDM_MANAGE_BOOKMARKS, labels.manage_bookmarks);

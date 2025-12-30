@@ -9,6 +9,7 @@ Salva tutto: salva tutti i documenti (Ctrl+Shift+S).
 Chiudi tab: chiude il documento corrente (Ctrl+W).
 File recenti: apre un file recente.
 Lettura: F5 avvia la lettura, F4 pausa/riprendi, F6 ferma la lettura.
+Preferiti durante la lettura: F1 voce preferita precedente, F2 voce preferita successiva.
 Registra audiolibro: crea un file MP3 dal testo corrente (Ctrl+R).
 
 Modifica:
@@ -20,6 +21,13 @@ Seleziona tutto: seleziona tutto il testo (Ctrl+A).
 Trova: cerca un testo nel documento (Ctrl+F).
 Trova successivo: trova la prossima occorrenza (F3).
 Sostituisci: cerca e sostituisce il testo (Ctrl+H).
+
+Visualizza:
+Visualizza voci nell'editor: mostra i controlli per sistema di voci, elenco voci e filtro multilingua.
+Visualizza le voci preferite: mostra l'elenco delle voci preferite nell'editor.
+Quando l'elenco di voci è visibile, Tab sposta il focus tra editor e controlli, Shift+Tab torna indietro.
+Per aggiungere o rimuovere una voce dai preferiti, spostati con tab sull'elenco di voci e aggiungila o rimuovila con il tasto applicazioni o col tasto destro del mouse. Dall'elenco di voci preferite, si può anche premere il tasto applicazioni per rimuovere le voci già inserite.
+Tasti rapidi: è possibile premere i tasti f1 ed f2, per cambiare voci durante la lettura tra quelle inserite nei preferiti.
 
 Inserisci:
 Inserisci segnalibro: salva la posizione attuale del cursore o il tempo dell'audiolibro (Ctrl+B).
