@@ -32,6 +32,8 @@ e la possibilit… di **creare audiolibri direttamente dal testo utilizzando le 
   - Creazione di audiolibri in formato MP3 direttamente dal testo
   - Divisione audiolibri in parti fisse o in base a testo (case sensitive, inizio riga). Esempio: con "Capitolo" crea una parte per ogni capitolo; include autore e introduzione nella prima parte fino al primo Capitolo. Altre opzioni: 2, 4, 6, 8 parti
   - Supporto voci Microsoft e SAPI5/OneCore per lettura e salvataggio audiolibri
+  - Aggiunta di voci ai preferiti e cambio rapido durante la lettura
+  - Dizionario con sostituzioni personalizzate applicate alla lettura e agli audiolibri
 - **Player MP3 (audiolibri)**
   - Apertura e riproduzione di file MP3
   - Avanzamento e riavvolgimento con i tasti freccia

@@ -3,3 +3,4 @@ pub mod options_window;
 pub mod bookmarks_window;
 pub mod audiobook_window;
 pub mod about_window;
+pub mod dictionary_window;

@@ -23,7 +23,7 @@ use windows::Win32::System::Power::{SetThreadExecutionState, ES_CONTINUOUS, ES_S
 use crate::{with_state, get_active_edit, log_debug, show_error, save_audio_dialog};
 use crate::settings;
 use crate::editor_manager::get_edit_text;
-use crate::settings::{Language, AudiobookResult, TRUSTED_CLIENT_TOKEN, TtsEngine};
+use crate::settings::{AudiobookResult, DictionaryEntry, Language, TRUSTED_CLIENT_TOKEN, TtsEngine};
 
 pub const WSS_URL_BASE: &str = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
 pub const MAX_TTS_TEXT_LEN: usize = 3000;
@@ -82,12 +82,17 @@ pub fn start_tts_from_caret(hwnd: HWND) {
     let Some(hwnd_edit) = (unsafe { get_active_edit(hwnd) }) else {
         return;
     };
-    let (language, split_on_newline, tts_engine) = unsafe {
+    let (language, split_on_newline, tts_engine, dictionary) = unsafe {
         with_state(hwnd, |state| {
-            (state.settings.language, state.settings.split_on_newline, state.settings.tts_engine)
+            (
+                state.settings.language,
+                state.settings.split_on_newline,
+                state.settings.tts_engine,
+                state.settings.dictionary.clone(),
+            )
         })
     }
-    .unwrap_or((Language::Italian, true, TtsEngine::Edge));
+    .unwrap_or((Language::Italian, true, TtsEngine::Edge, Vec::new()));
     
     let (text, initial_caret_pos) = unsafe { get_text_from_caret(hwnd_edit) };
     if text.trim().is_empty() {
@@ -101,7 +106,7 @@ pub fn start_tts_from_caret(hwnd: HWND) {
             "it-IT-IsabellaNeural".to_string()
         })
     };
-    let chunks = split_into_tts_chunks(&text, split_on_newline);
+    let chunks = split_into_tts_chunks(&text, split_on_newline, &dictionary);
     
     match tts_engine {
         TtsEngine::Edge => start_tts_playback_with_chunks(hwnd, text, voice, chunks, initial_caret_pos),
@@ -592,6 +597,25 @@ pub fn normalize_for_tts(text: &str, split_on_newline: bool) -> String {
     normalized.replace('«', "").replace('»', "")
 }
 
+fn apply_dictionary(text: &str, dictionary: &[DictionaryEntry]) -> String {
+    if dictionary.is_empty() {
+        return text.to_string();
+    }
+    let mut out = text.to_string();
+    for entry in dictionary {
+        if entry.original.is_empty() {
+            continue;
+        }
+        out = out.replace(&entry.original, &entry.replacement);
+    }
+    out
+}
+
+fn prepare_tts_text(text: &str, split_on_newline: bool, dictionary: &[DictionaryEntry]) -> String {
+    let normalized = normalize_for_tts(text, split_on_newline);
+    apply_dictionary(&normalized, dictionary)
+}
+
 fn normalize_newlines(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
 }
@@ -633,12 +657,12 @@ fn split_text_by_marker(text: &str, marker: &str) -> Option<Vec<String>> {
     Some(parts)
 }
 
-fn build_audiobook_parts_by_marker(text: &str, marker: &str, split_on_newline: bool) -> Option<Vec<Vec<String>>> {
+fn build_audiobook_parts_by_marker(text: &str, marker: &str, split_on_newline: bool, dictionary: &[DictionaryEntry]) -> Option<Vec<Vec<String>>> {
     let parts_text = split_text_by_marker(text, marker)?;
     let mut parts_chunks = Vec::new();
 
     for part_text in parts_text {
-        let prepared = normalize_for_tts(&part_text, split_on_newline);
+        let prepared = prepare_tts_text(&part_text, split_on_newline, dictionary);
         let chunks = split_text(&prepared);
         if !chunks.is_empty() {
             parts_chunks.push(chunks);
@@ -704,7 +728,7 @@ pub fn split_text(text: &str) -> Vec<String> {
     chunks
 }
 
-pub fn split_into_tts_chunks(text: &str, split_on_newline: bool) -> Vec<TtsChunk> {
+pub fn split_into_tts_chunks(text: &str, split_on_newline: bool, dictionary: &[DictionaryEntry]) -> Vec<TtsChunk> {
     let mut sentences = Vec::new();
     let mut current_sentence = String::new();
     let mut current_orig_len = 0usize;
@@ -738,7 +762,7 @@ pub fn split_into_tts_chunks(text: &str, split_on_newline: bool) -> Vec<TtsChunk
         let potential_new_len = current_chunk_text.chars().count() + s_text.chars().count();
         if !current_chunk_text.is_empty() && potential_new_len > max_chars {
             let cleaned = strip_dashed_lines(&current_chunk_text);
-            let prepared = normalize_for_tts(&cleaned, split_on_newline);
+            let prepared = prepare_tts_text(&cleaned, split_on_newline, dictionary);
             chunks.push(TtsChunk { text_to_read: prepared, original_len: current_chunk_orig_len });
             current_chunk_text.clear();
             current_chunk_orig_len = 0;
@@ -748,7 +772,7 @@ pub fn split_into_tts_chunks(text: &str, split_on_newline: bool) -> Vec<TtsChunk
     }
     if !current_chunk_text.is_empty() {
         let cleaned = strip_dashed_lines(&current_chunk_text);
-        let prepared = normalize_for_tts(&cleaned, split_on_newline);
+        let prepared = prepare_tts_text(&cleaned, split_on_newline, dictionary);
         chunks.push(TtsChunk { text_to_read: prepared, original_len: current_chunk_orig_len });
     }
     chunks
@@ -784,7 +808,7 @@ pub fn start_audiobook(hwnd: HWND) {
         })
     };
 
-    let (split_on_newline, audiobook_split, audiobook_split_by_text, audiobook_split_text, tts_engine) = unsafe { 
+    let (split_on_newline, audiobook_split, audiobook_split_by_text, audiobook_split_text, tts_engine, dictionary) = unsafe { 
         with_state(hwnd, |state| {
             (
                 state.settings.split_on_newline,
@@ -792,15 +816,16 @@ pub fn start_audiobook(hwnd: HWND) {
                 state.settings.audiobook_split_by_text,
                 state.settings.audiobook_split_text.clone(),
                 state.settings.tts_engine,
+                state.settings.dictionary.clone(),
             )
         }) 
-    }.unwrap_or((true, 0, false, String::new(), TtsEngine::Edge));
+    }.unwrap_or((true, 0, false, String::new(), TtsEngine::Edge, Vec::new()));
 
     let cleaned = strip_dashed_lines(&text);
     let mut split_parts = audiobook_split;
     let mut marker_parts: Option<Vec<Vec<String>>> = None;
     if audiobook_split_by_text {
-        marker_parts = build_audiobook_parts_by_marker(&cleaned, &audiobook_split_text, split_on_newline);
+        marker_parts = build_audiobook_parts_by_marker(&cleaned, &audiobook_split_text, split_on_newline, &dictionary);
         if marker_parts.is_none() {
             split_parts = 0;
         }
@@ -809,7 +834,7 @@ pub fn start_audiobook(hwnd: HWND) {
     let prepared = if marker_parts.is_some() {
         String::new()
     } else {
-        normalize_for_tts(&cleaned, split_on_newline)
+        prepare_tts_text(&cleaned, split_on_newline, &dictionary)
     };
 
     let chunks = if marker_parts.is_some() {

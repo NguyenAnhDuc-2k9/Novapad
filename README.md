@@ -30,6 +30,8 @@ and the ability to **create audiobooks directly from text using Microsoft voices
   - Create MP3 audiobooks directly from text
   - Split audiobooks by fixed parts or by marker text (case sensitive, line start). Example: with "Chapter" it creates one part per chapter; it includes author/introduction in the first part up to the first Chapter. Other options: 2, 4, 6, 8 parts
   - Supports both Microsoft voices and SAPI5/OneCore for playback and audiobook saving
+  - Add voices to favorites and switch quickly during reading
+  - Dictionary with user-defined word replacements applied during reading and audiobook creation
 - **MP3 Audiobook Player**
   - Open and play MP3 files
   - Seek forward/backward using arrow keys

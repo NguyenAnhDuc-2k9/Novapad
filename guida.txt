@@ -12,6 +12,17 @@ Lettura: F5 avvia la lettura, F4 pausa/riprendi, F6 ferma la lettura.
 Preferiti durante la lettura: F1 voce preferita precedente, F2 voce preferita successiva.
 Registra audiolibro: crea un file MP3 dal testo corrente (Ctrl+R).
 
+Audiolibri MP3:
+Quando apri un file MP3, Novapad diventa un lettore audio.
+Comandi da tastiera:
+- SPAZIO: Play / Pausa.
+- FRECCIA DESTRA: Avanti di 1 minuto.
+- FRECCIA SINISTRA: Indietro di 1 minuto.
+- FRECCIA SU: Aumenta il volume.
+- FRECCIA GIU: Diminuisce il volume.
+- CTRL+B: Inserisce un segnalibro nel minuto esatto.
+
+
 Modifica:
 Annulla: annulla l'ultima operazione (Ctrl+Z).
 Taglia: rimuove il testo selezionato e lo copia negli appunti (Ctrl+X).
@@ -33,15 +44,12 @@ Inserisci:
 Inserisci segnalibro: salva la posizione attuale del cursore o il tempo dell'audiolibro (Ctrl+B).
 Gestisci segnalibri: visualizza, salta o elimina i segnalibri salvati. All'apertura di un file con segnalibri, il cursore o la riproduzione ripartiranno automaticamente dal primo disponibile.
 
-Audiolibri MP3:
-Quando apri un file MP3, Novapad diventa un lettore audio.
-Comandi da tastiera:
-- SPAZIO: Play / Pausa.
-- FRECCIA DESTRA: Avanti di 1 minuto.
-- FRECCIA SINISTRA: Indietro di 1 minuto.
-- FRECCIA SU: Aumenta il volume.
-- FRECCIA GIU: Diminuisce il volume.
-- CTRL+B: Inserisce un segnalibro nel minuto esatto.
+Strumenti:
+Dizionario: apre la finestra del dizionario. L'elenco si naviga con le frecce su/giu.
+Tab porta al pulsante "Aggiungi voci al dizionario", attivabile con Invio o Spazio.
+Nella finestra di aggiunta/modifica: inserisci "Parola originale", poi Tab su "Parola in sostituzione", quindi OK o Annulla (Invio/Spazio). ESC annulla.
+Nell'elenco, Tab porta ai pulsanti "Modifica voce" e "Rimuovi voce selezionata".
+Le sostituzioni del dizionario sono applicate durante la lettura e la creazione dell'audiolibro e vengono salvate.
 
 Opzioni:
 Lingua: cambia la lingua dell'interfaccia.

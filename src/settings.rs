@@ -18,6 +18,12 @@ pub struct FavoriteVoice {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+pub struct DictionaryEntry {
+    pub original: String,
+    pub replacement: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AudiobookResult {
     pub success: bool,
     pub message: String,
@@ -112,6 +118,7 @@ pub struct AppSettings {
     pub audiobook_split_by_text: bool,
     pub audiobook_split_text: String,
     pub favorite_voices: Vec<FavoriteVoice>,
+    pub dictionary: Vec<DictionaryEntry>,
     pub show_voice_panel: bool,
     pub show_favorite_panel: bool,
 }
@@ -132,6 +139,7 @@ impl Default for AppSettings {
             audiobook_split_by_text: false,
             audiobook_split_text: String::new(),
             favorite_voices: Vec::new(),
+            dictionary: Vec::new(),
             show_voice_panel: false,
             show_favorite_panel: false,
         }

@@ -36,6 +36,7 @@ pub const IDM_VIEW_SHOW_VOICES: usize = 6101;
 pub const IDM_VIEW_SHOW_FAVORITES: usize = 6102;
 pub const IDM_FILE_RECENT_BASE: usize = 4000;
 pub const IDM_TOOLS_OPTIONS: usize = 5001;
+pub const IDM_TOOLS_DICTIONARY: usize = 5002;
 pub const IDM_HELP_GUIDE: usize = 7001;
 pub const IDM_HELP_ABOUT: usize = 7002;
 pub const MAX_RECENT: usize = 5;
@@ -48,6 +49,7 @@ pub struct MenuLabels {
     pub menu_tools: &'static str,
     pub menu_help: &'static str,
     pub menu_options: &'static str,
+    pub menu_dictionary: &'static str,
     pub view_show_voices: &'static str,
     pub view_show_favorites: &'static str,
     pub file_new: &'static str,
@@ -87,6 +89,7 @@ pub fn menu_labels(language: Language) -> MenuLabels {
             menu_tools: "S&trumenti",
             menu_help: "&Aiuto",
             menu_options: "&Opzioni...",
+            menu_dictionary: "&Dizionario",
             view_show_voices: "Visualizza &voci nell'editor",
             view_show_favorites: "Visualizza le voci &preferite",
             file_new: "&Nuovo\tCtrl+N",
@@ -123,6 +126,7 @@ pub fn menu_labels(language: Language) -> MenuLabels {
             menu_tools: "&Tools",
             menu_help: "&Help",
             menu_options: "&Options...",
+            menu_dictionary: "&Dictionary",
             view_show_voices: "Show &voices in editor",
             view_show_favorites: "Show &favorite voices",
             file_new: "&New\tCtrl+N",
@@ -205,6 +209,7 @@ pub unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
     let _ = append_menu_string(hmenu, MF_POPUP, insert_menu.0 as usize, labels.menu_insert);
 
     let _ = append_menu_string(tools_menu, MF_STRING, IDM_TOOLS_OPTIONS, labels.menu_options);
+    let _ = append_menu_string(tools_menu, MF_STRING, IDM_TOOLS_DICTIONARY, labels.menu_dictionary);
     let _ = append_menu_string(hmenu, MF_POPUP, tools_menu.0 as usize, labels.menu_tools);
 
     let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_GUIDE, labels.help_guide);

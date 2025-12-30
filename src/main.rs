@@ -182,6 +182,8 @@ pub(crate) struct AppState {
     options_dialog: HWND,
     help_window: HWND,
     bookmarks_window: HWND,
+    dictionary_window: HWND,
+    dictionary_entry_dialog: HWND,
     find_msg: u32,
     find_text: Vec<u16>,
     replace_text: Vec<u16>,
@@ -313,7 +315,11 @@ fn main() -> windows::core::Result<()> {
                 // Audiobook keyboard controls (ONLY if no secondary window is open)
                 if msg.message == WM_KEYDOWN {
                     let is_audiobook = state.docs.get(state.current).map(|d| matches!(d.format, FileFormat::Audiobook)).unwrap_or(false);
-                    let secondary_open = state.bookmarks_window.0 != 0 || state.options_dialog.0 != 0 || state.help_window.0 != 0;
+                    let secondary_open = state.bookmarks_window.0 != 0
+                        || state.options_dialog.0 != 0
+                        || state.help_window.0 != 0
+                        || state.dictionary_window.0 != 0;
+                    let secondary_open = secondary_open || state.dictionary_entry_dialog.0 != 0;
                     
                     if is_audiobook && !secondary_open {
                         match handle_player_keyboard(&msg, state.settings.audiobook_skip_seconds) {
@@ -382,6 +388,20 @@ fn main() -> windows::core::Result<()> {
 
                 if state.bookmarks_window.0 != 0 {
                     if app_windows::bookmarks_window::handle_navigation(state.bookmarks_window, &msg) {
+                        handled = true;
+                        return;
+                    }
+                }
+
+                if state.dictionary_window.0 != 0 {
+                    if app_windows::dictionary_window::handle_navigation(state.dictionary_window, &msg) {
+                        handled = true;
+                        return;
+                    }
+                }
+
+                if state.dictionary_entry_dialog.0 != 0 {
+                    if handle_accessibility(state.dictionary_entry_dialog, &msg) {
                         handled = true;
                         return;
                     }
@@ -560,6 +580,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 options_dialog: HWND(0),
                 help_window: HWND(0),
                 bookmarks_window: HWND(0),
+                dictionary_window: HWND(0),
+                dictionary_entry_dialog: HWND(0),
                 find_msg,
                 find_text: vec![0u16; 256],
                 replace_text: vec![0u16; 256],
@@ -974,6 +996,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 IDM_TOOLS_OPTIONS => {
                     log_debug("Menu: Options");
                     app_windows::options_window::open(hwnd);
+                    LRESULT(0)
+                }
+                IDM_TOOLS_DICTIONARY => {
+                    log_debug("Menu: Dictionary");
+                    app_windows::dictionary_window::open(hwnd);
                     LRESULT(0)
                 }
                 IDM_HELP_GUIDE => {

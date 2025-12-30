@@ -12,6 +12,16 @@ Reading: F5 Start reading, F4 Pause/Resume, F6 Stop reading.
 Favorites during reading: F1 previous favorite voice, F2 next favorite voice.
 Record Audiobook: Create an MP3 file from the current text (Ctrl+R).
 
+MP3 Audiobooks:
+When you open an MP3 file, Novapad acts as an audio player.
+Keyboard controls:
+- SPACE: Play / Pause.
+- RIGHT ARROW: Fast forward 1 minute.
+- LEFT ARROW: Rewind 1 minute.
+- UP ARROW: Increase volume.
+- DOWN ARROW: Decrease volume.
+- CTRL+B: Insert a bookmark at the exact time.
+
 Edit:
 Undo: Undo the last operation (Ctrl+Z).
 Cut: Remove selected text and copy it to clipboard (Ctrl+X).
@@ -33,15 +43,12 @@ Insert:
 Insert Bookmark: Save the current cursor position or audiobook time (Ctrl+B).
 Manage Bookmarks: View, jump to, or delete saved bookmarks. When opening a file with bookmarks, the cursor or playback will automatically resume from the first available one.
 
-MP3 Audiobooks:
-When you open an MP3 file, Novapad acts as an audio player.
-Keyboard controls:
-- SPACE: Play / Pause.
-- RIGHT ARROW: Fast forward 1 minute.
-- LEFT ARROW: Rewind 1 minute.
-- UP ARROW: Increase volume.
-- DOWN ARROW: Decrease volume.
-- CTRL+B: Insert a bookmark at the exact time.
+Tools:
+Dictionary: Open the dictionary window. The list is navigated with Up/Down arrows.
+Tab moves to the "Add entries to dictionary" button, activated with Enter or Space.
+In the add/edit window: enter "Original word", then Tab to "Replacement word", then OK or Cancel (Enter/Space). ESC cancels.
+In the list, Tab moves to "Edit entry" and "Remove selected entry".
+Dictionary replacements are applied during reading and audiobook creation and are saved.
 
 Options:
 Language: Change interface language.
