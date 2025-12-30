@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use windows::Win32::Globalization::GetUserDefaultLocaleName;
 
 pub const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
 pub const VOICE_LIST_URL: &str = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list";
@@ -158,15 +159,42 @@ fn settings_store_path() -> Option<PathBuf> {
     Some(path)
 }
 
+fn system_language() -> Language {
+    let mut buffer = [0u16; 85];
+    let len = unsafe { GetUserDefaultLocaleName(&mut buffer) };
+    if len > 0 {
+        let locale = String::from_utf16_lossy(&buffer[..(len as usize).saturating_sub(1)]);
+        if locale.to_lowercase().starts_with("it") {
+            return Language::Italian;
+        }
+        return Language::English;
+    }
+    Language::Italian
+}
+
 pub fn load_settings() -> AppSettings {
     let Some(path) = settings_store_path() else {
         return AppSettings::default();
     };
+    if !path.exists() {
+        let mut settings = AppSettings::default();
+        settings.language = system_language();
+        return settings;
+    }
     let data = std::fs::read_to_string(path).ok();
     let Some(data) = data else {
-        return AppSettings::default();
+        let mut settings = AppSettings::default();
+        settings.language = system_language();
+        return settings;
     };
-    serde_json::from_str(&data).unwrap_or_default()
+    match serde_json::from_str(&data) {
+        Ok(settings) => settings,
+        Err(_) => {
+            let mut settings = AppSettings::default();
+            settings.language = system_language();
+            settings
+        }
+    }
 }
 
 pub fn save_settings(settings: AppSettings) {
