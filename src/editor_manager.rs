@@ -72,7 +72,15 @@ impl Default for Document {
 
 pub unsafe fn set_edit_text(hwnd_edit: HWND, text: &str) {
     let wide = to_wide_normalized(text);
+    if hwnd_edit.0 != 0 {
+        // Prevent programmatic loads from marking the document as modified.
+        SendMessageW(hwnd_edit, EM_SETEVENTMASK, WPARAM(0), LPARAM(0));
+    }
     let _ = SetWindowTextW(hwnd_edit, PCWSTR(wide.as_ptr()));
+    if hwnd_edit.0 != 0 {
+        SendMessageW(hwnd_edit, EM_SETMODIFY, WPARAM(0), LPARAM(0));
+        SendMessageW(hwnd_edit, EM_SETEVENTMASK, WPARAM(0), LPARAM(ENM_CHANGE as isize));
+    }
 }
 
 pub unsafe fn get_edit_text(hwnd_edit: HWND) -> String {
@@ -468,10 +476,11 @@ pub unsafe fn create_edit(parent: HWND, hfont: HFONT, word_wrap: bool, text_colo
         if hfont.0 != 0 {
             SendMessageW(hwnd_edit, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
         }
-        SendMessageW(hwnd_edit, EM_SETEVENTMASK, WPARAM(0), LPARAM(ENM_CHANGE as isize));
         // Allow large pastes (default edit limit is ~32K).
         apply_text_limit(hwnd_edit);
         apply_text_appearance(hwnd_edit, text_color, text_size);
+        SendMessageW(hwnd_edit, EM_SETMODIFY, WPARAM(0), LPARAM(0));
+        SendMessageW(hwnd_edit, EM_SETEVENTMASK, WPARAM(0), LPARAM(ENM_CHANGE as isize));
     }
     hwnd_edit
 }

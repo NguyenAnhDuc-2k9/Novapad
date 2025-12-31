@@ -53,6 +53,7 @@ pub const IDM_TOOLS_OPTIONS: usize = 5001;
 pub const IDM_TOOLS_DICTIONARY: usize = 5002;
 pub const IDM_HELP_GUIDE: usize = 7001;
 pub const IDM_HELP_ABOUT: usize = 7002;
+pub const IDM_HELP_CHECK_UPDATES: usize = 7003;
 pub const MAX_RECENT: usize = 5;
 
 pub struct MenuLabels {
@@ -105,6 +106,7 @@ pub struct MenuLabels {
     pub insert_bookmark: &'static str,
     pub manage_bookmarks: &'static str,
     pub help_guide: &'static str,
+    pub help_check_updates: &'static str,
     pub help_about: &'static str,
     pub recent_empty: &'static str,
 }
@@ -161,6 +163,7 @@ pub fn menu_labels(language: Language) -> MenuLabels {
             insert_bookmark: "Inserisci &segnalibro\tCtrl+B",
             manage_bookmarks: "&Gestisci segnalibri...",
             help_guide: "&Guida",
+            help_check_updates: "Controlla &aggiornamenti",
             help_about: "Informazioni &sul programma",
             recent_empty: "Nessun file recente",
         },
@@ -214,6 +217,7 @@ pub fn menu_labels(language: Language) -> MenuLabels {
             insert_bookmark: "Insert &Bookmark\tCtrl+B",
             manage_bookmarks: "&Manage Bookmarks...",
             help_guide: "&Guide",
+            help_check_updates: "Check for &updates",
             help_about: "&About the program",
             recent_empty: "No recent files",
         },
@@ -294,6 +298,7 @@ pub unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
     let _ = append_menu_string(hmenu, MF_POPUP, tools_menu.0 as usize, labels.menu_tools);
 
     let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_GUIDE, labels.help_guide);
+    let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_CHECK_UPDATES, labels.help_check_updates);
     let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_ABOUT, labels.help_about);
     let _ = append_menu_string(hmenu, MF_POPUP, help_menu.0 as usize, labels.menu_help);
 

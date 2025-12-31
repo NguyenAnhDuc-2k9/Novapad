@@ -127,6 +127,7 @@ pub struct AppSettings {
     pub tts_volume: i32,
     pub show_voice_panel: bool,
     pub show_favorite_panel: bool,
+    pub check_updates_on_startup: bool,
 }
 
 impl Default for AppSettings {
@@ -153,6 +154,7 @@ impl Default for AppSettings {
             tts_volume: 100,
             show_voice_panel: false,
             show_favorite_panel: false,
+            check_updates_on_startup: true,
         }
     }
 }

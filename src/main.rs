@@ -23,6 +23,7 @@ use audio_player::*;
 mod editor_manager;
 use editor_manager::*;
 mod app_windows;
+mod updater;
 
 use std::io::Write;
 
@@ -237,6 +238,14 @@ struct RecentFileStore {
 fn main() -> windows::core::Result<()> {
     log_debug("Application started.");
 
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|arg| arg == "--self-update") {
+        if let Err(err) = updater::run_self_update(&args) {
+            log_debug(&format!("Self-update failed: {err}"));
+        }
+        return Ok(());
+    }
+
     unsafe {
         let _ = LoadLibraryW(w!("Msftedit.dll"));
         let hinstance = HINSTANCE(GetModuleHandleW(None)?.0);
@@ -254,7 +263,6 @@ fn main() -> windows::core::Result<()> {
         };
         RegisterClassW(&wc);
 
-        let args: Vec<String> = std::env::args().collect();
         let extra_paths: Vec<String> = if args.len() > 1 {
             args[1..].to_vec()
         } else {
@@ -295,6 +303,12 @@ fn main() -> windows::core::Result<()> {
 
         if hwnd.0 == 0 {
             return Ok(());
+        }
+
+        let check_updates = with_state(hwnd, |state| state.settings.check_updates_on_startup)
+            .unwrap_or(true);
+        if check_updates {
+            updater::check_for_update(hwnd, false);
         }
 
         let accel = create_accelerators();
@@ -1054,6 +1068,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 IDM_HELP_GUIDE => {
                     log_debug("Menu: Guide");
                     app_windows::help_window::open(hwnd);
+                    LRESULT(0)
+                }
+                IDM_HELP_CHECK_UPDATES => {
+                    log_debug("Menu: Check updates");
+                    updater::check_for_update(hwnd, true);
                     LRESULT(0)
                 }
                 IDM_HELP_ABOUT => {
