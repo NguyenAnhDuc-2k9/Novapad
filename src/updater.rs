@@ -240,6 +240,8 @@ pub(crate) fn run_self_update(args: &[String]) -> Result<(), String> {
         return Err(err.to_string());
     }
 
+    let language = load_settings().language;
+    show_update_info(language, UpdateInfo::Completed);
     if restart {
         let _ = std::process::Command::new(&current).spawn();
     }
@@ -325,6 +327,7 @@ enum UpdateError {
 
 enum UpdateInfo {
     NoUpdate,
+    Completed,
 }
 
 fn show_update_error(language: Language, error: UpdateError) {
@@ -378,6 +381,10 @@ fn show_update_info(language: Language, info: UpdateInfo) {
         UpdateInfo::NoUpdate => match language {
             Language::Italian => ("Aggiornamento", "Nessun aggiornamento disponibile."),
             Language::English => ("Update", "No updates available."),
+        },
+        UpdateInfo::Completed => match language {
+            Language::Italian => ("Aggiornamento", "Aggiornamento completato."),
+            Language::English => ("Update", "Update completed."),
         },
     };
     let text_w = to_wide(text);
