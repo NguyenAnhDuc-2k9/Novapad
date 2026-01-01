@@ -19,7 +19,7 @@ try {
 
     & $lightExe -sval -ext WixUIExtension -ext WixUtilExtension -cultures:en-us -loc $locFile -out $outTemp $wixobj
 
-    $versionLine = Select-String -Path (Join-Path $repo "Cargo.toml") -Pattern '^version\\s*=\\s*\"(.+)\"'
+    $versionLine = Select-String -Path (Join-Path $repo "Cargo.toml") -Pattern '^\s*version\s*=\s*"(.+)"'
     if (-not $versionLine) {
         throw "Version not found in Cargo.toml"
     }
