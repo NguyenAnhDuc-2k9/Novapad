@@ -1,22 +1,24 @@
-use windows::core::PCWSTR;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::Graphics::Gdi::{HBRUSH, COLOR_WINDOW, HFONT};
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Controls::{WC_BUTTON, WC_COMBOBOXW, WC_STATIC};
-use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN};
-use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, GetParent, GWLP_WNDPROC, WNDPROC,
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, LoadCursorW, RegisterClassW,
-    SendMessageW, SetForegroundWindow, SetWindowLongPtrW, WM_COMMAND, WM_CREATE, WM_KEYDOWN,
-    WM_NCDESTROY, WM_CLOSE, WM_DESTROY, WM_SETFONT, WNDCLASSW, WINDOW_STYLE, WS_CAPTION, WS_CHILD,
-    WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
-    CB_ADDSTRING, CB_RESETCONTENT, CB_SETCURSEL, CB_GETCURSEL, CB_GETITEMDATA, CB_SETITEMDATA,
-    CB_GETDROPPEDSTATE, CREATESTRUCTW, GWLP_USERDATA, HMENU, IDC_ARROW, MSG,
-    BS_DEFPUSHBUTTON, CBS_DROPDOWNLIST,
-};
+#![allow(clippy::identity_op, clippy::fn_to_numeric_cast)]
 use crate::accessibility::{handle_accessibility, to_wide};
 use crate::settings::{Language, save_settings};
-use crate::{with_state};
+use crate::with_state;
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Graphics::Gdi::{COLOR_WINDOW, HBRUSH, HFONT};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Controls::{WC_BUTTON, WC_COMBOBOXW, WC_STATIC};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    BS_DEFPUSHBUTTON, CB_ADDSTRING, CB_GETCURSEL, CB_GETDROPPEDSTATE, CB_GETITEMDATA,
+    CB_RESETCONTENT, CB_SETCURSEL, CB_SETITEMDATA, CBS_DROPDOWNLIST, CREATESTRUCTW,
+    CallWindowProcW, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GWLP_WNDPROC,
+    GetParent, GetWindowLongPtrW, HMENU, IDC_ARROW, LoadCursorW, MSG, RegisterClassW, SendMessageW,
+    SetForegroundWindow, SetWindowLongPtrW, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CREATE,
+    WM_DESTROY, WM_KEYDOWN, WM_NCDESTROY, WM_SETFONT, WNDCLASSW, WNDPROC, WS_CAPTION, WS_CHILD,
+    WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+};
+use windows::core::PCWSTR;
 
 const TTS_TUNING_CLASS_NAME: &str = "NovapadTtsTuning";
 
@@ -158,7 +160,12 @@ pub unsafe fn handle_navigation(hwnd: HWND, msg: &MSG) -> bool {
             let dropped = SendMessageW(focus, CB_GETDROPPEDSTATE, WPARAM(0), LPARAM(0)).0 != 0;
             if !dropped {
                 let _ = with_tts_state(hwnd, |state| {
-                    let _ = SendMessageW(hwnd, WM_COMMAND, WPARAM(TTS_TUNING_ID_OK | (0 << 16)), LPARAM(state.ok_button.0));
+                    let _ = SendMessageW(
+                        hwnd,
+                        WM_COMMAND,
+                        WPARAM(TTS_TUNING_ID_OK | (0 << 16)),
+                        LPARAM(state.ok_button.0),
+                    );
                 });
                 return true;
             }
@@ -176,7 +183,9 @@ pub unsafe fn open(parent: HWND, owner: HWND) {
     let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
     let class_name = to_wide(TTS_TUNING_CLASS_NAME);
     let wc = WNDCLASSW {
-        hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(LoadCursorW(None, IDC_ARROW).unwrap_or_default().0),
+        hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(
+            LoadCursorW(None, IDC_ARROW).unwrap_or_default().0,
+        ),
         hInstance: hinstance,
         lpszClassName: PCWSTR(class_name.as_ptr()),
         lpfnWndProc: Some(tts_tuning_wndproc),
@@ -250,7 +259,8 @@ unsafe extern "system" fn tts_combo_subclass_proc(
             } else {
                 None
             }
-        }).unwrap_or(None)
+        })
+        .unwrap_or(None)
     } else {
         None
     };
@@ -261,7 +271,12 @@ unsafe extern "system" fn tts_combo_subclass_proc(
     }
 }
 
-unsafe extern "system" fn tts_tuning_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn tts_tuning_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     match msg {
         WM_CREATE => {
             let create_struct = lparam.0 as *const CREATESTRUCTW;
@@ -280,16 +295,28 @@ unsafe extern "system" fn tts_tuning_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
                 WC_STATIC,
                 PCWSTR(to_wide(labels.label_speed).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
-                20, y, 140, 20,
-                hwnd, HMENU(0), HINSTANCE(0), None,
+                20,
+                y,
+                140,
+                20,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
             );
             let combo_speed = CreateWindowExW(
                 WS_EX_CLIENTEDGE,
                 WC_COMBOBOXW,
                 PCWSTR::null(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
-                170, y - 2, 200, 140,
-                hwnd, HMENU(TTS_TUNING_ID_SPEED as isize), HINSTANCE(0), None,
+                170,
+                y - 2,
+                200,
+                140,
+                hwnd,
+                HMENU(TTS_TUNING_ID_SPEED as isize),
+                HINSTANCE(0),
+                None,
             );
             y += 40;
 
@@ -298,16 +325,28 @@ unsafe extern "system" fn tts_tuning_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
                 WC_STATIC,
                 PCWSTR(to_wide(labels.label_pitch).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
-                20, y, 140, 20,
-                hwnd, HMENU(0), HINSTANCE(0), None,
+                20,
+                y,
+                140,
+                20,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
             );
             let combo_pitch = CreateWindowExW(
                 WS_EX_CLIENTEDGE,
                 WC_COMBOBOXW,
                 PCWSTR::null(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
-                170, y - 2, 200, 140,
-                hwnd, HMENU(TTS_TUNING_ID_PITCH as isize), HINSTANCE(0), None,
+                170,
+                y - 2,
+                200,
+                140,
+                hwnd,
+                HMENU(TTS_TUNING_ID_PITCH as isize),
+                HINSTANCE(0),
+                None,
             );
             y += 40;
 
@@ -316,16 +355,28 @@ unsafe extern "system" fn tts_tuning_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
                 WC_STATIC,
                 PCWSTR(to_wide(labels.label_volume).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
-                20, y, 140, 20,
-                hwnd, HMENU(0), HINSTANCE(0), None,
+                20,
+                y,
+                140,
+                20,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
             );
             let combo_volume = CreateWindowExW(
                 WS_EX_CLIENTEDGE,
                 WC_COMBOBOXW,
                 PCWSTR::null(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
-                170, y - 2, 200, 140,
-                hwnd, HMENU(TTS_TUNING_ID_VOLUME as isize), HINSTANCE(0), None,
+                170,
+                y - 2,
+                200,
+                140,
+                hwnd,
+                HMENU(TTS_TUNING_ID_VOLUME as isize),
+                HINSTANCE(0),
+                None,
             );
             y += 44;
 
@@ -334,19 +385,40 @@ unsafe extern "system" fn tts_tuning_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
                 WC_BUTTON,
                 PCWSTR(to_wide(labels.ok).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
-                200, y, 80, 28,
-                hwnd, HMENU(TTS_TUNING_ID_OK as isize), HINSTANCE(0), None,
+                200,
+                y,
+                80,
+                28,
+                hwnd,
+                HMENU(TTS_TUNING_ID_OK as isize),
+                HINSTANCE(0),
+                None,
             );
             let cancel_button = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
                 PCWSTR(to_wide(labels.cancel).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                290, y, 80, 28,
-                hwnd, HMENU(TTS_TUNING_ID_CANCEL as isize), HINSTANCE(0), None,
+                290,
+                y,
+                80,
+                28,
+                hwnd,
+                HMENU(TTS_TUNING_ID_CANCEL as isize),
+                HINSTANCE(0),
+                None,
             );
 
-            for ctrl in [label_speed, combo_speed, label_pitch, combo_pitch, label_volume, combo_volume, ok_button, cancel_button] {
+            for ctrl in [
+                label_speed,
+                combo_speed,
+                label_pitch,
+                combo_pitch,
+                label_volume,
+                combo_volume,
+                ok_button,
+                cancel_button,
+            ] {
                 if ctrl.0 != 0 && hfont.0 != 0 {
                     let _ = SendMessageW(ctrl, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
                 }
@@ -357,8 +429,13 @@ unsafe extern "system" fn tts_tuning_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
             init_combo(combo_volume, &labels.volume_items);
 
             let (rate, pitch, volume) = with_state(state.parent, |s| {
-                (s.settings.tts_rate, s.settings.tts_pitch, s.settings.tts_volume)
-            }).unwrap_or((0, 0, 100));
+                (
+                    s.settings.tts_rate,
+                    s.settings.tts_pitch,
+                    s.settings.tts_volume,
+                )
+            })
+            .unwrap_or((0, 0, 100));
             select_combo_value(combo_speed, rate);
             select_combo_value(combo_pitch, pitch);
             select_combo_value(combo_volume, volume);
@@ -369,9 +446,12 @@ unsafe extern "system" fn tts_tuning_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
             state.ok_button = ok_button;
             let state_ptr = Box::into_raw(state);
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, state_ptr as isize);
-            let old_speed = SetWindowLongPtrW(combo_speed, GWLP_WNDPROC, tts_combo_subclass_proc as isize);
-            let old_pitch = SetWindowLongPtrW(combo_pitch, GWLP_WNDPROC, tts_combo_subclass_proc as isize);
-            let old_volume = SetWindowLongPtrW(combo_volume, GWLP_WNDPROC, tts_combo_subclass_proc as isize);
+            let old_speed =
+                SetWindowLongPtrW(combo_speed, GWLP_WNDPROC, tts_combo_subclass_proc as isize);
+            let old_pitch =
+                SetWindowLongPtrW(combo_pitch, GWLP_WNDPROC, tts_combo_subclass_proc as isize);
+            let old_volume =
+                SetWindowLongPtrW(combo_volume, GWLP_WNDPROC, tts_combo_subclass_proc as isize);
             let _ = with_tts_state(hwnd, |s| {
                 s.combo_speed_proc = std::mem::transmute::<isize, WNDPROC>(old_speed);
                 s.combo_pitch_proc = std::mem::transmute::<isize, WNDPROC>(old_pitch);
@@ -408,7 +488,8 @@ unsafe extern "system" fn tts_tuning_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
                 }
                 let is_combo = with_tts_state(hwnd, |s| {
                     focus == s.combo_speed || focus == s.combo_pitch || focus == s.combo_volume
-                }).unwrap_or(false);
+                })
+                .unwrap_or(false);
                 if is_combo {
                     apply_tts_tuning(hwnd);
                     return LRESULT(0);
@@ -421,7 +502,8 @@ unsafe extern "system" fn tts_tuning_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
             LRESULT(0)
         }
         WM_DESTROY => {
-            let (owner, parent) = with_tts_state(hwnd, |s| (s.owner, s.parent)).unwrap_or((HWND(0), HWND(0)));
+            let (owner, parent) =
+                with_tts_state(hwnd, |s| (s.owner, s.parent)).unwrap_or((HWND(0), HWND(0)));
             if owner.0 != 0 {
                 EnableWindow(owner, true);
                 crate::app_windows::options_window::focus_language_combo(owner);
@@ -464,14 +546,24 @@ where
     F: FnOnce(&mut TtsTuningState) -> R,
 {
     let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut TtsTuningState;
-    if ptr.is_null() { None } else { Some(f(&mut *ptr)) }
+    if ptr.is_null() {
+        None
+    } else {
+        Some(f(&mut *ptr))
+    }
 }
 
 fn init_combo(hwnd: HWND, items: &[(&'static str, i32)]) {
     unsafe {
         let _ = SendMessageW(hwnd, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
         for (label, value) in items {
-            let idx = SendMessageW(hwnd, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(label).as_ptr() as isize)).0 as usize;
+            let idx = SendMessageW(
+                hwnd,
+                CB_ADDSTRING,
+                WPARAM(0),
+                LPARAM(to_wide(label).as_ptr() as isize),
+            )
+            .0 as usize;
             let _ = SendMessageW(hwnd, CB_SETITEMDATA, WPARAM(idx), LPARAM(*value as isize));
         }
         let _ = SendMessageW(hwnd, CB_SETCURSEL, WPARAM(2), LPARAM(0));
@@ -480,7 +572,13 @@ fn init_combo(hwnd: HWND, items: &[(&'static str, i32)]) {
 
 fn select_combo_value(hwnd: HWND, value: i32) {
     unsafe {
-        let count = SendMessageW(hwnd, windows::Win32::UI::WindowsAndMessaging::CB_GETCOUNT, WPARAM(0), LPARAM(0)).0;
+        let count = SendMessageW(
+            hwnd,
+            windows::Win32::UI::WindowsAndMessaging::CB_GETCOUNT,
+            WPARAM(0),
+            LPARAM(0),
+        )
+        .0;
         for i in 0..count {
             let data = SendMessageW(hwnd, CB_GETITEMDATA, WPARAM(i as usize), LPARAM(0)).0 as i32;
             if data == value {
@@ -493,7 +591,13 @@ fn select_combo_value(hwnd: HWND, value: i32) {
 
 unsafe fn apply_tts_tuning(hwnd: HWND) {
     let (parent, _owner, combo_speed, combo_pitch, combo_volume) = match with_tts_state(hwnd, |s| {
-        (s.parent, s.owner, s.combo_speed, s.combo_pitch, s.combo_volume)
+        (
+            s.parent,
+            s.owner,
+            s.combo_speed,
+            s.combo_pitch,
+            s.combo_volume,
+        )
     }) {
         Some(values) => values,
         None => return,

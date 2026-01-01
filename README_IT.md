@@ -65,6 +65,7 @@ e la possibilit… di **creare audiolibri direttamente dal testo utilizzando le 
 ## Compilazione e utilizzo
 
 Assicurati di avere installato il toolchain Rust.
+La formattazione del codice e' gestita con `cargo fmt`.
 
 Clona il repository:
 

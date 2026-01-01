@@ -1,31 +1,40 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-use std::path::Path;
-use std::io::{BufWriter, Write};
+#![allow(
+    clippy::collapsible_if,
+    clippy::manual_div_ceil,
+    clippy::manual_inspect,
+    clippy::manual_repeat_n,
+    clippy::collapsible_str_replace,
+    clippy::too_many_arguments
+)]
+use crate::editor_manager::get_edit_text;
+use crate::settings;
+use crate::settings::{
+    AudiobookResult, DictionaryEntry, Language, TRUSTED_CLIENT_TOKEN, TtsEngine,
+};
+use crate::{get_active_edit, log_debug, save_audio_dialog, show_error, with_state};
 use chrono::Local;
 use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 use rodio::{Decoder, OutputStream, Sink};
 use sha2::{Digest, Sha256};
+use std::io::{BufWriter, Write};
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_tungstenite::{
-    connect_async,
-    tungstenite::client::IntoClientRequest,
-    tungstenite::http::HeaderValue,
+    connect_async, tungstenite::client::IntoClientRequest, tungstenite::http::HeaderValue,
     tungstenite::protocol::Message,
 };
 use url::Url;
 use uuid::Uuid;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::System::Power::{ES_CONTINUOUS, ES_SYSTEM_REQUIRED, SetThreadExecutionState};
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, SendMessageW, WM_APP};
-use windows::Win32::System::Power::{SetThreadExecutionState, ES_CONTINUOUS, ES_SYSTEM_REQUIRED};
-use crate::{with_state, get_active_edit, log_debug, show_error, save_audio_dialog};
-use crate::settings;
-use crate::editor_manager::get_edit_text;
-use crate::settings::{AudiobookResult, DictionaryEntry, Language, TRUSTED_CLIENT_TOKEN, TtsEngine};
 
-pub const WSS_URL_BASE: &str = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
+pub const WSS_URL_BASE: &str =
+    "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
 pub const MAX_TTS_TEXT_LEN: usize = 3000;
 pub const MAX_TTS_TEXT_LEN_LONG: usize = 2000;
 pub const MAX_TTS_FIRST_CHUNK_LEN_LONG: usize = 800;
@@ -89,21 +98,30 @@ pub fn start_tts_from_caret(hwnd: HWND) {
     let Some(hwnd_edit) = (unsafe { get_active_edit(hwnd) }) else {
         return;
     };
-    let (language, split_on_newline, tts_engine, dictionary, tts_rate, tts_pitch, tts_volume) = unsafe {
-        with_state(hwnd, |state| {
-            (
-                state.settings.language,
-                state.settings.split_on_newline,
-                state.settings.tts_engine,
-                state.settings.dictionary.clone(),
-                state.settings.tts_rate,
-                state.settings.tts_pitch,
-                state.settings.tts_volume,
-            )
-        })
-    }
-    .unwrap_or((Language::Italian, true, TtsEngine::Edge, Vec::new(), 0, 0, 100));
-    
+    let (language, split_on_newline, tts_engine, dictionary, tts_rate, tts_pitch, tts_volume) =
+        unsafe {
+            with_state(hwnd, |state| {
+                (
+                    state.settings.language,
+                    state.settings.split_on_newline,
+                    state.settings.tts_engine,
+                    state.settings.dictionary.clone(),
+                    state.settings.tts_rate,
+                    state.settings.tts_pitch,
+                    state.settings.tts_volume,
+                )
+            })
+        }
+        .unwrap_or((
+            Language::Italian,
+            true,
+            TtsEngine::Edge,
+            Vec::new(),
+            0,
+            0,
+            100,
+        ));
+
     let (text, initial_caret_pos) = unsafe { get_text_from_caret(hwnd_edit) };
     if text.trim().is_empty() {
         unsafe {
@@ -112,14 +130,22 @@ pub fn start_tts_from_caret(hwnd: HWND) {
         return;
     }
     let voice = unsafe {
-        with_state(hwnd, |state| state.settings.tts_voice.clone()).unwrap_or_else(|| {
-            "it-IT-IsabellaNeural".to_string()
-        })
+        with_state(hwnd, |state| state.settings.tts_voice.clone())
+            .unwrap_or_else(|| "it-IT-IsabellaNeural".to_string())
     };
     let chunks = split_into_tts_chunks(&text, split_on_newline, &dictionary);
-    
+
     match tts_engine {
-        TtsEngine::Edge => start_tts_playback_with_chunks(hwnd, text, voice, chunks, initial_caret_pos, tts_rate, tts_pitch, tts_volume),
+        TtsEngine::Edge => start_tts_playback_with_chunks(
+            hwnd,
+            text,
+            voice,
+            chunks,
+            initial_caret_pos,
+            tts_rate,
+            tts_pitch,
+            tts_volume,
+        ),
         TtsEngine::Sapi5 => {
             // Stop any existing playback
             stop_tts_playback(hwnd);
@@ -137,9 +163,17 @@ pub fn start_tts_from_caret(hwnd: HWND) {
                     state.tts_next_session_id += 1;
                 })
             };
-            
+
             let chunk_strings: Vec<String> = chunks.into_iter().map(|c| c.text_to_read).collect();
-            let _ = crate::sapi5_engine::play_sapi(chunk_strings, voice, tts_rate, tts_pitch, tts_volume, cancel, command_rx);
+            let _ = crate::sapi5_engine::play_sapi(
+                chunk_strings,
+                voice,
+                tts_rate,
+                tts_pitch,
+                tts_volume,
+                cancel,
+                command_rx,
+            );
         }
     }
 }
@@ -201,7 +235,16 @@ fn handle_tts_command(
     }
 }
 
-pub fn start_tts_playback_with_chunks(hwnd: HWND, cleaned: String, voice: String, chunks: Vec<TtsChunk>, initial_caret_pos: i32, tts_rate: i32, tts_pitch: i32, tts_volume: i32) {
+pub fn start_tts_playback_with_chunks(
+    hwnd: HWND,
+    cleaned: String,
+    voice: String,
+    chunks: Vec<TtsChunk>,
+    initial_caret_pos: i32,
+    tts_rate: i32,
+    tts_pitch: i32,
+    tts_volume: i32,
+) {
     stop_tts_playback(hwnd);
     prevent_sleep(true);
     if chunks.is_empty() {
@@ -237,14 +280,22 @@ pub fn start_tts_playback_with_chunks(hwnd: HWND, cleaned: String, voice: String
         let (_stream, handle) = match OutputStream::try_default() {
             Ok(values) => values,
             Err(_) => {
-                post_tts_error(hwnd_copy, session_id, "Audio output device not available.".to_string());
+                post_tts_error(
+                    hwnd_copy,
+                    session_id,
+                    "Audio output device not available.".to_string(),
+                );
                 return;
             }
         };
         let sink = match Sink::try_new(&handle) {
             Ok(sink) => sink,
             Err(_) => {
-                post_tts_error(hwnd_copy, session_id, "Failed to create audio sink.".to_string());
+                post_tts_error(
+                    hwnd_copy,
+                    session_id,
+                    "Failed to create audio sink.".to_string(),
+                );
                 return;
             }
         };
@@ -269,11 +320,29 @@ pub fn start_tts_playback_with_chunks(hwnd: HWND, cleaned: String, voice: String
 
         rt.spawn(async move {
             for chunk_obj in chunks_downloader {
-                if cancel_downloader.load(Ordering::SeqCst) { break; }
+                if cancel_downloader.load(Ordering::SeqCst) {
+                    break;
+                }
                 let request_id = Uuid::new_v4().simple().to_string();
-                match download_audio_chunk(&chunk_obj.text_to_read, &voice_downloader, &request_id, rate, pitch, volume, language).await {
+                match download_audio_chunk(
+                    &chunk_obj.text_to_read,
+                    &voice_downloader,
+                    &request_id,
+                    rate,
+                    pitch,
+                    volume,
+                    language,
+                )
+                .await
+                {
                     Ok(data) => {
-                        if audio_tx.send(Ok((data, chunk_obj.original_len))).await.is_err() { break; }
+                        if audio_tx
+                            .send(Ok((data, chunk_obj.original_len)))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
                     Err(e) => {
                         let _ = audio_tx.send(Err(e)).await;
@@ -288,7 +357,9 @@ pub fn start_tts_playback_with_chunks(hwnd: HWND, cleaned: String, voice: String
         let mut current_offset: usize = 0;
 
         loop {
-            if cancel_flag.load(Ordering::SeqCst) { break; }
+            if cancel_flag.load(Ordering::SeqCst) {
+                break;
+            }
 
             let packet = rt.block_on(async {
                 loop {
@@ -315,7 +386,9 @@ pub fn start_tts_playback_with_chunks(hwnd: HWND, cleaned: String, voice: String
                 }
             });
 
-            let Some(res) = packet else { break; };
+            let Some(res) = packet else {
+                break;
+            };
             let (audio, orig_len) = match res {
                 Ok(data) => data,
                 Err(e) => {
@@ -324,7 +397,9 @@ pub fn start_tts_playback_with_chunks(hwnd: HWND, cleaned: String, voice: String
                 }
             };
 
-            if audio.is_empty() { continue; }
+            if audio.is_empty() {
+                continue;
+            }
 
             let _ = unsafe {
                 PostMessageW(
@@ -362,7 +437,9 @@ pub fn start_tts_playback_with_chunks(hwnd: HWND, cleaned: String, voice: String
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
-            if cancel_flag.load(Ordering::SeqCst) { break; }
+            if cancel_flag.load(Ordering::SeqCst) {
+                break;
+            }
             current_offset += orig_len;
         }
 
@@ -392,7 +469,9 @@ pub async fn download_audio_chunk(
     let mut last_error = String::new();
 
     for attempt in 1..=max_retries {
-        match download_audio_chunk_attempt(text, voice, request_id, tts_rate, tts_pitch, tts_volume).await {
+        match download_audio_chunk_attempt(text, voice, request_id, tts_rate, tts_pitch, tts_volume)
+            .await
+        {
             Ok(data) => return Ok(data),
             Err(e) => {
                 last_error = e;
@@ -414,8 +493,14 @@ pub async fn download_audio_chunk(
         }
     }
     Err(match language {
-        Language::Italian => format!("Falliti {} tentativi. Ultimo errore: {}", max_retries, last_error),
-        Language::English => format!("Failed {} attempts. Last error: {}", max_retries, last_error),
+        Language::Italian => format!(
+            "Falliti {} tentativi. Ultimo errore: {}",
+            max_retries, last_error
+        ),
+        Language::English => format!(
+            "Failed {} attempts. Last error: {}",
+            max_retries, last_error
+        ),
     })
 }
 
@@ -440,21 +525,38 @@ async fn download_audio_chunk_attempt(
     let headers = request.headers_mut();
     headers.insert("Pragma", HeaderValue::from_static("no-cache"));
     headers.insert("Cache-Control", HeaderValue::from_static("no-cache"));
-    headers.insert("Origin", HeaderValue::from_static("chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"));
+    headers.insert(
+        "Origin",
+        HeaderValue::from_static("chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"),
+    );
     headers.insert("User-Agent", HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0"));
-    headers.insert("Accept-Encoding", HeaderValue::from_static("gzip, deflate, br"));
-    headers.insert("Accept-Language", HeaderValue::from_static("en-US,en;q=0.9"));
+    headers.insert(
+        "Accept-Encoding",
+        HeaderValue::from_static("gzip, deflate, br"),
+    );
+    headers.insert(
+        "Accept-Language",
+        HeaderValue::from_static("en-US,en;q=0.9"),
+    );
     let cookie = format!("muid={};", generate_muid());
-    headers.insert("Cookie", HeaderValue::from_str(&cookie).map_err(|err| err.to_string())?);
+    headers.insert(
+        "Cookie",
+        HeaderValue::from_str(&cookie).map_err(|err| err.to_string())?,
+    );
 
-    let (ws_stream, _) = connect_async(request).await.map_err(|err| err.to_string())?;
+    let (ws_stream, _) = connect_async(request)
+        .await
+        .map_err(|err| err.to_string())?;
     let (mut write, mut read) = ws_stream.split();
 
     let config_msg = format!(
         "X-Timestamp:{}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{{\"context\":{{\"synthesis\":{{\"audio\":{{\"metadataoptions\":{{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"}},\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}}}}}",
         get_date_string()
     );
-    write.send(Message::Text(config_msg)).await.map_err(|err| err.to_string())?;
+    write
+        .send(Message::Text(config_msg))
+        .await
+        .map_err(|err| err.to_string())?;
 
     let ssml = mkssml(text, voice, tts_rate, tts_pitch, tts_volume);
     let ssml_msg = format!(
@@ -463,20 +565,31 @@ async fn download_audio_chunk_attempt(
         get_date_string(),
         ssml
     );
-    write.send(Message::Text(ssml_msg)).await.map_err(|err| err.to_string())?;
+    write
+        .send(Message::Text(ssml_msg))
+        .await
+        .map_err(|err| err.to_string())?;
 
     let mut audio_data = Vec::new();
     while let Some(msg) = read.next().await {
         let msg = msg.map_err(|err| err.to_string())?;
         match msg {
-            Message::Text(text) => { if text.contains("Path:turn.end") { break; } }
+            Message::Text(text) => {
+                if text.contains("Path:turn.end") {
+                    break;
+                }
+            }
             Message::Binary(data) => {
-                if data.len() < 2 { continue; }
+                if data.len() < 2 {
+                    continue;
+                }
                 let be_len = u16::from_be_bytes([data[0], data[1]]) as usize;
                 let le_len = u16::from_le_bytes([data[0], data[1]]) as usize;
                 let mut parsed = false;
                 for header_len in [be_len, le_len] {
-                    if header_len == 0 || data.len() < header_len + 2 { continue; }
+                    if header_len == 0 || data.len() < header_len + 2 {
+                        continue;
+                    }
                     let headers_bytes = &data[2..2 + header_len];
                     let headers_str = String::from_utf8_lossy(headers_bytes);
                     if headers_str.contains("Path:audio") {
@@ -485,7 +598,9 @@ async fn download_audio_chunk_attempt(
                         break;
                     }
                 }
-                if parsed { continue; }
+                if parsed {
+                    continue;
+                }
             }
             Message::Close(_) => break,
             _ => {}
@@ -497,30 +612,38 @@ async fn download_audio_chunk_attempt(
 unsafe fn get_text_from_caret(hwnd_edit: HWND) -> (String, i32) {
     let mut start: i32 = 0;
     let mut end: i32 = 0;
-    SendMessageW(hwnd_edit, crate::accessibility::EM_GETSEL, WPARAM(&mut start as *mut _ as usize), LPARAM(&mut end as *mut _ as isize));
+    SendMessageW(
+        hwnd_edit,
+        crate::accessibility::EM_GETSEL,
+        WPARAM(&mut start as *mut _ as usize),
+        LPARAM(&mut end as *mut _ as isize),
+    );
     let caret_pos = start.min(end).max(0) as usize;
     let full_text = get_edit_text(hwnd_edit);
-    
+
     // Se siamo all'inizio, o se siamo alla fine del testo, leggi tutto dall'inizio
     if caret_pos == 0 {
         return (full_text, 0);
     }
-    
+
     let normalized = full_text.replace("\r\n", "\n");
     let wide: Vec<u16> = normalized.encode_utf16().collect();
-    
-    // Se la posizione del cursore Š oltre la lunghezza del testo (fine file), 
+
+    // Se la posizione del cursore Š oltre la lunghezza del testo (fine file),
     // ricomincia a leggere dall'inizio come richiesto.
     if caret_pos >= wide.len() {
         return (full_text, 0);
     }
-    
+
     let adjusted_pos = adjust_tts_caret_pos(&normalized, caret_pos as i32);
     let adjusted_pos = adjusted_pos.max(0) as usize;
     if adjusted_pos >= wide.len() {
         return (full_text, 0);
     }
-    (String::from_utf16_lossy(&wide[adjusted_pos..]), adjusted_pos as i32)
+    (
+        String::from_utf16_lossy(&wide[adjusted_pos..]),
+        adjusted_pos as i32,
+    )
 }
 
 fn adjust_tts_caret_pos(text: &str, pos: i32) -> i32 {
@@ -560,8 +683,14 @@ fn adjust_tts_caret_pos(text: &str, pos: i32) -> i32 {
         break;
     }
 
-    let prev_is_word = prev.and_then(|idx| items.get(idx)).map(|v| v.2).unwrap_or(false);
-    let next_is_word = next.and_then(|idx| items.get(idx)).map(|v| v.2).unwrap_or(false);
+    let prev_is_word = prev
+        .and_then(|idx| items.get(idx))
+        .map(|v| v.2)
+        .unwrap_or(false);
+    let next_is_word = next
+        .and_then(|idx| items.get(idx))
+        .map(|v| v.2)
+        .unwrap_or(false);
     if prev_is_word && next_is_word {
         let mut idx = prev.unwrap();
         while idx > 0 && items[idx - 1].2 {
@@ -589,7 +718,9 @@ fn generate_muid() -> String {
 }
 
 fn get_date_string() -> String {
-    Local::now().format("%a %b %d %Y %H:%M:%S GMT+0000 (Coordinated Universal Time)").to_string()
+    Local::now()
+        .format("%a %b %d %Y %H:%M:%S GMT+0000 (Coordinated Universal Time)")
+        .to_string()
 }
 
 fn format_rate(rate: i32) -> String {
@@ -607,29 +738,60 @@ fn format_volume(volume: i32) -> String {
 
 fn mkssml(text: &str, voice: &str, tts_rate: i32, tts_pitch: i32, tts_volume: i32) -> String {
     let lang = voice.split('-').collect::<Vec<_>>();
-    let lang = if lang.len() >= 3 { lang[0..2].join("-") } else { "en-US".to_string() };
-    format!("<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{}'><voice name='{}'><prosody pitch='{}' rate='{}' volume='{}'>{}</prosody></voice></speak>", lang, voice, format_pitch(tts_pitch), format_rate(tts_rate), format_volume(tts_volume), text)
+    let lang = if lang.len() >= 3 {
+        lang[0..2].join("-")
+    } else {
+        "en-US".to_string()
+    };
+    format!(
+        "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{}'><voice name='{}'><prosody pitch='{}' rate='{}' volume='{}'>{}</prosody></voice></speak>",
+        lang,
+        voice,
+        format_pitch(tts_pitch),
+        format_rate(tts_rate),
+        format_volume(tts_volume),
+        text
+    )
 }
 
 pub fn remove_long_dash_runs(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut dash_run = 0;
     for ch in line.chars() {
-        if ch == '-' { dash_run += 1; continue; }
-        if dash_run > 0 { if dash_run < 3 { out.extend(std::iter::repeat('-').take(dash_run)); } dash_run = 0; }
+        if ch == '-' {
+            dash_run += 1;
+            continue;
+        }
+        if dash_run > 0 {
+            if dash_run < 3 {
+                out.extend(std::iter::repeat('-').take(dash_run));
+            }
+            dash_run = 0;
+        }
         out.push(ch);
     }
-    if dash_run > 0 && dash_run < 3 { out.extend(std::iter::repeat('-').take(dash_run)); }
+    if dash_run > 0 && dash_run < 3 {
+        out.extend(std::iter::repeat('-').take(dash_run));
+    }
     out
 }
 
 pub fn strip_dashed_lines(text: &str) -> String {
-    text.lines().filter_map(|line| {
-        let trimmed = line.trim();
-        if trimmed.is_empty() { return Some(String::new()); }
-        let cleaned = remove_long_dash_runs(line);
-        if cleaned.trim().is_empty() { None } else { Some(cleaned) }
-    }).collect::<Vec<_>>().join("\n")
+    text.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return Some(String::new());
+            }
+            let cleaned = remove_long_dash_runs(line);
+            if cleaned.trim().is_empty() {
+                None
+            } else {
+                Some(cleaned)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub fn normalize_for_tts(text: &str, split_on_newline: bool) -> String {
@@ -671,12 +833,23 @@ struct MarkerEntry {
 
 fn marker_label_for_position(text: &str, pos: usize, marker: &str) -> String {
     let start = text[..pos].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
-    let end = text[pos..].find('\n').map(|idx| pos + idx).unwrap_or(text.len());
+    let end = text[pos..]
+        .find('\n')
+        .map(|idx| pos + idx)
+        .unwrap_or(text.len());
     let line = text[start..end].trim();
-    if line.is_empty() { marker.to_string() } else { line.to_string() }
+    if line.is_empty() {
+        marker.to_string()
+    } else {
+        line.to_string()
+    }
 }
 
-fn collect_marker_entries(text: &str, marker: &str, require_newline: bool) -> (String, Vec<MarkerEntry>) {
+fn collect_marker_entries(
+    text: &str,
+    marker: &str,
+    require_newline: bool,
+) -> (String, Vec<MarkerEntry>) {
     let normalized = normalize_newlines(text);
     if marker.trim().is_empty() {
         return (normalized, Vec::new());
@@ -722,7 +895,12 @@ fn split_text_by_positions(text: &str, positions: &[usize]) -> Option<Vec<String
     Some(parts)
 }
 
-fn build_audiobook_parts_by_positions(text: &str, positions: &[usize], split_on_newline: bool, dictionary: &[DictionaryEntry]) -> Option<Vec<Vec<String>>> {
+fn build_audiobook_parts_by_positions(
+    text: &str,
+    positions: &[usize],
+    split_on_newline: bool,
+    dictionary: &[DictionaryEntry],
+) -> Option<Vec<Vec<String>>> {
     let parts_text = split_text_by_positions(text, positions)?;
     let mut parts_chunks = Vec::new();
 
@@ -747,15 +925,35 @@ pub fn split_text(text: &str) -> Vec<String> {
     let char_len = char_indices.len();
     let mut current_char = 0;
     let is_long = char_len > TTS_LONG_TEXT_THRESHOLD;
-    let max_len = if is_long { MAX_TTS_TEXT_LEN_LONG } else { MAX_TTS_TEXT_LEN };
-    let first_len = if is_long { MAX_TTS_FIRST_CHUNK_LEN_LONG } else { max_len };
-    let byte_index_at = |char_idx: usize| -> usize { if char_idx >= char_len { text.len() } else { char_indices[char_idx].0 } };
+    let max_len = if is_long {
+        MAX_TTS_TEXT_LEN_LONG
+    } else {
+        MAX_TTS_TEXT_LEN
+    };
+    let first_len = if is_long {
+        MAX_TTS_FIRST_CHUNK_LEN_LONG
+    } else {
+        max_len
+    };
+    let byte_index_at = |char_idx: usize| -> usize {
+        if char_idx >= char_len {
+            text.len()
+        } else {
+            char_indices[char_idx].0
+        }
+    };
     while current_char < char_len {
-        let target_len = if chunks.is_empty() { first_len } else { max_len };
+        let target_len = if chunks.is_empty() {
+            first_len
+        } else {
+            max_len
+        };
         let mut split_char = current_char + target_len;
         if split_char >= char_len {
             let chunk = text[byte_index_at(current_char)..].trim().to_string();
-            if !chunk.is_empty() { chunks.push(chunk); }
+            if !chunk.is_empty() {
+                chunks.push(chunk);
+            }
             break;
         }
         let search_end = split_char;
@@ -765,35 +963,64 @@ pub fn split_text(text: &str) -> Vec<String> {
             let c = char_indices[idx].1;
             if c == '.' || c == '!' || c == '?' {
                 let next_idx = idx + 1;
-                if next_idx >= char_len || char_indices[next_idx].1.is_whitespace() { split_found = Some(next_idx); break; }
+                if next_idx >= char_len || char_indices[next_idx].1.is_whitespace() {
+                    split_found = Some(next_idx);
+                    break;
+                }
             }
         }
         if split_found.is_none() {
             for idx in (search_start..search_end).rev() {
                 let c = char_indices[idx].1;
-                if c == '\n' { if idx + 1 < char_len && char_indices[idx + 1].1 == '\n' { split_found = Some(idx + 2); break; } } 
-                else if c == ';' || c == ':' { split_found = Some(idx + 1); break; }
+                if c == '\n' {
+                    if idx + 1 < char_len && char_indices[idx + 1].1 == '\n' {
+                        split_found = Some(idx + 2);
+                        break;
+                    }
+                } else if c == ';' || c == ':' {
+                    split_found = Some(idx + 1);
+                    break;
+                }
             }
         }
         if split_found.is_none() {
-            for idx in (search_start..search_end).rev() { if char_indices[idx].1 == ' ' { split_found = Some(idx + 1); break; } }
+            for idx in (search_start..search_end).rev() {
+                if char_indices[idx].1 == ' ' {
+                    split_found = Some(idx + 1);
+                    break;
+                }
+            }
         }
-        if let Some(split_at) = split_found { split_char = split_at; }
+        if let Some(split_at) = split_found {
+            split_char = split_at;
+        }
         if split_char > current_char {
-            let chunk = text[byte_index_at(current_char)..byte_index_at(split_char)].trim().to_string();
-            if !chunk.is_empty() { chunks.push(chunk); }
+            let chunk = text[byte_index_at(current_char)..byte_index_at(split_char)]
+                .trim()
+                .to_string();
+            if !chunk.is_empty() {
+                chunks.push(chunk);
+            }
             current_char = split_char;
         } else {
             let hard_limit = std::cmp::min(current_char + target_len, char_len);
-            let chunk = text[byte_index_at(current_char)..byte_index_at(hard_limit)].trim().to_string();
-            if !chunk.is_empty() { chunks.push(chunk); }
+            let chunk = text[byte_index_at(current_char)..byte_index_at(hard_limit)]
+                .trim()
+                .to_string();
+            if !chunk.is_empty() {
+                chunks.push(chunk);
+            }
             current_char = hard_limit;
         }
     }
     chunks
 }
 
-pub fn split_into_tts_chunks(text: &str, split_on_newline: bool, dictionary: &[DictionaryEntry]) -> Vec<TtsChunk> {
+pub fn split_into_tts_chunks(
+    text: &str,
+    split_on_newline: bool,
+    dictionary: &[DictionaryEntry],
+) -> Vec<TtsChunk> {
     let mut sentences = Vec::new();
     let mut current_sentence = String::new();
     let mut current_orig_len = 0usize;
@@ -805,20 +1032,44 @@ pub fn split_into_tts_chunks(text: &str, split_on_newline: bool, dictionary: &[D
         let punct_before_newline = split_on_newline
             && matches!(
                 ch,
-                '.' | '!' | '?' | ',' | ';' | ':' | ')' | ']' | '}' | '"' | '\'' | '-'
-                    | '…' | '—' | '«' | '»' | '“' | '”' | '‘' | '’'
-                    | '‐' | '‑' | '–' | '·'
+                '.' | '!'
+                    | '?'
+                    | ','
+                    | ';'
+                    | ':'
+                    | ')'
+                    | ']'
+                    | '}'
+                    | '"'
+                    | '\''
+                    | '-'
+                    | '…'
+                    | '—'
+                    | '«'
+                    | '»'
+                    | '“'
+                    | '”'
+                    | '‘'
+                    | '’'
+                    | '‐'
+                    | '‑'
+                    | '–'
+                    | '·'
             )
             && matches!(next_ch, Some('\n') | Some('\r'));
         let is_terminal = !punct_before_newline
             && (matches!(ch, '.' | '!' | '?') || (split_on_newline && ch == '\n'));
         if is_terminal {
-            if !current_sentence.trim().is_empty() { sentences.push((current_sentence.clone(), current_orig_len)); }
+            if !current_sentence.trim().is_empty() {
+                sentences.push((current_sentence.clone(), current_orig_len));
+            }
             current_sentence.clear();
             current_orig_len = 0;
         }
     }
-    if !current_sentence.trim().is_empty() { sentences.push((current_sentence, current_orig_len)); }
+    if !current_sentence.trim().is_empty() {
+        sentences.push((current_sentence, current_orig_len));
+    }
     let mut chunks = Vec::new();
     let mut current_chunk_text = String::new();
     let mut current_chunk_orig_len = 0usize;
@@ -828,7 +1079,10 @@ pub fn split_into_tts_chunks(text: &str, split_on_newline: bool, dictionary: &[D
         if !current_chunk_text.is_empty() && potential_new_len > max_chars {
             let cleaned = strip_dashed_lines(&current_chunk_text);
             let prepared = prepare_tts_text(&cleaned, split_on_newline, dictionary);
-            chunks.push(TtsChunk { text_to_read: prepared, original_len: current_chunk_orig_len });
+            chunks.push(TtsChunk {
+                text_to_read: prepared,
+                original_len: current_chunk_orig_len,
+            });
             current_chunk_text.clear();
             current_chunk_orig_len = 0;
         }
@@ -838,7 +1092,10 @@ pub fn split_into_tts_chunks(text: &str, split_on_newline: bool, dictionary: &[D
     if !current_chunk_text.is_empty() {
         let cleaned = strip_dashed_lines(&current_chunk_text);
         let prepared = prepare_tts_text(&cleaned, split_on_newline, dictionary);
-        chunks.push(TtsChunk { text_to_read: prepared, original_len: current_chunk_orig_len });
+        chunks.push(TtsChunk {
+            text_to_read: prepared,
+            original_len: current_chunk_orig_len,
+        });
     }
     chunks
 }
@@ -859,21 +1116,35 @@ pub fn start_audiobook(hwnd: HWND) {
         with_state(hwnd, |state| {
             state.docs.get(state.current).map(|doc| {
                 let p = Path::new(&doc.title);
-                p.file_stem().and_then(|s| s.to_str()).unwrap_or(&doc.title).to_string()
+                p.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&doc.title)
+                    .to_string()
             })
         })
-    }.flatten();
+    }
+    .flatten();
 
     let Some(output) = (unsafe { save_audio_dialog(hwnd, suggested_name.as_deref()) }) else {
         return;
     };
     let voice = unsafe {
-        with_state(hwnd, |state| state.settings.tts_voice.clone()).unwrap_or_else(|| {
-            "it-IT-IsabellaNeural".to_string()
-        })
+        with_state(hwnd, |state| state.settings.tts_voice.clone())
+            .unwrap_or_else(|| "it-IT-IsabellaNeural".to_string())
     };
 
-    let (split_on_newline, audiobook_split, audiobook_split_by_text, audiobook_split_text, audiobook_split_text_requires_newline, tts_engine, dictionary, tts_rate, tts_pitch, tts_volume) = unsafe { 
+    let (
+        split_on_newline,
+        audiobook_split,
+        audiobook_split_by_text,
+        audiobook_split_text,
+        audiobook_split_text_requires_newline,
+        tts_engine,
+        dictionary,
+        tts_rate,
+        tts_pitch,
+        tts_volume,
+    ) = unsafe {
         with_state(hwnd, |state| {
             (
                 state.settings.split_on_newline,
@@ -887,25 +1158,53 @@ pub fn start_audiobook(hwnd: HWND) {
                 state.settings.tts_pitch,
                 state.settings.tts_volume,
             )
-        }) 
-    }.unwrap_or((true, 0, false, String::new(), true, TtsEngine::Edge, Vec::new(), 0, 0, 100));
+        })
+    }
+    .unwrap_or((
+        true,
+        0,
+        false,
+        String::new(),
+        true,
+        TtsEngine::Edge,
+        Vec::new(),
+        0,
+        0,
+        100,
+    ));
 
     let cleaned = strip_dashed_lines(&text);
     let mut split_parts = audiobook_split;
     let mut marker_parts: Option<Vec<Vec<String>>> = None;
     if audiobook_split_by_text {
-        let (normalized, entries) = collect_marker_entries(&cleaned, &audiobook_split_text, audiobook_split_text_requires_newline);
+        let (normalized, entries) = collect_marker_entries(
+            &cleaned,
+            &audiobook_split_text,
+            audiobook_split_text_requires_newline,
+        );
         if entries.is_empty() {
             split_parts = 0;
         } else {
             let labels: Vec<String> = entries.iter().map(|entry| entry.label.clone()).collect();
-            let selected = crate::app_windows::marker_select_window::select_marker_entries(hwnd, &labels, language);
-            let Some(selected) = selected else { return; };
-            let positions: Vec<usize> = selected.iter().filter_map(|idx| entries.get(*idx).map(|e| e.pos)).collect();
+            let selected = crate::app_windows::marker_select_window::select_marker_entries(
+                hwnd, &labels, language,
+            );
+            let Some(selected) = selected else {
+                return;
+            };
+            let positions: Vec<usize> = selected
+                .iter()
+                .filter_map(|idx| entries.get(*idx).map(|e| e.pos))
+                .collect();
             if positions.is_empty() {
                 split_parts = 0;
             } else {
-                marker_parts = build_audiobook_parts_by_positions(&normalized, &positions, split_on_newline, &dictionary);
+                marker_parts = build_audiobook_parts_by_positions(
+                    &normalized,
+                    &positions,
+                    split_on_newline,
+                    &dictionary,
+                );
                 if marker_parts.is_none() {
                     split_parts = 0;
                 }
@@ -929,7 +1228,7 @@ pub fn start_audiobook(hwnd: HWND) {
     } else {
         chunks.len()
     };
-    
+
     let cancel_token = Arc::new(AtomicBool::new(false));
     let progress_hwnd = unsafe {
         let h = crate::app_windows::audiobook_window::open(hwnd, chunks_len);
@@ -945,16 +1244,58 @@ pub fn start_audiobook(hwnd: HWND) {
         let result = match tts_engine {
             TtsEngine::Edge => {
                 if let Some(parts) = marker_parts {
-                    run_marker_split_audiobook(&parts, &voice, &output, progress_hwnd, cancel_clone, language, tts_rate, tts_pitch, tts_volume)
+                    run_marker_split_audiobook(
+                        &parts,
+                        &voice,
+                        &output,
+                        progress_hwnd,
+                        cancel_clone,
+                        language,
+                        tts_rate,
+                        tts_pitch,
+                        tts_volume,
+                    )
                 } else {
-                    run_split_audiobook(&chunks, &voice, &output, split_parts, progress_hwnd, cancel_clone, language, tts_rate, tts_pitch, tts_volume)
+                    run_split_audiobook(
+                        &chunks,
+                        &voice,
+                        &output,
+                        split_parts,
+                        progress_hwnd,
+                        cancel_clone,
+                        language,
+                        tts_rate,
+                        tts_pitch,
+                        tts_volume,
+                    )
                 }
             }
             TtsEngine::Sapi5 => {
                 if let Some(parts) = marker_parts {
-                    run_marker_split_sapi_audiobook(&parts, &voice, &output, progress_hwnd, cancel_clone, language, tts_rate, tts_pitch, tts_volume)
+                    run_marker_split_sapi_audiobook(
+                        &parts,
+                        &voice,
+                        &output,
+                        progress_hwnd,
+                        cancel_clone,
+                        language,
+                        tts_rate,
+                        tts_pitch,
+                        tts_volume,
+                    )
                 } else {
-                    run_split_sapi_audiobook(&chunks, &voice, &output, split_parts, progress_hwnd, cancel_clone, language, tts_rate, tts_pitch, tts_volume)
+                    run_split_sapi_audiobook(
+                        &chunks,
+                        &voice,
+                        &output,
+                        split_parts,
+                        progress_hwnd,
+                        cancel_clone,
+                        language,
+                        tts_rate,
+                        tts_pitch,
+                        tts_volume,
+                    )
                 }
             }
         };
@@ -966,10 +1307,7 @@ pub fn start_audiobook(hwnd: HWND) {
             },
             Err(err) => err,
         };
-        let payload = Box::new(AudiobookResult {
-            success,
-            message,
-        });
+        let payload = Box::new(AudiobookResult { success, message });
         let _ = unsafe {
             PostMessageW(
                 hwnd,
@@ -993,11 +1331,19 @@ fn run_split_audiobook(
     tts_pitch: i32,
     tts_volume: i32,
 ) -> Result<(), String> {
-    let parts = if split_parts == 0 { 1 } else { split_parts as usize };
+    let parts = if split_parts == 0 {
+        1
+    } else {
+        split_parts as usize
+    };
     let total_chunks = chunks.len();
-    
+
     // Se ci sono meno chunks delle parti richieste, riduciamo le parti
-    let parts = if total_chunks < parts { total_chunks } else { parts };
+    let parts = if total_chunks < parts {
+        total_chunks
+    } else {
+        parts
+    };
     let chunks_per_part = (total_chunks + parts - 1) / parts; // Ceiling division
 
     let mut current_global_progress = 0;
@@ -1005,12 +1351,17 @@ fn run_split_audiobook(
     for part_idx in 0..parts {
         let start_idx = part_idx * chunks_per_part;
         let end_idx = std::cmp::min(start_idx + chunks_per_part, total_chunks);
-        if start_idx >= end_idx { break; }
+        if start_idx >= end_idx {
+            break;
+        }
 
         let part_chunks = &chunks[start_idx..end_idx];
-        
+
         let part_output = if parts > 1 {
-            let stem = output.file_stem().and_then(|s| s.to_str()).unwrap_or("audiobook");
+            let stem = output
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("audiobook");
             let ext = output.extension().and_then(|s| s.to_str()).unwrap_or("mp3");
             output.with_file_name(format!("{}_part{}.{}", stem, part_idx + 1, ext))
         } else {
@@ -1027,7 +1378,7 @@ fn run_split_audiobook(
             language,
             tts_rate,
             tts_pitch,
-            tts_volume
+            tts_volume,
         )?;
     }
     Ok(())
@@ -1052,7 +1403,10 @@ fn run_marker_split_audiobook(
             continue;
         }
         let part_output = if parts_len > 1 {
-            let stem = output.file_stem().and_then(|s| s.to_str()).unwrap_or("audiobook");
+            let stem = output
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("audiobook");
             let ext = output.extension().and_then(|s| s.to_str()).unwrap_or("mp3");
             output.with_file_name(format!("{}_part{}.{}", stem, part_idx + 1, ext))
         } else {
@@ -1069,7 +1423,7 @@ fn run_marker_split_audiobook(
             language,
             tts_rate,
             tts_pitch,
-            tts_volume
+            tts_volume,
         )?;
     }
     Ok(())
@@ -1087,21 +1441,34 @@ fn run_split_sapi_audiobook(
     tts_pitch: i32,
     tts_volume: i32,
 ) -> Result<(), String> {
-    let parts = if split_parts == 0 { 1 } else { split_parts as usize };
+    let parts = if split_parts == 0 {
+        1
+    } else {
+        split_parts as usize
+    };
     let total_chunks = chunks.len();
-    let parts = if total_chunks < parts { total_chunks } else { parts };
-    let chunks_per_part = (total_chunks + parts - 1) / parts; 
+    let parts = if total_chunks < parts {
+        total_chunks
+    } else {
+        parts
+    };
+    let chunks_per_part = (total_chunks + parts - 1) / parts;
     let mut current_global_progress = 0;
 
     for part_idx in 0..parts {
         let start_idx = part_idx * chunks_per_part;
         let end_idx = std::cmp::min(start_idx + chunks_per_part, total_chunks);
-        if start_idx >= end_idx { break; }
+        if start_idx >= end_idx {
+            break;
+        }
 
         let part_chunks = &chunks[start_idx..end_idx];
-        
+
         let part_output = if parts > 1 {
-            let stem = output.file_stem().and_then(|s| s.to_str()).unwrap_or("audiobook");
+            let stem = output
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("audiobook");
             let ext = output.extension().and_then(|s| s.to_str()).unwrap_or("mp3");
             output.with_file_name(format!("{}_part{}.{}", stem, part_idx + 1, ext))
         } else {
@@ -1110,7 +1477,7 @@ fn run_split_sapi_audiobook(
 
         let progress_hwnd_clone = progress_hwnd;
         let cancel_clone = cancel.clone();
-        
+
         crate::sapi5_engine::speak_sapi_to_file(
             part_chunks,
             voice,
@@ -1120,17 +1487,23 @@ fn run_split_sapi_audiobook(
             tts_pitch,
             tts_volume,
             cancel_clone,
-            |_chunk_idx| { 
-                 current_global_progress += 1;
-                 if progress_hwnd_clone.0 != 0 {
-                     unsafe { 
-                         let _ = PostMessageW(progress_hwnd_clone, crate::WM_UPDATE_PROGRESS, WPARAM(current_global_progress), LPARAM(0)); 
-                     }
-                 }
-            }
-        ).map_err(|e| {
-             let _ = std::fs::remove_file(&part_output);
-             e
+            |_chunk_idx| {
+                current_global_progress += 1;
+                if progress_hwnd_clone.0 != 0 {
+                    unsafe {
+                        let _ = PostMessageW(
+                            progress_hwnd_clone,
+                            crate::WM_UPDATE_PROGRESS,
+                            WPARAM(current_global_progress),
+                            LPARAM(0),
+                        );
+                    }
+                }
+            },
+        )
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&part_output);
+            e
         })?;
     }
     Ok(())
@@ -1155,7 +1528,10 @@ fn run_marker_split_sapi_audiobook(
             continue;
         }
         let part_output = if parts_len > 1 {
-            let stem = output.file_stem().and_then(|s| s.to_str()).unwrap_or("audiobook");
+            let stem = output
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("audiobook");
             let ext = output.extension().and_then(|s| s.to_str()).unwrap_or("mp3");
             output.with_file_name(format!("{}_part{}.{}", stem, part_idx + 1, ext))
         } else {
@@ -1174,17 +1550,23 @@ fn run_marker_split_sapi_audiobook(
             tts_pitch,
             tts_volume,
             cancel_clone,
-            |_chunk_idx| { 
-                 current_global_progress += 1;
-                 if progress_hwnd_clone.0 != 0 {
-                     unsafe { 
-                         let _ = PostMessageW(progress_hwnd_clone, crate::WM_UPDATE_PROGRESS, WPARAM(current_global_progress), LPARAM(0)); 
-                     }
-                 }
-            }
-        ).map_err(|e| {
-             let _ = std::fs::remove_file(&part_output);
-             e
+            |_chunk_idx| {
+                current_global_progress += 1;
+                if progress_hwnd_clone.0 != 0 {
+                    unsafe {
+                        let _ = PostMessageW(
+                            progress_hwnd_clone,
+                            crate::WM_UPDATE_PROGRESS,
+                            WPARAM(current_global_progress),
+                            LPARAM(0),
+                        );
+                    }
+                }
+            },
+        )
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&part_output);
+            e
         })?;
     }
     Ok(())
@@ -1220,18 +1602,36 @@ fn run_tts_audiobook_part(
                     if cancel.load(Ordering::Relaxed) {
                         return Err("Cancelled".to_string());
                     }
-                    match download_audio_chunk(&chunk, &voice, &request_id, tts_rate, tts_pitch, tts_volume, language).await {
+                    match download_audio_chunk(
+                        &chunk,
+                        &voice,
+                        &request_id,
+                        tts_rate,
+                        tts_pitch,
+                        tts_volume,
+                        language,
+                    )
+                    .await
+                    {
                         Ok(data) => return Ok::<Vec<u8>, String>(data),
                         Err(err) => {
                             if cancel.load(Ordering::Relaxed) {
                                 return Err("Cancelled".to_string());
                             }
                             let msg = match language {
-                                Language::Italian => format!("Errore download chunk {}: {}. Riprovo tra 5 secondi...", i + 1, err),
-                                Language::English => format!("Chunk download error {}: {}. Retrying in 5 seconds...", i + 1, err),
+                                Language::Italian => format!(
+                                    "Errore download chunk {}: {}. Riprovo tra 5 secondi...",
+                                    i + 1,
+                                    err
+                                ),
+                                Language::English => format!(
+                                    "Chunk download error {}: {}. Retrying in 5 seconds...",
+                                    i + 1,
+                                    err
+                                ),
                             };
                             log_debug(&msg);
-                            
+
                             tokio::select! {
                                 _ = tokio::time::sleep(Duration::from_secs(5)) => {},
                                 _ = async {
@@ -1249,7 +1649,7 @@ fn run_tts_audiobook_part(
         });
 
         let mut stream = futures_util::stream::iter(tasks).buffered(30);
-        
+
         while let Some(result) = stream.next().await {
             if cancel.load(Ordering::Relaxed) {
                 return Err(cancelled_message(language).to_string());
@@ -1259,17 +1659,27 @@ fn run_tts_audiobook_part(
                 Err(e) if e == "Cancelled" => return Err(cancelled_message(language).to_string()),
                 Err(e) => return Err(e),
             };
-            
+
             writer.write_all(&audio).map_err(|err| err.to_string())?;
             *current_global_progress += 1;
             if progress_hwnd.0 != 0 {
-                if cancel.load(Ordering::Relaxed) { return Err(cancelled_message(language).to_string()); }
-                unsafe { let _ = PostMessageW(progress_hwnd, crate::WM_UPDATE_PROGRESS, WPARAM(*current_global_progress), LPARAM(0)); }
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(cancelled_message(language).to_string());
+                }
+                unsafe {
+                    let _ = PostMessageW(
+                        progress_hwnd,
+                        crate::WM_UPDATE_PROGRESS,
+                        WPARAM(*current_global_progress),
+                        LPARAM(0),
+                    );
+                }
             }
         }
         writer.flush().map_err(|err| err.to_string())?;
         Ok(())
-    }).map_err(|e| {
+    })
+    .map_err(|e| {
         if e == cancelled_message(language) {
             let _ = std::fs::remove_file(output);
         }

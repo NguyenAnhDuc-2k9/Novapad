@@ -1,10 +1,10 @@
-use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::WindowsAndMessaging::{MSG, IsDialogMessageW, WM_KEYDOWN};
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    VK_SPACE, VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN, VK_HOME, VK_END, VK_PRIOR, VK_NEXT
-};
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    VK_DOWN, VK_END, VK_HOME, VK_LEFT, VK_NEXT, VK_PRIOR, VK_RIGHT, VK_SPACE, VK_UP,
+};
+use windows::Win32::UI::WindowsAndMessaging::{IsDialogMessageW, MSG, WM_KEYDOWN};
 
 pub enum PlayerAction {
     TogglePause,
@@ -75,8 +75,13 @@ pub fn handle_player_keyboard(msg: &MSG, skip_seconds: u32) -> PlayerAction {
             vk if vk == VK_UP.0 as u32 => PlayerAction::Volume(0.1),
             vk if vk == VK_DOWN.0 as u32 => PlayerAction::Volume(-0.1),
             // Block navigation to prevent screen reader noise
-            vk if vk == VK_HOME.0 as u32 || vk == VK_END.0 as u32 ||
-                  vk == VK_PRIOR.0 as u32 || vk == VK_NEXT.0 as u32 => PlayerAction::BlockNavigation,
+            vk if vk == VK_HOME.0 as u32
+                || vk == VK_END.0 as u32
+                || vk == VK_PRIOR.0 as u32
+                || vk == VK_NEXT.0 as u32 =>
+            {
+                PlayerAction::BlockNavigation
+            }
             _ => PlayerAction::None,
         }
     } else {

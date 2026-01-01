@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use windows::Win32::Globalization::GetUserDefaultLocaleName;
 
 pub const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-pub const VOICE_LIST_URL: &str = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list";
+pub const VOICE_LIST_URL: &str =
+    "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VoiceInfo {
@@ -30,18 +31,13 @@ pub struct AudiobookResult {
     pub message: String,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum TextEncoding {
+    #[default]
     Utf8,
     Utf16Le,
     Utf16Be,
     Windows1252,
-}
-
-impl Default for TextEncoding {
-    fn default() -> Self {
-        TextEncoding::Utf8
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -61,46 +57,31 @@ impl Default for FileFormat {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum OpenBehavior {
     #[serde(rename = "new_tab")]
+    #[default]
     NewTab,
     #[serde(rename = "new_window")]
     NewWindow,
 }
 
-impl Default for OpenBehavior {
-    fn default() -> Self {
-        OpenBehavior::NewTab
-    }
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum Language {
     #[serde(rename = "it")]
+    #[default]
     Italian,
     #[serde(rename = "en")]
     English,
 }
 
-impl Default for Language {
-    fn default() -> Self {
-        Language::Italian
-    }
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum TtsEngine {
     #[serde(rename = "edge")]
+    #[default]
     Edge,
     #[serde(rename = "sapi5")]
     Sapi5,
-}
-
-impl Default for TtsEngine {
-    fn default() -> Self {
-        TtsEngine::Edge
-    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -191,22 +172,25 @@ pub fn load_settings() -> AppSettings {
         return AppSettings::default();
     };
     if !path.exists() {
-        let mut settings = AppSettings::default();
-        settings.language = system_language();
-        return settings;
+        return AppSettings {
+            language: system_language(),
+            ..Default::default()
+        };
     }
     let data = std::fs::read_to_string(path).ok();
     let Some(data) = data else {
-        let mut settings = AppSettings::default();
-        settings.language = system_language();
-        return settings;
+        return AppSettings {
+            language: system_language(),
+            ..Default::default()
+        };
     };
     match serde_json::from_str(&data) {
         Ok(settings) => settings,
         Err(_) => {
-            let mut settings = AppSettings::default();
-            settings.language = system_language();
-            settings
+            AppSettings {
+                language: system_language(),
+                ..Default::default()
+            }
         }
     }
 }

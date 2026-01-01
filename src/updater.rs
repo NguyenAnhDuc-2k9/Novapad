@@ -1,20 +1,21 @@
+#![allow(clippy::io_other_error)]
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
 
 use serde::Deserialize;
-use windows::core::PCWSTR;
 use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, WPARAM};
-use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
+use windows::Win32::System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject};
 use windows::Win32::UI::WindowsAndMessaging::{
-    MessageBoxW, PostMessageW, IDYES, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK,
-    MB_SETFOREGROUND, MB_YESNO, WM_CLOSE,
+    IDYES, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK, MB_SETFOREGROUND, MB_YESNO,
+    MessageBoxW, PostMessageW, WM_CLOSE,
 };
+use windows::core::PCWSTR;
 
 use crate::accessibility::to_wide;
 use crate::log_debug;
-use crate::settings::{load_settings, Language};
+use crate::settings::{Language, load_settings};
 use crate::with_state;
 
 const REPO_OWNER: &str = "Ambro86";
@@ -78,9 +79,7 @@ pub(crate) fn check_for_update(hwnd: HWND, interactive: bool) {
 }
 
 fn fetch_latest_release() -> Result<ReleaseInfo, String> {
-    let url = format!(
-        "https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
-    );
+    let url = format!("https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest");
     let client = reqwest::blocking::Client::builder()
         .user_agent(USER_AGENT)
         .build()
@@ -114,8 +113,12 @@ fn parse_version(value: &str) -> Option<(u32, u32, u32)> {
 }
 
 fn is_newer_version(latest: &str, current: &str) -> bool {
-    let Some(latest) = parse_version(latest) else { return false };
-    let Some(current) = parse_version(current) else { return false };
+    let Some(latest) = parse_version(latest) else {
+        return false;
+    };
+    let Some(current) = parse_version(current) else {
+        return false;
+    };
     latest > current
 }
 
@@ -220,15 +223,21 @@ pub(crate) fn run_self_update(args: &[String]) -> Result<(), String> {
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--pid" => {
-                let Some(value) = it.next() else { return Err("Missing --pid value".to_string()) };
+                let Some(value) = it.next() else {
+                    return Err("Missing --pid value".to_string());
+                };
                 pid = value.parse().ok();
             }
             "--current" => {
-                let Some(value) = it.next() else { return Err("Missing --current value".to_string()) };
+                let Some(value) = it.next() else {
+                    return Err("Missing --current value".to_string());
+                };
                 current = Some(PathBuf::from(value));
             }
             "--new" => {
-                let Some(value) = it.next() else { return Err("Missing --new value".to_string()) };
+                let Some(value) = it.next() else {
+                    return Err("Missing --new value".to_string());
+                };
                 new = Some(PathBuf::from(value));
             }
             "--restart" => restart = true,
@@ -304,15 +313,18 @@ fn replace_executable(current: &Path, new: &Path) -> Result<(), io::Error> {
         }
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
-    Err(last_err.unwrap_or_else(|| {
-        io::Error::new(io::ErrorKind::Other, "Failed to replace executable")
-    }))
+    Err(last_err
+        .unwrap_or_else(|| io::Error::new(io::ErrorKind::Other, "Failed to replace executable")))
 }
 
 fn show_permission_error(language: Language) {
     let text = match language {
-        Language::Italian => "Aggiornamento non riuscito. Permessi insufficienti.\nEsegui il programma come amministratore e riprova.",
-        Language::English => "Update failed. Permission denied.\nRun the program as administrator and try again.",
+        Language::Italian => {
+            "Aggiornamento non riuscito. Permessi insufficienti.\nEsegui il programma come amministratore e riprova."
+        }
+        Language::English => {
+            "Update failed. Permission denied.\nRun the program as administrator and try again."
+        }
     };
     let title = match language {
         Language::Italian => "Aggiornamento",
@@ -373,7 +385,10 @@ fn show_update_error(language: Language, error: UpdateError) {
                 "Aggiornamento",
                 "Impossibile sostituire il file.\nRiprova piu' tardi.",
             ),
-            Language::English => ("Update", "Unable to replace the file.\nPlease try again later."),
+            Language::English => (
+                "Update",
+                "Unable to replace the file.\nPlease try again later.",
+            ),
         },
     };
     let text_w = to_wide(text);

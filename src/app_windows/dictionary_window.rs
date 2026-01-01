@@ -1,22 +1,23 @@
-use windows::core::{PCWSTR, w};
+use crate::accessibility::{handle_accessibility, to_wide};
+use crate::settings::{DictionaryEntry, Language, save_settings};
+use crate::with_state;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::Graphics::Gdi::{HBRUSH, COLOR_WINDOW, HFONT};
+use windows::Win32::Graphics::Gdi::{COLOR_WINDOW, HBRUSH, HFONT};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{WC_BUTTON, WC_LISTBOXW, WC_STATIC};
 use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus, VK_ESCAPE, VK_RETURN};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, LoadCursorW, RegisterClassW,
-    PostMessageW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowTextW, CREATESTRUCTW,
-    GetWindowTextLengthW, GetWindowTextW, GWLP_USERDATA, HMENU, IDC_ARROW, IDCANCEL, IDOK,
-    LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOTIFY, LB_ADDSTRING, LB_GETCOUNT, LB_GETCURSEL,
-    LB_GETITEMDATA, LB_RESETCONTENT, LB_SETCURSEL, LB_SETITEMDATA, MSG, WM_COMMAND, WM_CREATE,
-    WM_KEYDOWN, WM_NCDESTROY, WM_CLOSE, WM_DESTROY, WM_SETFONT, WNDCLASSW, WINDOW_STYLE, WS_CAPTION,
-    WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME, WS_SYSMENU, WS_TABSTOP,
-    WS_VISIBLE, WS_VSCROLL, BS_DEFPUSHBUTTON, ES_AUTOHSCROLL, WM_APP,
+    BS_DEFPUSHBUTTON, CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DestroyWindow,
+    ES_AUTOHSCROLL, GWLP_USERDATA, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU,
+    IDC_ARROW, IDCANCEL, IDOK, LB_ADDSTRING, LB_GETCOUNT, LB_GETCURSEL, LB_GETITEMDATA,
+    LB_RESETCONTENT, LB_SETCURSEL, LB_SETITEMDATA, LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOTIFY,
+    LoadCursorW, MSG, PostMessageW, RegisterClassW, SendMessageW, SetForegroundWindow,
+    SetWindowLongPtrW, SetWindowTextW, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_CREATE,
+    WM_DESTROY, WM_KEYDOWN, WM_NCDESTROY, WM_SETFONT, WNDCLASSW, WS_CAPTION, WS_CHILD,
+    WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    WS_VSCROLL,
 };
-use crate::accessibility::{handle_accessibility, to_wide};
-use crate::settings::{DictionaryEntry, Language, save_settings};
-use crate::{with_state};
+use windows::core::{PCWSTR, w};
 
 const DICTIONARY_CLASS_NAME: &str = "NovapadDictionary";
 const DICTIONARY_ENTRY_CLASS_NAME: &str = "NovapadDictionaryEntry";
@@ -111,7 +112,9 @@ pub unsafe fn open(parent: HWND) {
     let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
     let class_name = to_wide(DICTIONARY_CLASS_NAME);
     let wc = WNDCLASSW {
-        hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(LoadCursorW(None, IDC_ARROW).unwrap_or_default().0),
+        hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(
+            LoadCursorW(None, IDC_ARROW).unwrap_or_default().0,
+        ),
         hInstance: hinstance,
         lpszClassName: PCWSTR(class_name.as_ptr()),
         lpfnWndProc: Some(dictionary_wndproc),
@@ -148,7 +151,12 @@ pub unsafe fn open(parent: HWND) {
     }
 }
 
-unsafe extern "system" fn dictionary_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn dictionary_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     match msg {
         WM_CREATE => {
             let create_struct = lparam.0 as *const CREATESTRUCTW;
@@ -161,9 +169,19 @@ unsafe extern "system" fn dictionary_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
                 WS_EX_CLIENTEDGE,
                 WC_LISTBOXW,
                 PCWSTR::null(),
-                WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | WINDOW_STYLE((LBS_NOTIFY | LBS_HASSTRINGS) as u32),
-                10, 10, 480, 270,
-                hwnd, HMENU(DICT_ID_LIST as isize), HINSTANCE(0), None,
+                WS_CHILD
+                    | WS_VISIBLE
+                    | WS_VSCROLL
+                    | WS_TABSTOP
+                    | WINDOW_STYLE((LBS_NOTIFY | LBS_HASSTRINGS) as u32),
+                10,
+                10,
+                480,
+                270,
+                hwnd,
+                HMENU(DICT_ID_LIST as isize),
+                HINSTANCE(0),
+                None,
             );
 
             let hwnd_add = CreateWindowExW(
@@ -171,8 +189,14 @@ unsafe extern "system" fn dictionary_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
                 WC_BUTTON,
                 PCWSTR(to_wide(labels.add).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                10, 290, 240, 30,
-                hwnd, HMENU(DICT_ID_ADD as isize), HINSTANCE(0), None,
+                10,
+                290,
+                240,
+                30,
+                hwnd,
+                HMENU(DICT_ID_ADD as isize),
+                HINSTANCE(0),
+                None,
             );
 
             let hwnd_edit = CreateWindowExW(
@@ -180,8 +204,14 @@ unsafe extern "system" fn dictionary_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
                 WC_BUTTON,
                 PCWSTR(to_wide(labels.edit).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                260, 290, 230, 30,
-                hwnd, HMENU(DICT_ID_EDIT as isize), HINSTANCE(0), None,
+                260,
+                290,
+                230,
+                30,
+                hwnd,
+                HMENU(DICT_ID_EDIT as isize),
+                HINSTANCE(0),
+                None,
             );
 
             let hwnd_remove = CreateWindowExW(
@@ -189,8 +219,14 @@ unsafe extern "system" fn dictionary_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
                 WC_BUTTON,
                 PCWSTR(to_wide(labels.remove).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                10, 330, 240, 30,
-                hwnd, HMENU(DICT_ID_REMOVE as isize), HINSTANCE(0), None,
+                10,
+                330,
+                240,
+                30,
+                hwnd,
+                HMENU(DICT_ID_REMOVE as isize),
+                HINSTANCE(0),
+                None,
             );
 
             let hwnd_close = CreateWindowExW(
@@ -198,8 +234,14 @@ unsafe extern "system" fn dictionary_wndproc(hwnd: HWND, msg: u32, wparam: WPARA
                 WC_BUTTON,
                 PCWSTR(to_wide(labels.close).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
-                260, 330, 230, 30,
-                hwnd, HMENU(DICT_ID_CLOSE as isize), HINSTANCE(0), None,
+                260,
+                330,
+                230,
+                30,
+                hwnd,
+                HMENU(DICT_ID_CLOSE as isize),
+                HINSTANCE(0),
+                None,
             );
 
             for ctrl in [hwnd_list, hwnd_add, hwnd_edit, hwnd_remove, hwnd_close] {
@@ -312,19 +354,17 @@ where
 }
 
 unsafe fn update_button_states(hwnd: HWND) {
-    let (hwnd_list, hwnd_edit, hwnd_remove) = match with_dictionary_state(hwnd, |s| {
-        (s.hwnd_list, s.hwnd_edit, s.hwnd_remove)
-    }) {
-        Some(values) => values,
-        None => return,
-    };
+    let (hwnd_list, hwnd_edit, hwnd_remove) =
+        match with_dictionary_state(hwnd, |s| (s.hwnd_list, s.hwnd_edit, s.hwnd_remove)) {
+            Some(values) => values,
+            None => return,
+        };
 
     let count = SendMessageW(hwnd_list, LB_GETCOUNT, WPARAM(0), LPARAM(0)).0;
     let sel = SendMessageW(hwnd_list, LB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
     let has_selection = count > 0 && sel >= 0;
     EnableWindow(hwnd_edit, has_selection);
     EnableWindow(hwnd_remove, has_selection);
-
 }
 
 pub unsafe fn refresh_dictionary_list(hwnd: HWND) {
@@ -339,15 +379,30 @@ pub unsafe fn refresh_dictionary_list(hwnd: HWND) {
     let entries = with_state(parent, |state| state.settings.dictionary.clone()).unwrap_or_default();
     for (idx, entry) in entries.iter().enumerate() {
         let label = format!("{} -> {}", entry.original, entry.replacement);
-        let lb_idx = SendMessageW(hwnd_list, LB_ADDSTRING, WPARAM(0), LPARAM(to_wide(&label).as_ptr() as isize)).0;
+        let lb_idx = SendMessageW(
+            hwnd_list,
+            LB_ADDSTRING,
+            WPARAM(0),
+            LPARAM(to_wide(&label).as_ptr() as isize),
+        )
+        .0;
         if lb_idx >= 0 {
-            let _ = SendMessageW(hwnd_list, LB_SETITEMDATA, WPARAM(lb_idx as usize), LPARAM(idx as isize));
+            let _ = SendMessageW(
+                hwnd_list,
+                LB_SETITEMDATA,
+                WPARAM(lb_idx as usize),
+                LPARAM(idx as isize),
+            );
         }
     }
 
     let count = SendMessageW(hwnd_list, LB_GETCOUNT, WPARAM(0), LPARAM(0)).0;
     if count > 0 {
-        let target = if selected >= 0 && selected < count { selected } else { 0 };
+        let target = if selected >= 0 && selected < count {
+            selected
+        } else {
+            0
+        };
         let _ = SendMessageW(hwnd_list, LB_SETCURSEL, WPARAM(target as usize), LPARAM(0));
     }
     update_button_states(hwnd);
@@ -374,7 +429,9 @@ unsafe fn remove_selected_entry(hwnd: HWND) {
         Some(values) => values,
         None => return,
     };
-    let Some(index) = selected_dictionary_index(hwnd) else { return; };
+    let Some(index) = selected_dictionary_index(hwnd) else {
+        return;
+    };
     let _ = with_state(parent, |state| {
         if index < state.settings.dictionary.len() {
             state.settings.dictionary.remove(index);
@@ -394,7 +451,9 @@ unsafe fn open_entry_dialog(owner: HWND, index: Option<usize>) {
     let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
     let class_name = to_wide(DICTIONARY_ENTRY_CLASS_NAME);
     let wc = WNDCLASSW {
-        hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(LoadCursorW(None, IDC_ARROW).unwrap_or_default().0),
+        hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(
+            LoadCursorW(None, IDC_ARROW).unwrap_or_default().0,
+        ),
         hInstance: hinstance,
         lpszClassName: PCWSTR(class_name.as_ptr()),
         lpfnWndProc: Some(dictionary_entry_wndproc),
@@ -405,7 +464,11 @@ unsafe fn open_entry_dialog(owner: HWND, index: Option<usize>) {
 
     let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
     let labels = dictionary_labels(language);
-    let title = if index.is_some() { labels.entry_title_edit } else { labels.entry_title_add };
+    let title = if index.is_some() {
+        labels.entry_title_edit
+    } else {
+        labels.entry_title_add
+    };
 
     let params = Box::new(DictionaryEntryState {
         parent,
@@ -440,7 +503,12 @@ unsafe fn open_entry_dialog(owner: HWND, index: Option<usize>) {
     }
 }
 
-unsafe extern "system" fn dictionary_entry_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn dictionary_entry_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     match msg {
         WM_CREATE => {
             let create_struct = lparam.0 as *const CREATESTRUCTW;
@@ -458,16 +526,28 @@ unsafe extern "system" fn dictionary_entry_wndproc(hwnd: HWND, msg: u32, wparam:
                 WC_STATIC,
                 PCWSTR(to_wide(labels.entry_original).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
-                10, 10, 380, 20,
-                hwnd, HMENU(0), HINSTANCE(0), None,
+                10,
+                10,
+                380,
+                20,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
             );
             let edit_original = CreateWindowExW(
                 WS_EX_CLIENTEDGE,
                 w!("EDIT"),
                 PCWSTR::null(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(ES_AUTOHSCROLL as u32),
-                10, 32, 380, 24,
-                hwnd, HMENU(DICT_ENTRY_ID_ORIGINAL as isize), HINSTANCE(0), None,
+                10,
+                32,
+                380,
+                24,
+                hwnd,
+                HMENU(DICT_ENTRY_ID_ORIGINAL as isize),
+                HINSTANCE(0),
+                None,
             );
 
             let label_replacement = CreateWindowExW(
@@ -475,16 +555,28 @@ unsafe extern "system" fn dictionary_entry_wndproc(hwnd: HWND, msg: u32, wparam:
                 WC_STATIC,
                 PCWSTR(to_wide(labels.entry_replacement).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
-                10, 64, 380, 20,
-                hwnd, HMENU(0), HINSTANCE(0), None,
+                10,
+                64,
+                380,
+                20,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
             );
             let edit_replacement = CreateWindowExW(
                 WS_EX_CLIENTEDGE,
                 w!("EDIT"),
                 PCWSTR::null(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(ES_AUTOHSCROLL as u32),
-                10, 86, 380, 24,
-                hwnd, HMENU(DICT_ENTRY_ID_REPLACEMENT as isize), HINSTANCE(0), None,
+                10,
+                86,
+                380,
+                24,
+                hwnd,
+                HMENU(DICT_ENTRY_ID_REPLACEMENT as isize),
+                HINSTANCE(0),
+                None,
             );
 
             let ok_button = CreateWindowExW(
@@ -492,28 +584,54 @@ unsafe extern "system" fn dictionary_entry_wndproc(hwnd: HWND, msg: u32, wparam:
                 WC_BUTTON,
                 PCWSTR(to_wide(labels.entry_ok).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
-                200, 130, 90, 28,
-                hwnd, HMENU(DICT_ENTRY_ID_OK as isize), HINSTANCE(0), None,
+                200,
+                130,
+                90,
+                28,
+                hwnd,
+                HMENU(DICT_ENTRY_ID_OK as isize),
+                HINSTANCE(0),
+                None,
             );
             let cancel_button = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
                 PCWSTR(to_wide(labels.entry_cancel).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                300, 130, 90, 28,
-                hwnd, HMENU(DICT_ENTRY_ID_CANCEL as isize), HINSTANCE(0), None,
+                300,
+                130,
+                90,
+                28,
+                hwnd,
+                HMENU(DICT_ENTRY_ID_CANCEL as isize),
+                HINSTANCE(0),
+                None,
             );
 
-            for ctrl in [label_original, edit_original, label_replacement, edit_replacement, ok_button, cancel_button] {
+            for ctrl in [
+                label_original,
+                edit_original,
+                label_replacement,
+                edit_replacement,
+                ok_button,
+                cancel_button,
+            ] {
                 if ctrl.0 != 0 && hfont.0 != 0 {
                     let _ = SendMessageW(ctrl, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
                 }
             }
 
             if let Some(index) = state.index {
-                if let Some(entry) = with_state(state.parent, |s| s.settings.dictionary.get(index).cloned()).unwrap_or(None) {
-                    let _ = SetWindowTextW(edit_original, PCWSTR(to_wide(&entry.original).as_ptr()));
-                    let _ = SetWindowTextW(edit_replacement, PCWSTR(to_wide(&entry.replacement).as_ptr()));
+                if let Some(entry) =
+                    with_state(state.parent, |s| s.settings.dictionary.get(index).cloned())
+                        .unwrap_or(None)
+                {
+                    let _ =
+                        SetWindowTextW(edit_original, PCWSTR(to_wide(&entry.original).as_ptr()));
+                    let _ = SetWindowTextW(
+                        edit_replacement,
+                        PCWSTR(to_wide(&entry.replacement).as_ptr()),
+                    );
                 }
             }
 
@@ -555,7 +673,8 @@ unsafe extern "system" fn dictionary_entry_wndproc(hwnd: HWND, msg: u32, wparam:
             LRESULT(0)
         }
         WM_DESTROY => {
-            let (owner, parent) = with_entry_state(hwnd, |s| (s.owner, s.parent)).unwrap_or((HWND(0), HWND(0)));
+            let (owner, parent) =
+                with_entry_state(hwnd, |s| (s.owner, s.parent)).unwrap_or((HWND(0), HWND(0)));
             if owner.0 != 0 {
                 EnableWindow(owner, true);
                 SetForegroundWindow(owner);
@@ -592,12 +711,19 @@ where
 }
 
 unsafe fn apply_entry_dialog(hwnd: HWND) {
-    let (parent, owner, edit_original, edit_replacement, index) = match with_entry_state(hwnd, |s| {
-        (s.parent, s.owner, s.edit_original, s.edit_replacement, s.index)
-    }) {
-        Some(values) => values,
-        None => return,
-    };
+    let (parent, owner, edit_original, edit_replacement, index) =
+        match with_entry_state(hwnd, |s| {
+            (
+                s.parent,
+                s.owner,
+                s.edit_original,
+                s.edit_replacement,
+                s.index,
+            )
+        }) {
+            Some(values) => values,
+            None => return,
+        };
 
     let original = get_window_text(edit_original);
     let replacement = get_window_text(edit_replacement);
@@ -609,11 +735,17 @@ unsafe fn apply_entry_dialog(hwnd: HWND) {
         match index {
             Some(idx) => {
                 if idx < state.settings.dictionary.len() {
-                    state.settings.dictionary[idx] = DictionaryEntry { original, replacement };
+                    state.settings.dictionary[idx] = DictionaryEntry {
+                        original,
+                        replacement,
+                    };
                 }
             }
             None => {
-                state.settings.dictionary.push(DictionaryEntry { original, replacement });
+                state.settings.dictionary.push(DictionaryEntry {
+                    original,
+                    replacement,
+                });
             }
         }
         save_settings(state.settings.clone());

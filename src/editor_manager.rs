@@ -1,27 +1,29 @@
+#![allow(clippy::if_same_then_else, clippy::collapsible_else_if)]
+use crate::accessibility::{from_wide, to_wide, to_wide_normalized};
+use crate::file_handler::*;
+use crate::settings::{
+    FileFormat, TextEncoding, confirm_save_message, confirm_title, untitled_base, untitled_title,
+};
+use crate::{log_debug, with_state};
 use std::path::{Path, PathBuf};
-use windows::core::{PCWSTR, PWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM, RECT, HINSTANCE};
-use windows::Win32::UI::WindowsAndMessaging::{
-    ShowWindow, SW_HIDE, SW_SHOW, SendMessageW, GetClientRect, MoveWindow, SetWindowTextW,
-    WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE, WS_VSCROLL, WS_HSCROLL, HMENU,
-    WM_SETFONT, IDYES, IDNO, MessageBoxW, MB_YESNOCANCEL, MB_ICONWARNING,
-    GetWindowTextLengthW, GetWindowTextW, DestroyWindow, WS_GROUP,
-    ES_MULTILINE, ES_AUTOVSCROLL, ES_AUTOHSCROLL, ES_WANTRETURN
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::HFONT;
+use windows::Win32::UI::Controls::RichEdit::{
+    CFM_COLOR, CFM_SIZE, CHARFORMAT2W, CHARRANGE, EM_EXSETSEL, EM_SETCHARFORMAT, EM_SETEVENTMASK,
+    ENM_CHANGE, MSFTEDIT_CLASS, SCF_ALL,
 };
 use windows::Win32::UI::Controls::{
-    TCITEMW, TCIF_TEXT, TCM_INSERTITEMW, TCM_SETITEMW, TCM_SETCURSEL, TCM_ADJUSTRECT,
-    EM_GETMODIFY, EM_SETMODIFY, EM_SETREADONLY
+    EM_GETMODIFY, EM_SETMODIFY, EM_SETREADONLY, TCIF_TEXT, TCITEMW, TCM_ADJUSTRECT,
+    TCM_INSERTITEMW, TCM_SETCURSEL, TCM_SETITEMW,
 };
-use windows::Win32::UI::Controls::RichEdit::{
-    CHARFORMAT2W, CFM_COLOR, CFM_SIZE, EM_SETCHARFORMAT, ENM_CHANGE, MSFTEDIT_CLASS, SCF_ALL,
-    CHARRANGE, EM_EXSETSEL, EM_SETEVENTMASK
+use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+use windows::Win32::UI::WindowsAndMessaging::{
+    DestroyWindow, ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE, ES_WANTRETURN, GetClientRect,
+    GetWindowTextLengthW, GetWindowTextW, HMENU, IDNO, IDYES, MB_ICONWARNING, MB_YESNOCANCEL,
+    MessageBoxW, MoveWindow, SW_HIDE, SW_SHOW, SendMessageW, SetWindowTextW, ShowWindow,
+    WM_SETFONT, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE, WS_GROUP, WS_HSCROLL, WS_VSCROLL,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::{SetFocus};
-use windows::Win32::Graphics::Gdi::{HFONT};
-use crate::settings::{FileFormat, TextEncoding, untitled_title, untitled_base, confirm_save_message, confirm_title};
-use crate::accessibility::{to_wide, from_wide, to_wide_normalized};
-use crate::{with_state, log_debug};
-use crate::file_handler::*;
+use windows::core::{PCWSTR, PWSTR};
 
 const EM_LIMITTEXT: u32 = 0x00C5;
 const VOICE_PANEL_PADDING: i32 = 6;
@@ -41,7 +43,8 @@ fn apply_text_limit(hwnd_edit: HWND) {
 pub unsafe fn apply_text_limit_to_all_edits(hwnd: HWND) {
     let edits = with_state(hwnd, |state| {
         state.docs.iter().map(|d| d.hwnd_edit).collect::<Vec<_>>()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
 
     for hwnd_edit in edits {
         apply_text_limit(hwnd_edit);
@@ -79,7 +82,12 @@ pub unsafe fn set_edit_text(hwnd_edit: HWND, text: &str) {
     let _ = SetWindowTextW(hwnd_edit, PCWSTR(wide.as_ptr()));
     if hwnd_edit.0 != 0 {
         SendMessageW(hwnd_edit, EM_SETMODIFY, WPARAM(0), LPARAM(0));
-        SendMessageW(hwnd_edit, EM_SETEVENTMASK, WPARAM(0), LPARAM(ENM_CHANGE as isize));
+        SendMessageW(
+            hwnd_edit,
+            EM_SETEVENTMASK,
+            WPARAM(0),
+            LPARAM(ENM_CHANGE as isize),
+        );
     }
 }
 
@@ -101,19 +109,33 @@ pub unsafe fn send_to_active_edit(hwnd: HWND, msg: u32) {
 
 pub unsafe fn select_all_active_edit(hwnd: HWND) {
     if let Some(hwnd_edit) = crate::get_active_edit(hwnd) {
-        let cr = CHARRANGE { cpMin: 0, cpMax: -1 };
-        SendMessageW(hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&cr as *const _ as isize));
+        let cr = CHARRANGE {
+            cpMin: 0,
+            cpMax: -1,
+        };
+        SendMessageW(
+            hwnd_edit,
+            EM_EXSETSEL,
+            WPARAM(0),
+            LPARAM(&cr as *const _ as isize),
+        );
     }
 }
 
 pub unsafe fn apply_word_wrap_to_all_edits(hwnd: HWND, word_wrap: bool) {
     let edits = with_state(hwnd, |state| {
         state.docs.iter().map(|d| d.hwnd_edit).collect::<Vec<_>>()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
 
     for hwnd_edit in edits {
-        if hwnd_edit.0 == 0 { continue; }
-        log_debug(&format!("Word wrap toggle for {:?}: {}", hwnd_edit, word_wrap));
+        if hwnd_edit.0 == 0 {
+            continue;
+        }
+        log_debug(&format!(
+            "Word wrap toggle for {:?}: {}",
+            hwnd_edit, word_wrap
+        ));
         apply_text_limit(hwnd_edit);
     }
 }
@@ -121,10 +143,13 @@ pub unsafe fn apply_word_wrap_to_all_edits(hwnd: HWND, word_wrap: bool) {
 pub unsafe fn apply_text_appearance_to_all_edits(hwnd: HWND, text_color: u32, text_size: i32) {
     let edits = with_state(hwnd, |state| {
         state.docs.iter().map(|d| d.hwnd_edit).collect::<Vec<_>>()
-    }).unwrap_or_default();
+    })
+    .unwrap_or_default();
 
     for hwnd_edit in edits {
-        if hwnd_edit.0 == 0 { continue; }
+        if hwnd_edit.0 == 0 {
+            continue;
+        }
         apply_text_appearance(hwnd_edit, text_color, text_size);
     }
 }
@@ -138,7 +163,12 @@ fn apply_text_appearance(hwnd_edit: HWND, text_color: u32, text_size: i32) {
         format.Base.yHeight = text_size.saturating_mul(20);
     }
     unsafe {
-        SendMessageW(hwnd_edit, EM_SETCHARFORMAT, WPARAM(SCF_ALL as usize), LPARAM(&mut format as *mut _ as isize));
+        SendMessageW(
+            hwnd_edit,
+            EM_SETCHARFORMAT,
+            WPARAM(SCF_ALL as usize),
+            LPARAM(&mut format as *mut _ as isize),
+        );
     }
 }
 
@@ -223,7 +253,11 @@ pub unsafe fn open_document(hwnd: HWND, path: &Path) {
                 }
             },
             Err(err) => {
-                crate::show_error(hwnd, language, &crate::settings::error_open_file_message(language, err));
+                crate::show_error(
+                    hwnd,
+                    language,
+                    &crate::settings::error_open_file_message(language, err),
+                );
                 return;
             }
         }
@@ -261,7 +295,9 @@ pub unsafe fn open_document(hwnd: HWND, path: &Path) {
     .unwrap_or(0);
     select_tab(hwnd, new_index);
     if matches!(format, FileFormat::Audiobook) {
-        unsafe { crate::audio_player::start_audiobook_playback(hwnd, path); }
+        unsafe {
+            crate::audio_player::start_audiobook_playback(hwnd, path);
+        }
     }
     crate::push_recent_file(hwnd, path);
 }
@@ -275,7 +311,9 @@ pub unsafe fn select_tab(hwnd: HWND, index: usize) {
         let prev_edit = state.docs.get(prev).map(|doc| doc.hwnd_edit);
         let new_doc = state.docs.get(index);
         let new_edit = new_doc.map(|doc| doc.hwnd_edit);
-        let is_audiobook = new_doc.map(|doc| matches!(doc.format, FileFormat::Audiobook)).unwrap_or(false);
+        let is_audiobook = new_doc
+            .map(|doc| matches!(doc.format, FileFormat::Audiobook))
+            .unwrap_or(false);
         state.current = index;
         Some((state.hwnd_tab, prev_edit, new_edit, is_audiobook))
     })
@@ -309,7 +347,12 @@ pub unsafe fn insert_tab(hwnd_tab: HWND, title: &str, index: i32) {
         pszText: PWSTR(text.as_mut_ptr()),
         ..Default::default()
     };
-    SendMessageW(hwnd_tab, TCM_INSERTITEMW, WPARAM(index as usize), LPARAM(&mut item as *mut _ as isize));
+    SendMessageW(
+        hwnd_tab,
+        TCM_INSERTITEMW,
+        WPARAM(index as usize),
+        LPARAM(&mut item as *mut _ as isize),
+    );
 }
 
 pub unsafe fn update_tab_title(hwnd_tab: HWND, index: usize, title: &str, dirty: bool) {
@@ -324,7 +367,12 @@ pub unsafe fn update_tab_title(hwnd_tab: HWND, index: usize, title: &str, dirty:
         pszText: PWSTR(text.as_mut_ptr()),
         ..Default::default()
     };
-    SendMessageW(hwnd_tab, TCM_SETITEMW, WPARAM(index), LPARAM(&mut item as *mut _ as isize));
+    SendMessageW(
+        hwnd_tab,
+        TCM_SETITEMW,
+        WPARAM(index),
+        LPARAM(&mut item as *mut _ as isize),
+    );
 }
 
 pub unsafe fn mark_dirty_from_edit(hwnd: HWND, hwnd_edit: HWND) {
@@ -375,7 +423,21 @@ pub unsafe fn layout_children(hwnd: HWND) {
         )
     });
 
-    let Some((hwnd_tab, edit_handles, voice_panel_visible, favorites_visible, tts_engine, label_engine, combo_engine, label_voice, combo_voice, checkbox_multilingual, label_favorites, combo_favorites)) = state_data else {
+    let Some((
+        hwnd_tab,
+        edit_handles,
+        voice_panel_visible,
+        favorites_visible,
+        tts_engine,
+        label_engine,
+        combo_engine,
+        label_voice,
+        combo_voice,
+        checkbox_multilingual,
+        label_favorites,
+        combo_favorites,
+    )) = state_data
+    else {
         return;
     };
 
@@ -390,12 +452,18 @@ pub unsafe fn layout_children(hwnd: HWND) {
     let _ = MoveWindow(hwnd_tab, 0, 0, width, height, true);
 
     let mut tab_rc = rc;
-    SendMessageW(hwnd_tab, TCM_ADJUSTRECT, WPARAM(0), LPARAM(&mut tab_rc as *mut _ as isize));
+    SendMessageW(
+        hwnd_tab,
+        TCM_ADJUSTRECT,
+        WPARAM(0),
+        LPARAM(&mut tab_rc as *mut _ as isize),
+    );
 
     let mut panel_height = 0;
     let panel_visible = voice_panel_visible || favorites_visible;
     if panel_visible {
-        let show_multilingual = voice_panel_visible && matches!(tts_engine, crate::settings::TtsEngine::Edge);
+        let show_multilingual =
+            voice_panel_visible && matches!(tts_engine, crate::settings::TtsEngine::Edge);
         let mut rows = 0;
         if voice_panel_visible {
             rows += 2;
@@ -419,23 +487,100 @@ pub unsafe fn layout_children(hwnd: HWND) {
         let row4_top = row3_top + VOICE_PANEL_ROW_HEIGHT + VOICE_PANEL_SPACING;
 
         if voice_panel_visible {
-            let _ = MoveWindow(label_engine, label_x, row1_top, VOICE_PANEL_LABEL_WIDTH, VOICE_PANEL_ROW_HEIGHT, true);
-            let _ = MoveWindow(combo_engine, combo_x, row1_top - 2, combo_width, VOICE_PANEL_COMBO_HEIGHT, true);
-            let _ = MoveWindow(label_voice, label_x, row2_top, VOICE_PANEL_LABEL_WIDTH, VOICE_PANEL_ROW_HEIGHT, true);
-            let _ = MoveWindow(combo_voice, combo_x, row2_top - 2, combo_width, VOICE_PANEL_COMBO_HEIGHT, true);
+            let _ = MoveWindow(
+                label_engine,
+                label_x,
+                row1_top,
+                VOICE_PANEL_LABEL_WIDTH,
+                VOICE_PANEL_ROW_HEIGHT,
+                true,
+            );
+            let _ = MoveWindow(
+                combo_engine,
+                combo_x,
+                row1_top - 2,
+                combo_width,
+                VOICE_PANEL_COMBO_HEIGHT,
+                true,
+            );
+            let _ = MoveWindow(
+                label_voice,
+                label_x,
+                row2_top,
+                VOICE_PANEL_LABEL_WIDTH,
+                VOICE_PANEL_ROW_HEIGHT,
+                true,
+            );
+            let _ = MoveWindow(
+                combo_voice,
+                combo_x,
+                row2_top - 2,
+                combo_width,
+                VOICE_PANEL_COMBO_HEIGHT,
+                true,
+            );
             if show_multilingual {
-                let _ = MoveWindow(checkbox_multilingual, label_x, row3_top, combo_width + VOICE_PANEL_LABEL_WIDTH + VOICE_PANEL_PADDING, VOICE_PANEL_ROW_HEIGHT, true);
+                let _ = MoveWindow(
+                    checkbox_multilingual,
+                    label_x,
+                    row3_top,
+                    combo_width + VOICE_PANEL_LABEL_WIDTH + VOICE_PANEL_PADDING,
+                    VOICE_PANEL_ROW_HEIGHT,
+                    true,
+                );
                 if favorites_visible {
-                    let _ = MoveWindow(label_favorites, label_x, row4_top, VOICE_PANEL_LABEL_WIDTH, VOICE_PANEL_ROW_HEIGHT, true);
-                    let _ = MoveWindow(combo_favorites, combo_x, row4_top - 2, combo_width, VOICE_PANEL_COMBO_HEIGHT, true);
+                    let _ = MoveWindow(
+                        label_favorites,
+                        label_x,
+                        row4_top,
+                        VOICE_PANEL_LABEL_WIDTH,
+                        VOICE_PANEL_ROW_HEIGHT,
+                        true,
+                    );
+                    let _ = MoveWindow(
+                        combo_favorites,
+                        combo_x,
+                        row4_top - 2,
+                        combo_width,
+                        VOICE_PANEL_COMBO_HEIGHT,
+                        true,
+                    );
                 }
             } else if favorites_visible {
-                let _ = MoveWindow(label_favorites, label_x, row3_top, VOICE_PANEL_LABEL_WIDTH, VOICE_PANEL_ROW_HEIGHT, true);
-                let _ = MoveWindow(combo_favorites, combo_x, row3_top - 2, combo_width, VOICE_PANEL_COMBO_HEIGHT, true);
+                let _ = MoveWindow(
+                    label_favorites,
+                    label_x,
+                    row3_top,
+                    VOICE_PANEL_LABEL_WIDTH,
+                    VOICE_PANEL_ROW_HEIGHT,
+                    true,
+                );
+                let _ = MoveWindow(
+                    combo_favorites,
+                    combo_x,
+                    row3_top - 2,
+                    combo_width,
+                    VOICE_PANEL_COMBO_HEIGHT,
+                    true,
+                );
             }
         } else if favorites_visible {
-            let _ = MoveWindow(label_favorites, label_x, row1_top, VOICE_PANEL_LABEL_WIDTH, VOICE_PANEL_ROW_HEIGHT, true);
-            let _ = MoveWindow(combo_favorites, combo_x, row1_top - 2, combo_width, VOICE_PANEL_COMBO_HEIGHT, true);
+            let _ = MoveWindow(
+                label_favorites,
+                label_x,
+                row1_top,
+                VOICE_PANEL_LABEL_WIDTH,
+                VOICE_PANEL_ROW_HEIGHT,
+                true,
+            );
+            let _ = MoveWindow(
+                combo_favorites,
+                combo_x,
+                row1_top - 2,
+                combo_width,
+                VOICE_PANEL_COMBO_HEIGHT,
+                true,
+            );
         }
     }
 
@@ -454,10 +599,23 @@ pub unsafe fn layout_children(hwnd: HWND) {
     }
 }
 
-pub unsafe fn create_edit(parent: HWND, hfont: HFONT, word_wrap: bool, text_color: u32, text_size: i32) -> HWND {
-    let mut style = WS_CHILD | WS_CLIPCHILDREN | WS_VSCROLL | WS_GROUP | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_MULTILINE as u32) | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_AUTOVSCROLL as u32) | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_WANTRETURN as u32);
+pub unsafe fn create_edit(
+    parent: HWND,
+    hfont: HFONT,
+    word_wrap: bool,
+    text_color: u32,
+    text_size: i32,
+) -> HWND {
+    let mut style = WS_CHILD
+        | WS_CLIPCHILDREN
+        | WS_VSCROLL
+        | WS_GROUP
+        | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_MULTILINE as u32)
+        | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_AUTOVSCROLL as u32)
+        | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_WANTRETURN as u32);
     if !word_wrap {
-        style |= WS_HSCROLL | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_AUTOHSCROLL as u32);
+        style |= WS_HSCROLL
+            | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_AUTOHSCROLL as u32);
     }
 
     let hwnd_edit = windows::Win32::UI::WindowsAndMessaging::CreateWindowExW(
@@ -465,7 +623,10 @@ pub unsafe fn create_edit(parent: HWND, hfont: HFONT, word_wrap: bool, text_colo
         MSFTEDIT_CLASS,
         PCWSTR::null(),
         style,
-        0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
         parent,
         HMENU(0),
         HINSTANCE(0),
@@ -480,7 +641,12 @@ pub unsafe fn create_edit(parent: HWND, hfont: HFONT, word_wrap: bool, text_colo
         apply_text_limit(hwnd_edit);
         apply_text_appearance(hwnd_edit, text_color, text_size);
         SendMessageW(hwnd_edit, EM_SETMODIFY, WPARAM(0), LPARAM(0));
-        SendMessageW(hwnd_edit, EM_SETEVENTMASK, WPARAM(0), LPARAM(ENM_CHANGE as isize));
+        SendMessageW(
+            hwnd_edit,
+            EM_SETEVENTMASK,
+            WPARAM(0),
+            LPARAM(ENM_CHANGE as isize),
+        );
     }
     hwnd_edit
 }
@@ -544,7 +710,10 @@ pub unsafe fn save_document_at(hwnd: HWND, index: usize, force_dialog: bool) -> 
             }
             state.docs[index].format = FileFormat::Docx;
         } else if is_pdf {
-            let pdf_title = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Documento");
+            let pdf_title = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Documento");
             if let Err(message) = write_pdf_text(&path, pdf_title, &text, language) {
                 crate::show_error(hwnd, language, &message);
                 return None;
@@ -553,11 +722,20 @@ pub unsafe fn save_document_at(hwnd: HWND, index: usize, force_dialog: bool) -> 
         } else {
             let encoding = match state.docs[index].format {
                 FileFormat::Text(enc) => enc,
-                FileFormat::Docx | FileFormat::Doc | FileFormat::Pdf | FileFormat::Spreadsheet | FileFormat::Epub | FileFormat::Audiobook => TextEncoding::Utf8,
+                FileFormat::Docx
+                | FileFormat::Doc
+                | FileFormat::Pdf
+                | FileFormat::Spreadsheet
+                | FileFormat::Epub
+                | FileFormat::Audiobook => TextEncoding::Utf8,
             };
             let bytes = encode_text(&text, encoding);
             if let Err(err) = std::fs::write(&path, bytes) {
-                crate::show_error(hwnd, language, &crate::settings::error_save_file_message(language, err));
+                crate::show_error(
+                    hwnd,
+                    language,
+                    &crate::settings::error_save_file_message(language, err),
+                );
                 return None;
             }
             state.docs[index].format = FileFormat::Text(encoding);
@@ -624,7 +802,12 @@ pub unsafe fn close_document_at(hwnd: HWND, index: usize) -> bool {
         was_current = state.current == index;
         let doc = state.docs.remove(index);
         closing_hwnd_edit = doc.hwnd_edit;
-        let _ = SendMessageW(hwnd_tab, windows::Win32::UI::Controls::TCM_DELETEITEM, WPARAM(index), LPARAM(0));
+        let _ = SendMessageW(
+            hwnd_tab,
+            windows::Win32::UI::Controls::TCM_DELETEITEM,
+            WPARAM(index),
+            LPARAM(0),
+        );
 
         if state.docs.is_empty() {
             state.untitled_count = 0;
@@ -657,11 +840,18 @@ pub unsafe fn close_document_at(hwnd: HWND, index: usize) -> bool {
     } else {
         if let Some(hwnd_edit) = new_hwnd_edit {
             let is_audiobook = with_state(hwnd, |state| {
-                state.docs.get(state.current).map(|d| matches!(d.format, FileFormat::Audiobook)).unwrap_or(false)
-            }).unwrap_or(false);
+                state
+                    .docs
+                    .get(state.current)
+                    .map(|d| matches!(d.format, FileFormat::Audiobook))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
             if is_audiobook {
                 let hwnd_tab = with_state(hwnd, |state| state.hwnd_tab).unwrap_or(HWND(0));
-                if hwnd_tab.0 != 0 { SetFocus(hwnd_tab); }
+                if hwnd_tab.0 != 0 {
+                    SetFocus(hwnd_tab);
+                }
             } else {
                 ShowWindow(hwnd_edit, SW_SHOW);
                 SetFocus(hwnd_edit);
@@ -677,7 +867,10 @@ pub unsafe fn close_document_at(hwnd: HWND, index: usize) -> bool {
 
 pub unsafe fn try_close_app(hwnd: HWND) -> bool {
     let result = with_state(hwnd, |state| {
-        state.docs.iter().enumerate()
+        state
+            .docs
+            .iter()
+            .enumerate()
             .map(|(i, d)| (i, d.title.clone()))
             .collect::<Vec<_>>()
     });
@@ -733,7 +926,7 @@ pub unsafe fn confirm_save_if_dirty_entry(hwnd: HWND, index: usize, title: &str)
     let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
     let msg = confirm_save_message(language, title);
     let title_w = confirm_title(language);
-    
+
     let result = MessageBoxW(
         hwnd,
         PCWSTR(to_wide(&msg).as_ptr()),

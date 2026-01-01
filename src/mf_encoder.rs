@@ -1,22 +1,23 @@
-use std::path::Path;
+#![allow(clippy::seek_from_current)]
+use crate::accessibility::to_wide;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use windows::core::PCWSTR;
+use std::path::Path;
 use windows::Win32::Media::MediaFoundation::{
-    IMFMediaType, IMFSourceReader, IMFSinkWriter, MFCreateMediaType, MFCreateSinkWriterFromURL,
-    MFCreateSourceReaderFromURL, MFShutdown, MFStartup, MF_VERSION, MFAudioFormat_MP3,
-    MFAudioFormat_PCM, MFMediaType_Audio, MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
+    IMFMediaType, IMFSinkWriter, IMFSourceReader, MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
     MF_MT_AUDIO_BITS_PER_SAMPLE, MF_MT_AUDIO_BLOCK_ALIGNMENT, MF_MT_AUDIO_NUM_CHANNELS,
-    MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE,
-    MF_MT_FIXED_SIZE_SAMPLES, MF_MT_SAMPLE_SIZE,
-    MF_SOURCE_READER_FIRST_AUDIO_STREAM, MF_SOURCE_READERF_ENDOFSTREAM,
+    MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_MT_FIXED_SIZE_SAMPLES, MF_MT_MAJOR_TYPE, MF_MT_SAMPLE_SIZE,
+    MF_MT_SUBTYPE, MF_SOURCE_READER_FIRST_AUDIO_STREAM, MF_SOURCE_READERF_ENDOFSTREAM, MF_VERSION,
+    MFAudioFormat_MP3, MFAudioFormat_PCM, MFCreateMediaType, MFCreateSinkWriterFromURL,
+    MFCreateSourceReaderFromURL, MFMediaType_Audio, MFShutdown, MFStartup,
 };
-use crate::accessibility::to_wide;
+use windows::core::PCWSTR;
 
 fn read_wav_data_info(path: &Path) -> Result<(u64, u32, i16), String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
     let mut riff_header = [0u8; 12];
-    file.read_exact(&mut riff_header).map_err(|e| e.to_string())?;
+    file.read_exact(&mut riff_header)
+        .map_err(|e| e.to_string())?;
     if &riff_header[0..4] != b"RIFF" || &riff_header[8..12] != b"WAVE" {
         return Err("Invalid WAV header".to_string());
     }
@@ -52,7 +53,8 @@ fn read_wav_data_info(path: &Path) -> Result<(u64, u32, i16), String> {
             }
             return Ok((data_offset, chunk_size, peak));
         } else {
-            file.seek(SeekFrom::Current(chunk_size as i64)).map_err(|e| e.to_string())?;
+            file.seek(SeekFrom::Current(chunk_size as i64))
+                .map_err(|e| e.to_string())?;
         }
 
         if chunk_size % 2 == 1 {
@@ -77,7 +79,9 @@ pub fn encode_wav_to_mp3(wav_path: &Path, mp3_path: &Path) -> Result<(), String>
         struct MfGuard;
         impl Drop for MfGuard {
             fn drop(&mut self) {
-                unsafe { let _ = MFShutdown(); }
+                unsafe {
+                    let _ = MFShutdown();
+                }
             }
         }
         let _guard = MfGuard;
@@ -88,11 +92,13 @@ pub fn encode_wav_to_mp3(wav_path: &Path, mp3_path: &Path) -> Result<(), String>
         let reader: IMFSourceReader = MFCreateSourceReaderFromURL(PCWSTR(wav_wide.as_ptr()), None)
             .map_err(|e| format!("MFCreateSourceReaderFromURL failed: {}", e))?;
 
-        let pcm_type: IMFMediaType = MFCreateMediaType()
-            .map_err(|e| format!("MFCreateMediaType (pcm) failed: {}", e))?;
-        pcm_type.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio)
+        let pcm_type: IMFMediaType =
+            MFCreateMediaType().map_err(|e| format!("MFCreateMediaType (pcm) failed: {}", e))?;
+        pcm_type
+            .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio)
             .map_err(|e| format!("SetGUID major type failed: {}", e))?;
-        pcm_type.SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_PCM)
+        pcm_type
+            .SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_PCM)
             .map_err(|e| format!("SetGUID subtype PCM failed: {}", e))?;
         let requested_rate = 44100u32;
         let requested_channels = 2u32;
@@ -104,10 +110,16 @@ pub fn encode_wav_to_mp3(wav_path: &Path, mp3_path: &Path) -> Result<(), String>
         let _ = pcm_type.SetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE, requested_bits);
         let _ = pcm_type.SetUINT32(&MF_MT_AUDIO_BLOCK_ALIGNMENT, requested_block_align);
         let _ = pcm_type.SetUINT32(&MF_MT_AUDIO_AVG_BYTES_PER_SECOND, requested_avg_bytes);
-        reader.SetCurrentMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32, None, &pcm_type)
+        reader
+            .SetCurrentMediaType(
+                MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
+                None,
+                &pcm_type,
+            )
             .map_err(|e| format!("SetCurrentMediaType failed: {}", e))?;
 
-        let in_type = reader.GetCurrentMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32)
+        let in_type = reader
+            .GetCurrentMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32)
             .map_err(|e| format!("GetCurrentMediaType failed: {}", e))?;
 
         if let Ok((data_offset, data_size, peak)) = read_wav_data_info(wav_path) {
@@ -155,33 +167,41 @@ pub fn encode_wav_to_mp3(wav_path: &Path, mp3_path: &Path) -> Result<(), String>
             let _ = input_type.SetUINT32(&MF_MT_SAMPLE_SIZE, block_align);
         }
 
-        let out_type: IMFMediaType = MFCreateMediaType()
-            .map_err(|e| format!("MFCreateMediaType (mp3) failed: {}", e))?;
-        out_type.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio)
+        let out_type: IMFMediaType =
+            MFCreateMediaType().map_err(|e| format!("MFCreateMediaType (mp3) failed: {}", e))?;
+        out_type
+            .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio)
             .map_err(|e| format!("SetGUID major type (out) failed: {}", e))?;
-        out_type.SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_MP3)
+        out_type
+            .SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_MP3)
             .map_err(|e| format!("SetGUID subtype MP3 failed: {}", e))?;
-        out_type.SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, requested_channels)
+        out_type
+            .SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, requested_channels)
             .map_err(|e| format!("Set channels failed: {}", e))?;
-        out_type.SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND, requested_rate)
+        out_type
+            .SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND, requested_rate)
             .map_err(|e| format!("Set sample rate failed: {}", e))?;
         let mp3_avg_bytes = 16000u32; // 128 kbps
-        out_type.SetUINT32(&MF_MT_AUDIO_AVG_BYTES_PER_SECOND, mp3_avg_bytes)
+        out_type
+            .SetUINT32(&MF_MT_AUDIO_AVG_BYTES_PER_SECOND, mp3_avg_bytes)
             .map_err(|e| format!("Set mp3 bitrate failed: {}", e))?;
         crate::log_debug(&format!(
             "MF: output mp3 rate={} ch={} avg_bytes={}",
             requested_rate, requested_channels, mp3_avg_bytes
         ));
 
-        let writer: IMFSinkWriter = MFCreateSinkWriterFromURL(PCWSTR(mp3_wide.as_ptr()), None, None)
-            .map_err(|e| format!("MFCreateSinkWriterFromURL failed: {}", e))?;
-        let stream_index = writer.AddStream(&out_type)
+        let writer: IMFSinkWriter =
+            MFCreateSinkWriterFromURL(PCWSTR(mp3_wide.as_ptr()), None, None)
+                .map_err(|e| format!("MFCreateSinkWriterFromURL failed: {}", e))?;
+        let stream_index = writer
+            .AddStream(&out_type)
             .map_err(|e| format!("SinkWriter AddStream failed: {}", e))?;
         if let Err(e) = writer.SetInputMediaType(stream_index, &input_type, None) {
             crate::log_debug(&format!("MF: SetInputMediaType failed: {}", e));
             return Err(format!("SinkWriter SetInputMediaType failed: {}", e));
         }
-        writer.BeginWriting()
+        writer
+            .BeginWriting()
             .map_err(|e| format!("SinkWriter BeginWriting failed: {}", e))?;
 
         let mut sample_count: u64 = 0;
@@ -191,14 +211,16 @@ pub fn encode_wav_to_mp3(wav_path: &Path, mp3_path: &Path) -> Result<(), String>
             let mut flags = 0u32;
             let mut _timestamp = 0i64;
             let mut sample = None;
-            reader.ReadSample(
-                MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
-                0,
-                Some(&mut read_stream),
-                Some(&mut flags),
-                Some(&mut _timestamp),
-                Some(&mut sample),
-            ).map_err(|e| format!("ReadSample failed: {}", e))?;
+            reader
+                .ReadSample(
+                    MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
+                    0,
+                    Some(&mut read_stream),
+                    Some(&mut flags),
+                    Some(&mut _timestamp),
+                    Some(&mut sample),
+                )
+                .map_err(|e| format!("ReadSample failed: {}", e))?;
 
             if flags & (MF_SOURCE_READERF_ENDOFSTREAM.0 as u32) != 0 {
                 break;
@@ -208,12 +230,15 @@ pub fn encode_wav_to_mp3(wav_path: &Path, mp3_path: &Path) -> Result<(), String>
                 if let Ok(len) = sample.GetTotalLength() {
                     total_bytes = total_bytes.saturating_add(len as u64);
                 }
-                writer.WriteSample(stream_index, &sample)
+                writer
+                    .WriteSample(stream_index, &sample)
                     .map_err(|e| format!("WriteSample failed: {}", e))?;
             }
         }
 
-        writer.Finalize().map_err(|e| format!("SinkWriter Finalize failed: {}", e))?;
+        writer
+            .Finalize()
+            .map_err(|e| format!("SinkWriter Finalize failed: {}", e))?;
         crate::log_debug(&format!(
             "MF: samples_written={} total_bytes={}",
             sample_count, total_bytes

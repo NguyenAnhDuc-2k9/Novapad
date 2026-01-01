@@ -1,30 +1,41 @@
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
-use windows::core::{w, PCWSTR, GUID};
-use windows::Win32::Media::Speech::{
-    SpVoice, ISpVoice, SpObjectTokenCategory, ISpObjectTokenCategory,
-    ISpObjectToken, IEnumSpObjectTokens, SpFileStream, ISpStream,
-    SPFM_CREATE_ALWAYS, SPVOICESTATUS, SPRS_DONE, SPF_ASYNC, SPF_IS_XML, SPF_PURGEBEFORESPEAK,
-};
-use windows::Win32::Media::Audio::{WAVEFORMATEX, WAVE_FORMAT_PCM};
-use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize,
-    COINIT_APARTMENTTHREADED, CLSCTX_ALL,
-};
-use crate::settings::{Language, VoiceInfo};
+#![allow(
+    clippy::collapsible_if,
+    clippy::unnecessary_map_or,
+    clippy::too_many_arguments
+)]
 use crate::accessibility::to_wide;
-use std::io::{Read, Seek, Write};
+use crate::settings::{Language, VoiceInfo};
+use crate::tts_engine::TtsCommand;
 use std::collections::HashSet;
 use std::collections::VecDeque;
+use std::io::{Read, Seek, Write};
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tokio::sync::mpsc;
-use crate::tts_engine::TtsCommand;
+use windows::Win32::Media::Audio::{WAVE_FORMAT_PCM, WAVEFORMATEX};
+use windows::Win32::Media::Speech::{
+    IEnumSpObjectTokens, ISpObjectToken, ISpObjectTokenCategory, ISpStream, ISpVoice, SPF_ASYNC,
+    SPF_IS_XML, SPF_PURGEBEFORESPEAK, SPFM_CREATE_ALWAYS, SPRS_DONE, SPVOICESTATUS, SpFileStream,
+    SpObjectTokenCategory, SpVoice,
+};
+use windows::Win32::System::Com::{
+    CLSCTX_ALL, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree,
+    CoUninitialize,
+};
+use windows::core::{GUID, PCWSTR, w};
 
 // SPDFID_WaveFormatEx: {C31ADBAE-527F-4ff5-A230-F62BB61FF70C}
-const SPDFID_WAVEFORMATEX: GUID = GUID::from_values(0xC31ADBAE, 0x527F, 0x4ff5, [0xA2, 0x30, 0xF6, 0x2B, 0xB6, 0x1F, 0xF7, 0x0C]);
+const SPDFID_WAVEFORMATEX: GUID = GUID::from_values(
+    0xC31ADBAE,
+    0x527F,
+    0x4ff5,
+    [0xA2, 0x30, 0xF6, 0x2B, 0xB6, 0x1F, 0xF7, 0x0C],
+);
 const SAPI_VOICES_PATH: PCWSTR = w!(r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices");
-const ONECORE_VOICES_PATH: PCWSTR = w!(r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech_OneCore\Voices");
+const ONECORE_VOICES_PATH: PCWSTR =
+    w!(r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech_OneCore\Voices");
 
 unsafe fn wcslen(ptr: *const u16) -> usize {
     let mut len = 0;
@@ -35,12 +46,15 @@ unsafe fn wcslen(ptr: *const u16) -> usize {
 }
 
 unsafe fn collect_voice_descriptions(category_id: PCWSTR) -> Result<Vec<String>, String> {
-    let category: ISpObjectTokenCategory = CoCreateInstance(&SpObjectTokenCategory, None, CLSCTX_ALL)
-        .map_err(|e| format!("CoCreateInstance(Category) failed: {}", e))?;
-    category.SetId(category_id, false)
-         .map_err(|e| format!("SetId failed: {}", e))?;
+    let category: ISpObjectTokenCategory =
+        CoCreateInstance(&SpObjectTokenCategory, None, CLSCTX_ALL)
+            .map_err(|e| format!("CoCreateInstance(Category) failed: {}", e))?;
+    category
+        .SetId(category_id, false)
+        .map_err(|e| format!("SetId failed: {}", e))?;
 
-    let enum_tokens: IEnumSpObjectTokens = category.EnumTokens(None, None)
+    let enum_tokens: IEnumSpObjectTokens = category
+        .EnumTokens(None, None)
         .map_err(|e| format!("EnumTokens failed: {}", e))?;
 
     let mut count = 0;
@@ -51,7 +65,10 @@ unsafe fn collect_voice_descriptions(category_id: PCWSTR) -> Result<Vec<String>,
         if let Ok(token) = enum_tokens.Item(i) {
             if let Ok(desc_ptr) = token.GetStringValue(PCWSTR::null()) {
                 let description = if !desc_ptr.is_null() {
-                    let s = String::from_utf16_lossy(std::slice::from_raw_parts(desc_ptr.as_ptr(), wcslen(desc_ptr.as_ptr())));
+                    let s = String::from_utf16_lossy(std::slice::from_raw_parts(
+                        desc_ptr.as_ptr(),
+                        wcslen(desc_ptr.as_ptr()),
+                    ));
                     CoTaskMemFree(Some(desc_ptr.as_ptr() as *const _));
                     s
                 } else {
@@ -66,7 +83,8 @@ unsafe fn collect_voice_descriptions(category_id: PCWSTR) -> Result<Vec<String>,
 
 unsafe fn find_voice_token(voice_name: &str) -> Option<ISpObjectToken> {
     for category_id in [SAPI_VOICES_PATH, ONECORE_VOICES_PATH] {
-        let category: windows::core::Result<ISpObjectTokenCategory> = CoCreateInstance(&SpObjectTokenCategory, None, CLSCTX_ALL);
+        let category: windows::core::Result<ISpObjectTokenCategory> =
+            CoCreateInstance(&SpObjectTokenCategory, None, CLSCTX_ALL);
         if let Ok(cat) = category {
             let _ = cat.SetId(category_id, false);
             if let Ok(enum_tokens) = cat.EnumTokens(None, None) {
@@ -76,7 +94,11 @@ unsafe fn find_voice_token(voice_name: &str) -> Option<ISpObjectToken> {
                         if let Ok(tok) = enum_tokens.Item(i) {
                             if let Ok(desc_ptr) = tok.GetStringValue(PCWSTR::null()) {
                                 if !desc_ptr.is_null() {
-                                    let description = String::from_utf16_lossy(std::slice::from_raw_parts(desc_ptr.as_ptr(), wcslen(desc_ptr.as_ptr())));
+                                    let description =
+                                        String::from_utf16_lossy(std::slice::from_raw_parts(
+                                            desc_ptr.as_ptr(),
+                                            wcslen(desc_ptr.as_ptr()),
+                                        ));
                                     CoTaskMemFree(Some(desc_ptr.as_ptr() as *const _));
                                     if description == voice_name {
                                         return Some(tok);
@@ -137,7 +159,8 @@ pub fn play_sapi(
                 return;
             }
 
-            let voice_res: windows::core::Result<ISpVoice> = CoCreateInstance(&SpVoice, None, CLSCTX_ALL);
+            let voice_res: windows::core::Result<ISpVoice> =
+                CoCreateInstance(&SpVoice, None, CLSCTX_ALL);
             let voice = match voice_res {
                 Ok(v) => v,
                 Err(e) => {
@@ -169,7 +192,11 @@ pub fn play_sapi(
                             }
                             TtsCommand::Stop => {
                                 cancel.store(true, Ordering::SeqCst);
-                                let _ = voice.Speak(PCWSTR::null(), SPF_PURGEBEFORESPEAK.0 as u32, None);
+                                let _ = voice.Speak(
+                                    PCWSTR::null(),
+                                    SPF_PURGEBEFORESPEAK.0 as u32,
+                                    None,
+                                );
                                 return;
                             }
                             TtsCommand::Pause => {}
@@ -212,7 +239,11 @@ pub fn play_sapi(
                                         }
                                     }
                                 }
-                                let _ = voice.Speak(PCWSTR::null(), SPF_PURGEBEFORESPEAK.0 as u32, None);
+                                let _ = voice.Speak(
+                                    PCWSTR::null(),
+                                    SPF_PURGEBEFORESPEAK.0 as u32,
+                                    None,
+                                );
                                 if let Some(rem) = remainder {
                                     pending.push_front(rem);
                                 }
@@ -224,7 +255,11 @@ pub fn play_sapi(
                             }
                             TtsCommand::Stop => {
                                 cancel.store(true, Ordering::SeqCst);
-                                let _ = voice.Speak(PCWSTR::null(), SPF_PURGEBEFORESPEAK.0 as u32, None);
+                                let _ = voice.Speak(
+                                    PCWSTR::null(),
+                                    SPF_PURGEBEFORESPEAK.0 as u32,
+                                    None,
+                                );
                                 return;
                             }
                         }
@@ -264,14 +299,21 @@ pub fn speak_sapi_to_file(
         impl Drop for ComGuard {
             fn drop(&mut self) {
                 if self.0 {
-                    unsafe { CoUninitialize(); }
+                    unsafe {
+                        CoUninitialize();
+                    }
                 }
             }
         }
         let _com_guard = ComGuard(com_initialized);
 
-        let is_mp3 = output_path.extension().map_or(false, |e| e.eq_ignore_ascii_case("mp3"));
-        crate::log_debug(&format!("SAPI: is_mp3={}, output_path={:?}", is_mp3, output_path));
+        let is_mp3 = output_path
+            .extension()
+            .map_or(false, |e| e.eq_ignore_ascii_case("mp3"));
+        crate::log_debug(&format!(
+            "SAPI: is_mp3={}, output_path={:?}",
+            is_mp3, output_path
+        ));
         let wav_path = if is_mp3 {
             output_path.with_extension("wav.tmp")
         } else {
@@ -283,9 +325,12 @@ pub fn speak_sapi_to_file(
             let voice: ISpVoice = CoCreateInstance(&SpVoice, None, CLSCTX_ALL)
                 .map_err(|e| format!("Failed to create SpVoice: {}", e))?;
 
-            let voice_token = find_voice_token(voice_name)
-                .ok_or_else(|| "Selected SAPI voice not found. Please select a voice in Options.".to_string())?;
-            voice.SetVoice(&voice_token).map_err(|e| format!("SetVoice failed: {}", e))?;
+            let voice_token = find_voice_token(voice_name).ok_or_else(|| {
+                "Selected SAPI voice not found. Please select a voice in Options.".to_string()
+            })?;
+            voice
+                .SetVoice(&voice_token)
+                .map_err(|e| format!("SetVoice failed: {}", e))?;
             let _ = voice.SetRate(map_sapi_rate(tts_rate));
             let _ = voice.SetVolume(map_sapi_volume(tts_volume));
 
@@ -303,15 +348,19 @@ pub fn speak_sapi_to_file(
             wfx.nAvgBytesPerSec = wfx.nSamplesPerSec * (wfx.nBlockAlign as u32);
             wfx.cbSize = 0;
 
-            stream.BindToFile(
-                PCWSTR(path_wide.as_ptr()),
-                SPFM_CREATE_ALWAYS,
-                Some(&SPDFID_WAVEFORMATEX),
-                Some(&wfx),
-                0
-            ).map_err(|e| format!("BindToFile failed: {}", e))?;
+            stream
+                .BindToFile(
+                    PCWSTR(path_wide.as_ptr()),
+                    SPFM_CREATE_ALWAYS,
+                    Some(&SPDFID_WAVEFORMATEX),
+                    Some(&wfx),
+                    0,
+                )
+                .map_err(|e| format!("BindToFile failed: {}", e))?;
 
-            voice.SetOutput(&stream, true).map_err(|e| format!("SetOutput failed: {}", e))?;
+            voice
+                .SetOutput(&stream, true)
+                .map_err(|e| format!("SetOutput failed: {}", e))?;
 
             for (i, chunk) in chunks.iter().enumerate() {
                 if cancel.load(Ordering::Relaxed) {
@@ -321,7 +370,8 @@ pub fn speak_sapi_to_file(
                 }
                 let ssml = mk_sapi_ssml(chunk, tts_rate, tts_pitch, tts_volume);
                 let chunk_wide = to_wide(&ssml);
-                voice.Speak(PCWSTR(chunk_wide.as_ptr()), SPF_IS_XML.0 as u32, None)
+                voice
+                    .Speak(PCWSTR(chunk_wide.as_ptr()), SPF_IS_XML.0 as u32, None)
                     .map_err(|e| format!("Speak failed: {}", e))?;
 
                 progress_callback(i + 1);
@@ -339,8 +389,16 @@ pub fn speak_sapi_to_file(
                     let channels = 1u16;
                     let bits_per_sample = 16u16;
                     let duration_ms = 500u32;
-                    let _ = write_silence_wav(&wav_path, sample_rate, channels, bits_per_sample, duration_ms);
-                    crate::log_debug("SAPI: WAV had no data; wrote 500ms silence for MP3 encoding.");
+                    let _ = write_silence_wav(
+                        &wav_path,
+                        sample_rate,
+                        channels,
+                        bits_per_sample,
+                        duration_ms,
+                    );
+                    crate::log_debug(
+                        "SAPI: WAV had no data; wrote 500ms silence for MP3 encoding.",
+                    );
                 }
             }
             match crate::mf_encoder::encode_wav_to_mp3(&wav_path, output_path) {
@@ -433,7 +491,8 @@ fn mk_sapi_ssml(text: &str, rate: i32, pitch: i32, volume: i32) -> String {
 fn wav_data_size(path: &Path) -> Result<u32, String> {
     let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let mut riff_header = [0u8; 12];
-    file.read_exact(&mut riff_header).map_err(|e| e.to_string())?;
+    file.read_exact(&mut riff_header)
+        .map_err(|e| e.to_string())?;
     if &riff_header[0..4] != b"RIFF" || &riff_header[8..12] != b"WAVE" {
         return Err("Invalid WAV header".to_string());
     }
@@ -448,38 +507,59 @@ fn wav_data_size(path: &Path) -> Result<u32, String> {
         if chunk_id == b"data" {
             return Ok(chunk_size);
         }
-        file.seek(std::io::SeekFrom::Current(chunk_size as i64)).map_err(|e| e.to_string())?;
+        file.seek(std::io::SeekFrom::Current(chunk_size as i64))
+            .map_err(|e| e.to_string())?;
         if chunk_size % 2 == 1 {
-            file.seek(std::io::SeekFrom::Current(1)).map_err(|e| e.to_string())?;
+            file.seek(std::io::SeekFrom::Current(1))
+                .map_err(|e| e.to_string())?;
         }
     }
     Err("WAV data chunk not found".to_string())
 }
 
-fn write_silence_wav(path: &Path, sample_rate: u32, channels: u16, bits_per_sample: u16, duration_ms: u32) -> Result<(), String> {
+fn write_silence_wav(
+    path: &Path,
+    sample_rate: u32,
+    channels: u16,
+    bits_per_sample: u16,
+    duration_ms: u32,
+) -> Result<(), String> {
     let bytes_per_sample = (bits_per_sample / 8) as u32;
     let samples = sample_rate.saturating_mul(duration_ms) / 1000;
-    let data_size = samples.saturating_mul(channels as u32).saturating_mul(bytes_per_sample);
+    let data_size = samples
+        .saturating_mul(channels as u32)
+        .saturating_mul(bytes_per_sample);
     let riff_size = 36u32.saturating_add(data_size);
 
     let mut file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     file.write_all(b"RIFF").map_err(|e| e.to_string())?;
-    file.write_all(&riff_size.to_le_bytes()).map_err(|e| e.to_string())?;
+    file.write_all(&riff_size.to_le_bytes())
+        .map_err(|e| e.to_string())?;
     file.write_all(b"WAVE").map_err(|e| e.to_string())?;
 
     file.write_all(b"fmt ").map_err(|e| e.to_string())?;
-    file.write_all(&16u32.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&1u16.to_le_bytes()).map_err(|e| e.to_string())?; // PCM
-    file.write_all(&channels.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&sample_rate.to_le_bytes()).map_err(|e| e.to_string())?;
-    let byte_rate = sample_rate.saturating_mul(channels as u32).saturating_mul(bytes_per_sample);
+    file.write_all(&16u32.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    file.write_all(&1u16.to_le_bytes())
+        .map_err(|e| e.to_string())?; // PCM
+    file.write_all(&channels.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    file.write_all(&sample_rate.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    let byte_rate = sample_rate
+        .saturating_mul(channels as u32)
+        .saturating_mul(bytes_per_sample);
     let block_align = (channels as u32 * bytes_per_sample) as u16;
-    file.write_all(&byte_rate.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&block_align.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&bits_per_sample.to_le_bytes()).map_err(|e| e.to_string())?;
+    file.write_all(&byte_rate.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    file.write_all(&block_align.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    file.write_all(&bits_per_sample.to_le_bytes())
+        .map_err(|e| e.to_string())?;
 
     file.write_all(b"data").map_err(|e| e.to_string())?;
-    file.write_all(&data_size.to_le_bytes()).map_err(|e| e.to_string())?;
+    file.write_all(&data_size.to_le_bytes())
+        .map_err(|e| e.to_string())?;
     let zeros = vec![0u8; 4096];
     let mut remaining = data_size as usize;
     while remaining > 0 {

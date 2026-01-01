@@ -1,22 +1,25 @@
+#![allow(clippy::let_and_return, clippy::bool_comparison)]
 use std::sync::{Arc, Mutex};
 
-use windows::core::{PCWSTR, w};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM, HINSTANCE};
-use windows::Win32::UI::Controls::{WC_BUTTON, WC_STATIC};
-use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-    GetWindowLongPtrW, IsDialogMessageW, IsWindow, LoadCursorW, PostMessageW, RegisterClassW, SendMessageW,
-    SetForegroundWindow, SetWindowLongPtrW, SetWindowTextW, TranslateMessage, CREATESTRUCTW, CW_USEDEFAULT,
-    GWLP_USERDATA, HMENU, IDC_ARROW, LB_ADDSTRING, LB_GETCOUNT, LB_GETSEL, LB_SETSEL, LB_SETCURSEL,
-    LB_SETCARETINDEX, LB_SETTOPINDEX, MSG, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY,
-    WM_NCDESTROY, WM_SETFONT, WM_KEYDOWN,
-    WNDCLASSW, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME,
-    WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL, LBS_MULTIPLESEL, LBS_NOINTEGRALHEIGHT,
-    LBS_NOTIFY, BS_DEFPUSHBUTTON, LBN_SELCHANGE
-};
-use windows::Win32::Graphics::Gdi::{HBRUSH, COLOR_WINDOW, HFONT};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Graphics::Gdi::{COLOR_WINDOW, HBRUSH, HFONT};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN};
+use windows::Win32::UI::Controls::{WC_BUTTON, WC_STATIC};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    BS_DEFPUSHBUTTON, CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow,
+    DispatchMessageW, GWLP_USERDATA, GetMessageW, GetWindowLongPtrW, HMENU, IDC_ARROW,
+    IsDialogMessageW, IsWindow, LB_ADDSTRING, LB_GETCOUNT, LB_GETSEL, LB_SETCARETINDEX,
+    LB_SETCURSEL, LB_SETSEL, LB_SETTOPINDEX, LBN_SELCHANGE, LBS_MULTIPLESEL, LBS_NOINTEGRALHEIGHT,
+    LBS_NOTIFY, LoadCursorW, MSG, PostMessageW, RegisterClassW, SendMessageW, SetForegroundWindow,
+    SetWindowLongPtrW, SetWindowTextW, TranslateMessage, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
+    WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_NCDESTROY, WM_SETFONT, WNDCLASSW, WS_CAPTION, WS_CHILD,
+    WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    WS_VSCROLL,
+};
+use windows::core::{PCWSTR, w};
 
 use crate::accessibility::to_wide;
 use crate::settings::Language;
@@ -69,7 +72,11 @@ fn labels(language: Language) -> MarkerSelectLabels {
     }
 }
 
-pub fn select_marker_entries(parent: HWND, items: &[String], language: Language) -> Option<Vec<usize>> {
+pub fn select_marker_entries(
+    parent: HWND,
+    items: &[String],
+    language: Language,
+) -> Option<Vec<usize>> {
     if items.is_empty() {
         return Some(Vec::new());
     }
@@ -77,7 +84,9 @@ pub fn select_marker_entries(parent: HWND, items: &[String], language: Language)
     let hinstance = HINSTANCE(unsafe { GetModuleHandleW(None).unwrap_or_default().0 });
     let class_name = to_wide(MARKER_SELECT_CLASS_NAME);
     let wc = WNDCLASSW {
-        hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(unsafe { LoadCursorW(None, IDC_ARROW).unwrap_or_default().0 }),
+        hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(unsafe {
+            LoadCursorW(None, IDC_ARROW).unwrap_or_default().0
+        }),
         hInstance: hinstance,
         lpszClassName: PCWSTR(class_name.as_ptr()),
         lpfnWndProc: Some(marker_select_wndproc),
@@ -133,13 +142,19 @@ pub fn select_marker_entries(parent: HWND, items: &[String], language: Language)
         }
         unsafe {
             if msg.message == WM_KEYDOWN && msg.wParam.0 as u32 == VK_ESCAPE.0 as u32 {
-                let _ = PostMessageW(hwnd, WM_COMMAND, WPARAM(MARKER_ID_CANCEL as usize), LPARAM(0));
+                let _ = PostMessageW(
+                    hwnd,
+                    WM_COMMAND,
+                    WPARAM(MARKER_ID_CANCEL as usize),
+                    LPARAM(0),
+                );
                 continue;
             }
             if msg.message == WM_KEYDOWN && msg.wParam.0 as u32 == VK_RETURN.0 as u32 {
                 let list = with_marker_state(hwnd, |state| state.list).unwrap_or(HWND(0));
                 if GetFocus() == list {
-                    let _ = PostMessageW(hwnd, WM_COMMAND, WPARAM(MARKER_ID_OK as usize), LPARAM(0));
+                    let _ =
+                        PostMessageW(hwnd, WM_COMMAND, WPARAM(MARKER_ID_OK as usize), LPARAM(0));
                     continue;
                 }
             }
@@ -160,7 +175,12 @@ pub fn select_marker_entries(parent: HWND, items: &[String], language: Language)
     selected
 }
 
-unsafe extern "system" fn marker_select_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn marker_select_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     match msg {
         WM_CREATE => {
             let create_struct = lparam.0 as *const CREATESTRUCTW;
@@ -192,7 +212,11 @@ unsafe extern "system" fn marker_select_wndproc(hwnd: HWND, msg: u32, wparam: WP
                 WS_EX_CLIENTEDGE,
                 w!("LISTBOX"),
                 PCWSTR::null(),
-                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | WINDOW_STYLE((LBS_NOTIFY | LBS_MULTIPLESEL | LBS_NOINTEGRALHEIGHT) as u32),
+                WS_CHILD
+                    | WS_VISIBLE
+                    | WS_TABSTOP
+                    | WS_VSCROLL
+                    | WINDOW_STYLE((LBS_NOTIFY | LBS_MULTIPLESEL | LBS_NOINTEGRALHEIGHT) as u32),
                 16,
                 40,
                 420,
@@ -204,7 +228,12 @@ unsafe extern "system" fn marker_select_wndproc(hwnd: HWND, msg: u32, wparam: WP
             );
 
             for item in init.items.iter() {
-                let _ = SendMessageW(list, LB_ADDSTRING, WPARAM(0), LPARAM(to_wide(item).as_ptr() as isize));
+                let _ = SendMessageW(
+                    list,
+                    LB_ADDSTRING,
+                    WPARAM(0),
+                    LPARAM(to_wide(item).as_ptr() as isize),
+                );
             }
             let count = SendMessageW(list, LB_GETCOUNT, WPARAM(0), LPARAM(0)).0;
             for idx in 0..count {
@@ -285,7 +314,8 @@ unsafe extern "system" fn marker_select_wndproc(hwnd: HWND, msg: u32, wparam: WP
             let notification = ((wparam.0 >> 16) & 0xffff) as u16;
             if cmd_id == MARKER_ID_LIST && notification as u32 == LBN_SELCHANGE {
                 let _ = with_marker_state(hwnd, |state| {
-                    let language = with_state(state.parent, |s| s.settings.language).unwrap_or_default();
+                    let language =
+                        with_state(state.parent, |s| s.settings.language).unwrap_or_default();
                     update_toggle_all_label(state.toggle_all, language, state.list);
                 });
                 LRESULT(0)
@@ -293,7 +323,8 @@ unsafe extern "system" fn marker_select_wndproc(hwnd: HWND, msg: u32, wparam: WP
                 let _ = with_marker_state(hwnd, |state| {
                     let should_select_all = list_has_unselected(state.list);
                     set_all_selected(state.list, should_select_all);
-                    let language = with_state(state.parent, |s| s.settings.language).unwrap_or_default();
+                    let language =
+                        with_state(state.parent, |s| s.settings.language).unwrap_or_default();
                     update_toggle_all_label(state.toggle_all, language, state.list);
                 });
                 LRESULT(0)
@@ -302,7 +333,8 @@ unsafe extern "system" fn marker_select_wndproc(hwnd: HWND, msg: u32, wparam: WP
                     let count = SendMessageW(state.list, LB_GETCOUNT, WPARAM(0), LPARAM(0)).0;
                     let mut selected = Vec::new();
                     for idx in 0..count {
-                        let is_selected = SendMessageW(state.list, LB_GETSEL, WPARAM(idx as usize), LPARAM(0)).0;
+                        let is_selected =
+                            SendMessageW(state.list, LB_GETSEL, WPARAM(idx as usize), LPARAM(0)).0;
                         if is_selected > 0 {
                             selected.push(idx as usize);
                         }
@@ -323,14 +355,20 @@ unsafe extern "system" fn marker_select_wndproc(hwnd: HWND, msg: u32, wparam: WP
         }
         WM_KEYDOWN => {
             if wparam.0 as u32 == VK_ESCAPE.0 as u32 {
-                let _ = PostMessageW(hwnd, WM_COMMAND, WPARAM(MARKER_ID_CANCEL as usize), LPARAM(0));
+                let _ = PostMessageW(
+                    hwnd,
+                    WM_COMMAND,
+                    WPARAM(MARKER_ID_CANCEL as usize),
+                    LPARAM(0),
+                );
                 return LRESULT(0);
             }
             if wparam.0 as u32 == VK_RETURN.0 as u32 {
                 let focus = GetFocus();
                 let list = with_marker_state(hwnd, |state| state.list).unwrap_or(HWND(0));
                 if focus == list {
-                    let _ = PostMessageW(hwnd, WM_COMMAND, WPARAM(MARKER_ID_OK as usize), LPARAM(0));
+                    let _ =
+                        PostMessageW(hwnd, WM_COMMAND, WPARAM(MARKER_ID_OK as usize), LPARAM(0));
                     return LRESULT(0);
                 }
             }
@@ -377,7 +415,8 @@ where
 fn list_has_unselected(list: HWND) -> bool {
     let count = unsafe { SendMessageW(list, LB_GETCOUNT, WPARAM(0), LPARAM(0)).0 };
     for idx in 0..count {
-        let is_selected = unsafe { SendMessageW(list, LB_GETSEL, WPARAM(idx as usize), LPARAM(0)).0 };
+        let is_selected =
+            unsafe { SendMessageW(list, LB_GETSEL, WPARAM(idx as usize), LPARAM(0)).0 };
         if is_selected == 0 {
             return true;
         }
@@ -388,7 +427,14 @@ fn list_has_unselected(list: HWND) -> bool {
 fn set_all_selected(list: HWND, selected: bool) {
     let count = unsafe { SendMessageW(list, LB_GETCOUNT, WPARAM(0), LPARAM(0)).0 };
     for idx in 0..count {
-        let _ = unsafe { SendMessageW(list, LB_SETSEL, WPARAM(if selected { 1 } else { 0 }), LPARAM(idx)) };
+        let _ = unsafe {
+            SendMessageW(
+                list,
+                LB_SETSEL,
+                WPARAM(if selected { 1 } else { 0 }),
+                LPARAM(idx),
+            )
+        };
     }
 }
 
@@ -405,5 +451,7 @@ fn update_toggle_all_label(button: HWND, language: Language, list: HWND) {
         }
     };
     let wide = to_wide(label);
-    unsafe { let _ = SetWindowTextW(button, PCWSTR(wide.as_ptr())); }
+    unsafe {
+        let _ = SetWindowTextW(button, PCWSTR(wide.as_ptr()));
+    }
 }

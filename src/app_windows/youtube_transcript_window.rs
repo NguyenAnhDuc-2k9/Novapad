@@ -1,36 +1,37 @@
+#![allow(clippy::bool_comparison)]
 use std::sync::{Arc, Mutex};
 
-use windows::core::{PCWSTR, w};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM, HINSTANCE};
-use windows::Win32::UI::Controls::{
-    WC_BUTTON, WC_STATIC, WC_COMBOBOXW, EM_SCROLLCARET, EM_SETSEL, BST_CHECKED,
-};
-use windows::Win32::UI::Controls::RichEdit::{CHARRANGE, EM_EXSETSEL};
-use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-    GetWindowLongPtrW, IsDialogMessageW, IsWindow, LoadCursorW, PostMessageW, RegisterClassW,
-    SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowTextW, TranslateMessage,
-    CREATESTRUCTW, CW_USEDEFAULT, GWLP_USERDATA, HMENU, IDC_ARROW, MSG,
-    WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_NCDESTROY, WM_SETFONT,
-    WM_KEYDOWN,
-    WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME,
-    WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, CBS_DROPDOWNLIST, CB_ADDSTRING, CB_GETCURSEL,
-    CB_RESETCONTENT, CB_SETCURSEL, BS_DEFPUSHBUTTON, BS_AUTOCHECKBOX, BM_GETCHECK, BM_SETCHECK,
-    EN_CHANGE,
-};
-use windows::Win32::Graphics::Gdi::{HBRUSH, COLOR_WINDOW, HFONT};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Graphics::Gdi::{COLOR_WINDOW, HBRUSH, HFONT};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN};
+use windows::Win32::UI::Controls::RichEdit::{CHARRANGE, EM_EXSETSEL};
+use windows::Win32::UI::Controls::{
+    BST_CHECKED, EM_SCROLLCARET, EM_SETSEL, WC_BUTTON, WC_COMBOBOXW, WC_STATIC,
+};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, CB_ADDSTRING, CB_GETCURSEL,
+    CB_RESETCONTENT, CB_SETCURSEL, CBS_DROPDOWNLIST, CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW,
+    DefWindowProcW, DestroyWindow, DispatchMessageW, EN_CHANGE, GWLP_USERDATA, GetMessageW,
+    GetWindowLongPtrW, HMENU, IDC_ARROW, IsDialogMessageW, IsWindow, LoadCursorW, MSG,
+    PostMessageW, RegisterClassW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
+    SetWindowTextW, TranslateMessage, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_CREATE,
+    WM_DESTROY, WM_KEYDOWN, WM_NCDESTROY, WM_SETFONT, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE,
+    WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+};
+use windows::core::{PCWSTR, w};
 
 use url::Url;
 use yt_transcript_rs::errors::CouldNotRetrieveTranscriptReason;
 use yt_transcript_rs::{Transcript, TranscriptList, YouTubeTranscriptApi};
 
-use crate::accessibility::{to_wide, to_wide_normalized, from_wide};
-use crate::settings::{save_settings, Language};
-use crate::{get_active_edit, show_error, WM_FOCUS_EDITOR};
+use crate::accessibility::{from_wide, to_wide, to_wide_normalized};
 use crate::editor_manager::get_edit_text;
+use crate::settings::{Language, save_settings};
 use crate::with_state;
+use crate::{WM_FOCUS_EDITOR, get_active_edit, show_error};
 
 const YT_IMPORT_CLASS_NAME: &str = "NovapadYouTubeTranscript";
 const YT_ID_URL: usize = 9301;
@@ -125,12 +126,17 @@ fn labels(language: Language) -> Labels {
 pub fn import_youtube_transcript(parent: HWND) {
     let (language, include_timestamps) = unsafe {
         with_state(parent, |state| {
-            (state.settings.language, state.settings.youtube_include_timestamps)
+            (
+                state.settings.language,
+                state.settings.youtube_include_timestamps,
+            )
         })
         .unwrap_or((Language::Italian, true))
     };
     let Some(result) = show_import_dialog(parent, language, include_timestamps) else {
-        unsafe { let _ = PostMessageW(parent, WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0)); }
+        unsafe {
+            let _ = PostMessageW(parent, WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
+        }
         return;
     };
     let _ = unsafe {
@@ -167,18 +173,29 @@ pub fn import_youtube_transcript(parent: HWND) {
         let wide = to_wide_normalized(&combined);
         let _ = SetWindowTextW(hwnd_edit, PCWSTR(wide.as_ptr()));
         let cr = CHARRANGE { cpMin: 0, cpMax: 0 };
-        let _ = SendMessageW(hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&cr as *const _ as isize));
+        let _ = SendMessageW(
+            hwnd_edit,
+            EM_EXSETSEL,
+            WPARAM(0),
+            LPARAM(&cr as *const _ as isize),
+        );
         let _ = SendMessageW(hwnd_edit, EM_SETSEL, WPARAM(0), LPARAM(0));
         let _ = SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
         let _ = PostMessageW(parent, WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
     }
 }
 
-fn show_import_dialog(parent: HWND, language: Language, include_timestamps: bool) -> Option<ImportResult> {
+fn show_import_dialog(
+    parent: HWND,
+    language: Language,
+    include_timestamps: bool,
+) -> Option<ImportResult> {
     let hinstance = HINSTANCE(unsafe { GetModuleHandleW(None).unwrap_or_default().0 });
     let class_name = to_wide(YT_IMPORT_CLASS_NAME);
     let wc = windows::Win32::UI::WindowsAndMessaging::WNDCLASSW {
-        hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(unsafe { LoadCursorW(None, IDC_ARROW).unwrap_or_default().0 }),
+        hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(unsafe {
+            LoadCursorW(None, IDC_ARROW).unwrap_or_default().0
+        }),
         hInstance: hinstance,
         lpszClassName: PCWSTR(class_name.as_ptr()),
         lpfnWndProc: Some(import_wndproc),
@@ -260,7 +277,12 @@ fn show_import_dialog(parent: HWND, language: Language, include_timestamps: bool
     result.lock().unwrap().clone()
 }
 
-unsafe extern "system" fn import_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn import_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     match msg {
         WM_CREATE => {
             let create_struct = lparam.0 as *const CREATESTRUCTW;
@@ -407,7 +429,17 @@ unsafe extern "system" fn import_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, l
                 None,
             );
 
-            for control in [label_url, url_edit, load_button, label_lang, lang_combo, status_label, timestamp_check, ok_button, cancel_button] {
+            for control in [
+                label_url,
+                url_edit,
+                load_button,
+                label_lang,
+                lang_combo,
+                status_label,
+                timestamp_check,
+                ok_button,
+                cancel_button,
+            ] {
                 if control.0 != 0 && hfont.0 != 0 {
                     let _ = SendMessageW(control, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
                 }
@@ -428,8 +460,17 @@ unsafe extern "system" fn import_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, l
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
 
-            let initial_check = if init.include_timestamps { BST_CHECKED.0 } else { 0 };
-            let _ = SendMessageW(timestamp_check, BM_SETCHECK, WPARAM(initial_check as usize), LPARAM(0));
+            let initial_check = if init.include_timestamps {
+                BST_CHECKED.0
+            } else {
+                0
+            };
+            let _ = SendMessageW(
+                timestamp_check,
+                BM_SETCHECK,
+                WPARAM(initial_check as usize),
+                LPARAM(0),
+            );
             let _ = SetFocus(url_edit);
             LRESULT(0)
         }
@@ -453,9 +494,14 @@ unsafe extern "system" fn import_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, l
                     if idx < 0 || idx as usize >= state.transcripts.len() {
                         return;
                     }
-                    let include_timestamps = SendMessageW(state.timestamp_check, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 == BST_CHECKED.0 as isize;
+                    let include_timestamps =
+                        SendMessageW(state.timestamp_check, BM_GETCHECK, WPARAM(0), LPARAM(0)).0
+                            == BST_CHECKED.0 as isize;
                     let transcript = state.transcripts[idx as usize].clone();
-                    *state.result.lock().unwrap() = Some(ImportResult { transcript, include_timestamps });
+                    *state.result.lock().unwrap() = Some(ImportResult {
+                        transcript,
+                        include_timestamps,
+                    });
                     should_close = true;
                 });
                 if should_close {
@@ -588,18 +634,35 @@ fn start_load_languages(hwnd: HWND) -> bool {
                 Ok(list) => {
                     let transcripts = collect_transcripts(list);
                     if transcripts.is_empty() {
-                        LoadResult { transcripts: Vec::new(), error: Some(ImportError::NoTranscript) }
+                        LoadResult {
+                            transcripts: Vec::new(),
+                            error: Some(ImportError::NoTranscript),
+                        }
                     } else {
-                        LoadResult { transcripts, error: None }
+                        LoadResult {
+                            transcripts,
+                            error: None,
+                        }
                     }
                 }
-                Err(err) => LoadResult { transcripts: Vec::new(), error: Some(err) },
+                Err(err) => LoadResult {
+                    transcripts: Vec::new(),
+                    error: Some(err),
+                },
             }
         } else {
-            LoadResult { transcripts: Vec::new(), error: Some(ImportError::InvalidUrl) }
+            LoadResult {
+                transcripts: Vec::new(),
+                error: Some(ImportError::InvalidUrl),
+            }
         };
         unsafe {
-            let _ = PostMessageW(hwnd, WM_YT_LOAD_COMPLETE, WPARAM(0), LPARAM(Box::into_raw(Box::new(result)) as isize));
+            let _ = PostMessageW(
+                hwnd,
+                WM_YT_LOAD_COMPLETE,
+                WPARAM(0),
+                LPARAM(Box::into_raw(Box::new(result)) as isize),
+            );
         }
     });
     true
@@ -653,7 +716,12 @@ fn finish_load_languages(hwnd: HWND, result: LoadResult) {
                 label.push_str(&format!(" - {}", labels_data.auto));
             }
             let wide = to_wide(&label);
-            let _ = SendMessageW(combo, CB_ADDSTRING, WPARAM(0), LPARAM(wide.as_ptr() as isize));
+            let _ = SendMessageW(
+                combo,
+                CB_ADDSTRING,
+                WPARAM(0),
+                LPARAM(wide.as_ptr() as isize),
+            );
         }
         let _ = SendMessageW(combo, CB_SETCURSEL, WPARAM(0), LPARAM(0));
         let _ = SetFocus(combo);
@@ -730,10 +798,22 @@ fn extract_video_id(input: &str) -> Option<String> {
 }
 
 fn collect_transcripts(list: TranscriptList) -> Vec<Transcript> {
-    let mut manual: Vec<Transcript> = list.manually_created_transcripts.values().cloned().collect();
+    let mut manual: Vec<Transcript> = list
+        .manually_created_transcripts
+        .values()
+        .cloned()
+        .collect();
     let mut generated: Vec<Transcript> = list.generated_transcripts.values().cloned().collect();
-    manual.sort_by(|a, b| a.language().cmp(b.language()).then(a.language_code().cmp(b.language_code())));
-    generated.sort_by(|a, b| a.language().cmp(b.language()).then(a.language_code().cmp(b.language_code())));
+    manual.sort_by(|a, b| {
+        a.language()
+            .cmp(b.language())
+            .then(a.language_code().cmp(b.language_code()))
+    });
+    generated.sort_by(|a, b| {
+        a.language()
+            .cmp(b.language())
+            .then(a.language_code().cmp(b.language_code()))
+    });
     manual.extend(generated);
     manual
 }
@@ -759,14 +839,20 @@ fn fetch_transcript_list(video_id: &str) -> Result<TranscriptList, ImportError> 
     })
 }
 
-fn fetch_transcript_text(transcript: &Transcript, include_timestamps: bool) -> Result<String, ImportError> {
+fn fetch_transcript_text(
+    transcript: &Transcript,
+    include_timestamps: bool,
+) -> Result<String, ImportError> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|_| ImportError::Other)?;
     rt.block_on(async {
         let client = reqwest::Client::new();
-        let fetched = transcript.fetch(&client, false).await.map_err(map_transcript_error)?;
+        let fetched = transcript
+            .fetch(&client, false)
+            .await
+            .map_err(map_transcript_error)?;
         if include_timestamps {
             Ok(format_with_timestamps(&fetched))
         } else {
@@ -781,7 +867,9 @@ fn map_transcript_error(err: yt_transcript_rs::errors::CouldNotRetrieveTranscrip
         Some(CouldNotRetrieveTranscriptReason::TranscriptsDisabled)
         | Some(CouldNotRetrieveTranscriptReason::NoTranscriptFound { .. })
         | Some(CouldNotRetrieveTranscriptReason::VideoUnavailable)
-        | Some(CouldNotRetrieveTranscriptReason::VideoUnplayable { .. }) => ImportError::NoTranscript,
+        | Some(CouldNotRetrieveTranscriptReason::VideoUnplayable { .. }) => {
+            ImportError::NoTranscript
+        }
         Some(CouldNotRetrieveTranscriptReason::YouTubeRequestFailed(_))
         | Some(CouldNotRetrieveTranscriptReason::RequestBlocked(_))
         | Some(CouldNotRetrieveTranscriptReason::IpBlocked(_)) => ImportError::Network,

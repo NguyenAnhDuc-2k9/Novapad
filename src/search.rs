@@ -1,20 +1,17 @@
-use windows::core::{PCWSTR, PWSTR};
+use crate::accessibility::{EM_REPLACESEL, EM_SCROLLCARET, from_wide, to_wide};
+use crate::settings::{Language, find_title, text_not_found_message};
+use crate::{get_active_edit, with_state};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::{
-    SendMessageW, MessageBoxW, MB_OK, MB_ICONWARNING
+use windows::Win32::UI::Controls::Dialogs::{
+    FINDREPLACE_FLAGS, FINDREPLACEW, FR_DIALOGTERM, FR_DOWN, FR_FINDNEXT, FR_MATCHCASE, FR_REPLACE,
+    FR_REPLACEALL, FR_WHOLEWORD, FindTextW, ReplaceTextW,
 };
 use windows::Win32::UI::Controls::RichEdit::{
-    CHARRANGE, FINDTEXTEXW, EM_FINDTEXTEXW, EM_EXGETSEL, EM_EXSETSEL
+    CHARRANGE, EM_EXGETSEL, EM_EXSETSEL, EM_FINDTEXTEXW, FINDTEXTEXW,
 };
-use windows::Win32::UI::Controls::Dialogs::{
-    FindTextW, ReplaceTextW, FINDREPLACEW, FINDREPLACE_FLAGS,
-    FR_DOWN, FR_DIALOGTERM, FR_FINDNEXT, FR_REPLACE, FR_REPLACEALL,
-    FR_MATCHCASE, FR_WHOLEWORD
-};
-use windows::Win32::UI::Input::KeyboardAndMouse::{SetFocus};
-use crate::settings::{Language, find_title, text_not_found_message};
-use crate::accessibility::{to_wide, from_wide, EM_SCROLLCARET, EM_REPLACESEL};
-use crate::{with_state, get_active_edit};
+use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+use windows::Win32::UI::WindowsAndMessaging::{MB_ICONWARNING, MB_OK, MessageBoxW, SendMessageW};
+use windows::core::{PCWSTR, PWSTR};
 
 pub const FIND_DIALOG_ID: isize = 1;
 pub const REPLACE_DIALOG_ID: isize = 2;
@@ -38,7 +35,7 @@ pub unsafe fn open_find_dialog(hwnd: HWND) {
             lCustData: LPARAM(FIND_DIALOG_ID),
             ..Default::default()
         });
-        
+
         if let Some(ref mut fr) = state.find_replace {
             let dialog = FindTextW(fr);
             state.find_dialog = dialog;
@@ -67,7 +64,7 @@ pub unsafe fn open_replace_dialog(hwnd: HWND) {
             lCustData: LPARAM(REPLACE_DIALOG_ID),
             ..Default::default()
         });
-        
+
         if let Some(ref mut fr) = state.replace_replace {
             let dialog = ReplaceTextW(fr);
             state.replace_dialog = dialog;
@@ -110,7 +107,13 @@ pub unsafe fn handle_find_message(hwnd: HWND, lparam: LPARAM) {
     });
 
     if (fr.Flags & FR_REPLACEALL) != FINDREPLACE_FLAGS(0) {
-        replace_all(hwnd, hwnd_edit, &search, &from_wide(fr.lpstrReplaceWith.0), find_flags);
+        replace_all(
+            hwnd,
+            hwnd_edit,
+            &search,
+            &from_wide(fr.lpstrReplaceWith.0),
+            find_flags,
+        );
         return;
     }
 
@@ -121,7 +124,12 @@ pub unsafe fn handle_find_message(hwnd: HWND, lparam: LPARAM) {
         if !replaced && !found {
             let message = to_wide(text_not_found_message(language));
             let title = to_wide(find_title(language));
-            MessageBoxW(hwnd, PCWSTR(message.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONWARNING);
+            MessageBoxW(
+                hwnd,
+                PCWSTR(message.as_ptr()),
+                PCWSTR(title.as_ptr()),
+                MB_OK | MB_ICONWARNING,
+            );
         }
         return;
     }
@@ -131,15 +139,21 @@ pub unsafe fn handle_find_message(hwnd: HWND, lparam: LPARAM) {
     }
     let message = to_wide(text_not_found_message(language));
     let title = to_wide(find_title(language));
-    MessageBoxW(hwnd, PCWSTR(message.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONWARNING);
+    MessageBoxW(
+        hwnd,
+        PCWSTR(message.as_ptr()),
+        PCWSTR(title.as_ptr()),
+        MB_OK | MB_ICONWARNING,
+    );
 }
 
 pub unsafe fn find_next_from_state(hwnd: HWND) {
-    let (search, flags, language): (String, FINDREPLACE_FLAGS, Language) = with_state(hwnd, |state| {
-        let search = from_wide(state.find_text.as_ptr());
-        (search, state.last_find_flags, state.settings.language)
-    })
-    .unwrap_or((String::new(), FINDREPLACE_FLAGS(0), Language::default()));
+    let (search, flags, language): (String, FINDREPLACE_FLAGS, Language) =
+        with_state(hwnd, |state| {
+            let search = from_wide(state.find_text.as_ptr());
+            (search, state.last_find_flags, state.settings.language)
+        })
+        .unwrap_or((String::new(), FINDREPLACE_FLAGS(0), Language::default()));
     if search.is_empty() {
         open_find_dialog(hwnd);
         return;
@@ -150,7 +164,12 @@ pub unsafe fn find_next_from_state(hwnd: HWND) {
     if !find_next(hwnd_edit, &search, flags, true) {
         let message = to_wide(text_not_found_message(language));
         let title = to_wide(find_title(language));
-        MessageBoxW(hwnd, PCWSTR(message.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONWARNING);
+        MessageBoxW(
+            hwnd,
+            PCWSTR(message.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            MB_OK | MB_ICONWARNING,
+        );
     }
 }
 
@@ -175,10 +194,15 @@ pub unsafe fn find_next(
     wrap: bool,
 ) -> bool {
     let mut cr = CHARRANGE { cpMin: 0, cpMax: 0 };
-    SendMessageW(hwnd_edit, EM_EXGETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize));
-    
+    SendMessageW(
+        hwnd_edit,
+        EM_EXGETSEL,
+        WPARAM(0),
+        LPARAM(&mut cr as *mut _ as isize),
+    );
+
     let down = (flags & FR_DOWN) != FINDREPLACE_FLAGS(0);
-    
+
     let mut ft = FINDTEXTEXW {
         chrg: CHARRANGE {
             cpMin: if down { cr.cpMax } else { cr.cpMin },
@@ -188,12 +212,22 @@ pub unsafe fn find_next(
         chrgText: CHARRANGE { cpMin: 0, cpMax: 0 },
     };
 
-    let result = SendMessageW(hwnd_edit, EM_FINDTEXTEXW, WPARAM(flags.0 as usize), LPARAM(&mut ft as *mut _ as isize));
-    
+    let result = SendMessageW(
+        hwnd_edit,
+        EM_FINDTEXTEXW,
+        WPARAM(flags.0 as usize),
+        LPARAM(&mut ft as *mut _ as isize),
+    );
+
     if result.0 != -1 {
         let mut sel = ft.chrgText;
         std::mem::swap(&mut sel.cpMin, &mut sel.cpMax);
-        SendMessageW(hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&mut sel as *mut _ as isize));
+        SendMessageW(
+            hwnd_edit,
+            EM_EXSETSEL,
+            WPARAM(0),
+            LPARAM(&mut sel as *mut _ as isize),
+        );
         SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
         SetFocus(hwnd_edit);
         return true;
@@ -202,11 +236,21 @@ pub unsafe fn find_next(
     if wrap {
         ft.chrg.cpMin = if down { 0 } else { -1 };
         ft.chrg.cpMax = if down { -1 } else { 0 };
-        let result = SendMessageW(hwnd_edit, EM_FINDTEXTEXW, WPARAM(flags.0 as usize), LPARAM(&mut ft as *mut _ as isize));
+        let result = SendMessageW(
+            hwnd_edit,
+            EM_FINDTEXTEXW,
+            WPARAM(flags.0 as usize),
+            LPARAM(&mut ft as *mut _ as isize),
+        );
         if result.0 != -1 {
             let mut sel = ft.chrgText;
             std::mem::swap(&mut sel.cpMin, &mut sel.cpMax);
-            SendMessageW(hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&mut sel as *mut _ as isize));
+            SendMessageW(
+                hwnd_edit,
+                EM_EXSETSEL,
+                WPARAM(0),
+                LPARAM(&mut sel as *mut _ as isize),
+            );
             SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
             SetFocus(hwnd_edit);
             return true;
@@ -222,8 +266,13 @@ unsafe fn replace_selection_if_match(
     flags: FINDREPLACE_FLAGS,
 ) -> bool {
     let mut cr = CHARRANGE { cpMin: 0, cpMax: 0 };
-    SendMessageW(hwnd_edit, EM_EXGETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize));
-    
+    SendMessageW(
+        hwnd_edit,
+        EM_EXGETSEL,
+        WPARAM(0),
+        LPARAM(&mut cr as *mut _ as isize),
+    );
+
     if cr.cpMin == cr.cpMax {
         return false;
     }
@@ -234,9 +283,14 @@ unsafe fn replace_selection_if_match(
         lpstrText: PCWSTR(wide_search.as_ptr()),
         chrgText: CHARRANGE { cpMin: 0, cpMax: 0 },
     };
-    
-    let res = SendMessageW(hwnd_edit, EM_FINDTEXTEXW, WPARAM(flags.0 as usize), LPARAM(&mut ft as *mut _ as isize));
-    
+
+    let res = SendMessageW(
+        hwnd_edit,
+        EM_FINDTEXTEXW,
+        WPARAM(flags.0 as usize),
+        LPARAM(&mut ft as *mut _ as isize),
+    );
+
     if res.0 == cr.cpMin as isize && ft.chrgText.cpMax == cr.cpMax {
         let replace_wide = to_wide(replace);
         SendMessageW(
@@ -264,7 +318,7 @@ pub unsafe fn replace_all(
     let mut start = 0i32;
     let mut replaced_any = false;
     let replace_wide = to_wide(replace);
-    
+
     loop {
         let mut ft = FINDTEXTEXW {
             chrg: CHARRANGE {
@@ -275,10 +329,20 @@ pub unsafe fn replace_all(
             chrgText: CHARRANGE { cpMin: 0, cpMax: 0 },
         };
 
-        let res = SendMessageW(hwnd_edit, EM_FINDTEXTEXW, WPARAM(flags.0 as usize), LPARAM(&mut ft as *mut _ as isize));
-        
+        let res = SendMessageW(
+            hwnd_edit,
+            EM_FINDTEXTEXW,
+            WPARAM(flags.0 as usize),
+            LPARAM(&mut ft as *mut _ as isize),
+        );
+
         if res.0 != -1 {
-            SendMessageW(hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&mut ft.chrgText as *mut _ as isize));
+            SendMessageW(
+                hwnd_edit,
+                EM_EXSETSEL,
+                WPARAM(0),
+                LPARAM(&mut ft.chrgText as *mut _ as isize),
+            );
             SendMessageW(
                 hwnd_edit,
                 EM_REPLACESEL,
@@ -286,19 +350,29 @@ pub unsafe fn replace_all(
                 LPARAM(replace_wide.as_ptr() as isize),
             );
             replaced_any = true;
-            
+
             let mut cr = CHARRANGE { cpMin: 0, cpMax: 0 };
-            SendMessageW(hwnd_edit, EM_EXGETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize));
+            SendMessageW(
+                hwnd_edit,
+                EM_EXGETSEL,
+                WPARAM(0),
+                LPARAM(&mut cr as *mut _ as isize),
+            );
             start = cr.cpMax;
         } else {
             break;
         }
     }
-    
+
     if !replaced_any {
         let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
         let message = to_wide(text_not_found_message(language));
         let title = to_wide(find_title(language));
-        MessageBoxW(hwnd, PCWSTR(message.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONWARNING);
+        MessageBoxW(
+            hwnd,
+            PCWSTR(message.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            MB_OK | MB_ICONWARNING,
+        );
     }
 }

@@ -1,22 +1,24 @@
-use windows::core::{PCWSTR, w};
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM, LRESULT, HINSTANCE};
-use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, RegisterClassW,
-    SendMessageW, SetWindowLongPtrW, SetWindowTextW, SetForegroundWindow, MoveWindow,
-    GWLP_USERDATA, WM_CREATE, WM_DESTROY, WM_NCDESTROY, WM_CLOSE, WM_SIZE, WM_COMMAND, WM_SETFOCUS,
-    WM_KEYDOWN, WM_SETFONT,
-    WS_OVERLAPPEDWINDOW, WS_VISIBLE, WS_CHILD, WS_TABSTOP, WS_VSCROLL, WS_EX_CONTROLPARENT,
-    WS_EX_CLIENTEDGE, CW_USEDEFAULT, HMENU, WNDCLASSW,
-    IDCANCEL, BS_DEFPUSHBUTTON, ES_MULTILINE, ES_AUTOVSCROLL, ES_WANTRETURN,
-    CREATESTRUCTW, WINDOW_STYLE, LoadCursorW, IDC_ARROW
-};
-use windows::Win32::UI::Controls::{WC_BUTTON};
-use windows::Win32::Graphics::Gdi::{HBRUSH, COLOR_WINDOW, HFONT};
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus, VK_RETURN, VK_SHIFT, GetKeyState};
-use crate::{with_state};
+#![allow(clippy::if_same_then_else, clippy::collapsible_else_if)]
+use crate::accessibility::{normalize_to_crlf, to_wide};
 use crate::settings::Language;
-use crate::accessibility::{to_wide, normalize_to_crlf};
+use crate::with_state;
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Graphics::Gdi::{COLOR_WINDOW, HBRUSH, HFONT};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Controls::WC_BUTTON;
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetFocus, GetKeyState, SetFocus, VK_RETURN, VK_SHIFT,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    BS_DEFPUSHBUTTON, CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow,
+    ES_AUTOVSCROLL, ES_MULTILINE, ES_WANTRETURN, GWLP_USERDATA, GetWindowLongPtrW, HMENU,
+    IDC_ARROW, IDCANCEL, LoadCursorW, MoveWindow, RegisterClassW, SendMessageW,
+    SetForegroundWindow, SetWindowLongPtrW, SetWindowTextW, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
+    WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_NCDESTROY, WM_SETFOCUS, WM_SETFONT, WM_SIZE, WNDCLASSW,
+    WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
+    WS_VSCROLL,
+};
+use windows::core::{PCWSTR, w};
 
 const HELP_CLASS_NAME: &str = "NovapadHelp";
 const HELP_ID_OK: usize = 7003;
@@ -49,12 +51,11 @@ pub unsafe fn open_changelog(parent: HWND) {
 }
 
 unsafe fn open_window(parent: HWND, kind: HelpWindowKind) {
-    let existing = with_state(parent, |state| {
-        match kind {
-            HelpWindowKind::Guide => state.help_window,
-            HelpWindowKind::Changelog => state.changelog_window,
-        }
-    }).unwrap_or(HWND(0));
+    let existing = with_state(parent, |state| match kind {
+        HelpWindowKind::Guide => state.help_window,
+        HelpWindowKind::Changelog => state.changelog_window,
+    })
+    .unwrap_or(HWND(0));
     if existing.0 != 0 {
         SetForegroundWindow(existing);
         return;
@@ -63,7 +64,9 @@ unsafe fn open_window(parent: HWND, kind: HelpWindowKind) {
     let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
     let class_name = to_wide(HELP_CLASS_NAME);
     let wc = WNDCLASSW {
-        hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(LoadCursorW(None, IDC_ARROW).unwrap_or_default().0),
+        hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(
+            LoadCursorW(None, IDC_ARROW).unwrap_or_default().0,
+        ),
         hInstance: hinstance,
         lpszClassName: PCWSTR(class_name.as_ptr()),
         lpfnWndProc: Some(help_wndproc),
@@ -74,7 +77,11 @@ unsafe fn open_window(parent: HWND, kind: HelpWindowKind) {
 
     let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
     let title = to_wide(help_title(language, kind));
-    let init = Box::new(HelpWindowInit { parent, kind, language });
+    let init = Box::new(HelpWindowInit {
+        parent,
+        kind,
+        language,
+    });
     let init_ptr = Box::into_raw(init);
     let window = CreateWindowExW(
         WS_EX_CONTROLPARENT,
@@ -92,11 +99,9 @@ unsafe fn open_window(parent: HWND, kind: HelpWindowKind) {
     );
 
     if window.0 != 0 {
-        let _ = with_state(parent, |state| {
-            match kind {
-                HelpWindowKind::Guide => state.help_window = window,
-                HelpWindowKind::Changelog => state.changelog_window = window,
-            }
+        let _ = with_state(parent, |state| match kind {
+            HelpWindowKind::Guide => state.help_window = window,
+            HelpWindowKind::Changelog => state.changelog_window = window,
         });
         SetForegroundWindow(window);
     } else if !init_ptr.is_null() {
@@ -108,9 +113,9 @@ pub unsafe fn handle_tab(hwnd: HWND) {
     let _ = with_help_state(hwnd, |state| {
         let focus = GetFocus();
         let shift_down = (GetKeyState(VK_SHIFT.0 as i32) as u16) & 0x8000 != 0;
-        
+
         if shift_down {
-             if focus == state.edit {
+            if focus == state.edit {
                 SetFocus(state.ok_button);
             } else {
                 SetFocus(state.edit);
@@ -125,7 +130,12 @@ pub unsafe fn handle_tab(hwnd: HWND) {
     });
 }
 
-unsafe extern "system" fn help_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn help_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     match msg {
         WM_CREATE => {
             let create_struct = lparam.0 as *const CREATESTRUCTW;
@@ -157,7 +167,12 @@ unsafe extern "system" fn help_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpa
                 HINSTANCE(0),
                 None,
             );
-            SendMessageW(edit, windows::Win32::UI::Controls::EM_SETREADONLY, WPARAM(1), LPARAM(0));
+            SendMessageW(
+                edit,
+                windows::Win32::UI::Controls::EM_SETREADONLY,
+                WPARAM(1),
+                LPARAM(0),
+            );
             if hfont.0 != 0 {
                 let _ = SendMessageW(edit, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
             }
@@ -195,7 +210,12 @@ unsafe extern "system" fn help_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpa
             let _ = SetWindowTextW(edit, PCWSTR(content_wide.as_ptr()));
             SetFocus(edit);
 
-            let state = Box::new(HelpWindowState { parent, edit, ok_button, kind: init.kind });
+            let state = Box::new(HelpWindowState {
+                parent,
+                edit,
+                ok_button,
+                kind: init.kind,
+            });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
             LRESULT(0)
         }
@@ -234,13 +254,12 @@ unsafe extern "system" fn help_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpa
             LRESULT(0)
         }
         WM_DESTROY => {
-            let (parent, kind) = with_help_state(hwnd, |state| (state.parent, state.kind)).unwrap_or((HWND(0), HelpWindowKind::Guide));
+            let (parent, kind) = with_help_state(hwnd, |state| (state.parent, state.kind))
+                .unwrap_or((HWND(0), HelpWindowKind::Guide));
             if parent.0 != 0 {
-                let _ = with_state(parent, |state| {
-                    match kind {
-                        HelpWindowKind::Guide => state.help_window = HWND(0),
-                        HelpWindowKind::Changelog => state.changelog_window = HWND(0),
-                    }
+                let _ = with_state(parent, |state| match kind {
+                    HelpWindowKind::Guide => state.help_window = HWND(0),
+                    HelpWindowKind::Changelog => state.changelog_window = HWND(0),
                 });
             }
             LRESULT(0)

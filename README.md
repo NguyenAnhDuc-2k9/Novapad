@@ -62,6 +62,9 @@ and the ability to **create audiobooks directly from text using Microsoft voices
 ## Build Instructions
 
 Ensure you have the Rust toolchain installed.
+Formatting is enforced with `cargo fmt --check`.
+Clippy runs in CI as advisory (Windows/TTS glue still emits warnings).
+Core text logic is the target for stricter linting/tests.
 
 ```bash
 git clone https://github.com/Ambro86/Novapad.git

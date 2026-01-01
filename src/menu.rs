@@ -1,14 +1,14 @@
-use windows::core::{PCWSTR};
-use windows::Win32::Foundation::{HWND};
-use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreateMenu, DeleteMenu, DrawMenuBar, GetMenuItemCount,
-    SetMenu, HMENU, MENU_ITEM_FLAGS, MF_BYPOSITION,
-    MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING
-};
-use crate::settings::Language;
+#![allow(clippy::let_unit_value)]
 use crate::accessibility::to_wide;
+use crate::settings::Language;
 use crate::with_state;
 use std::path::Path;
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::WindowsAndMessaging::{
+    AppendMenuW, CreateMenu, DeleteMenu, DrawMenuBar, GetMenuItemCount, HMENU, MENU_ITEM_FLAGS,
+    MF_BYPOSITION, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, SetMenu,
+};
+use windows::core::PCWSTR;
 
 pub const IDM_FILE_NEW: usize = 1001;
 pub const IDM_FILE_OPEN: usize = 1002;
@@ -250,16 +250,46 @@ pub unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
     let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_OPEN, labels.file_open);
     let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_SAVE, labels.file_save);
     let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_SAVE_AS, labels.file_save_as);
-    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_SAVE_ALL, labels.file_save_all);
+    let _ = append_menu_string(
+        file_menu,
+        MF_STRING,
+        IDM_FILE_SAVE_ALL,
+        labels.file_save_all,
+    );
     let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_CLOSE, labels.file_close);
     let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
-    let _ = append_menu_string(file_menu, MF_POPUP, recent_menu.0 as usize, labels.file_recent);
+    let _ = append_menu_string(
+        file_menu,
+        MF_POPUP,
+        recent_menu.0 as usize,
+        labels.file_recent,
+    );
     let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
-    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_READ_START, labels.file_read_start);
-    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_READ_PAUSE, labels.file_read_pause);
-    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_READ_STOP, labels.file_read_stop);
+    let _ = append_menu_string(
+        file_menu,
+        MF_STRING,
+        IDM_FILE_READ_START,
+        labels.file_read_start,
+    );
+    let _ = append_menu_string(
+        file_menu,
+        MF_STRING,
+        IDM_FILE_READ_PAUSE,
+        labels.file_read_pause,
+    );
+    let _ = append_menu_string(
+        file_menu,
+        MF_STRING,
+        IDM_FILE_READ_STOP,
+        labels.file_read_stop,
+    );
     let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
-    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_AUDIOBOOK, labels.file_audiobook);
+    let _ = append_menu_string(
+        file_menu,
+        MF_STRING,
+        IDM_FILE_AUDIOBOOK,
+        labels.file_audiobook,
+    );
     let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_EXIT, labels.file_exit);
     let _ = append_menu_string(hmenu, MF_POPUP, file_menu.0 as usize, labels.menu_file);
@@ -269,46 +299,181 @@ pub unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
     let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_CUT, labels.edit_cut);
     let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_COPY, labels.edit_copy);
     let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_PASTE, labels.edit_paste);
-    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_SELECT_ALL, labels.edit_select_all);
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_SELECT_ALL,
+        labels.edit_select_all,
+    );
     let _ = AppendMenuW(edit_menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_FIND, labels.edit_find);
-    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_FIND_NEXT, labels.edit_find_next);
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_FIND_NEXT,
+        labels.edit_find_next,
+    );
     let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_REPLACE, labels.edit_replace);
     let _ = append_menu_string(hmenu, MF_POPUP, edit_menu.0 as usize, labels.menu_edit);
 
-    let _ = append_menu_string(view_menu, MF_STRING, IDM_VIEW_SHOW_VOICES, labels.view_show_voices);
-    let _ = append_menu_string(view_menu, MF_STRING, IDM_VIEW_SHOW_FAVORITES, labels.view_show_favorites);
+    let _ = append_menu_string(
+        view_menu,
+        MF_STRING,
+        IDM_VIEW_SHOW_VOICES,
+        labels.view_show_voices,
+    );
+    let _ = append_menu_string(
+        view_menu,
+        MF_STRING,
+        IDM_VIEW_SHOW_FAVORITES,
+        labels.view_show_favorites,
+    );
     let _ = AppendMenuW(view_menu, MF_SEPARATOR, 0, PCWSTR::null());
-    let _ = append_menu_string(view_color_menu, MF_STRING, IDM_VIEW_TEXT_COLOR_BLACK, labels.view_text_color_black);
-    let _ = append_menu_string(view_color_menu, MF_STRING, IDM_VIEW_TEXT_COLOR_DARK_BLUE, labels.view_text_color_dark_blue);
-    let _ = append_menu_string(view_color_menu, MF_STRING, IDM_VIEW_TEXT_COLOR_DARK_GREEN, labels.view_text_color_dark_green);
-    let _ = append_menu_string(view_color_menu, MF_STRING, IDM_VIEW_TEXT_COLOR_DARK_BROWN, labels.view_text_color_dark_brown);
-    let _ = append_menu_string(view_color_menu, MF_STRING, IDM_VIEW_TEXT_COLOR_DARK_GRAY, labels.view_text_color_dark_gray);
-    let _ = append_menu_string(view_color_menu, MF_STRING, IDM_VIEW_TEXT_COLOR_LIGHT_BLUE, labels.view_text_color_light_blue);
-    let _ = append_menu_string(view_color_menu, MF_STRING, IDM_VIEW_TEXT_COLOR_LIGHT_GREEN, labels.view_text_color_light_green);
-    let _ = append_menu_string(view_color_menu, MF_STRING, IDM_VIEW_TEXT_COLOR_LIGHT_BROWN, labels.view_text_color_light_brown);
-    let _ = append_menu_string(view_color_menu, MF_STRING, IDM_VIEW_TEXT_COLOR_LIGHT_GRAY, labels.view_text_color_light_gray);
-    let _ = append_menu_string(view_size_menu, MF_STRING, IDM_VIEW_TEXT_SIZE_SMALL, labels.view_text_size_small);
-    let _ = append_menu_string(view_size_menu, MF_STRING, IDM_VIEW_TEXT_SIZE_NORMAL, labels.view_text_size_normal);
-    let _ = append_menu_string(view_size_menu, MF_STRING, IDM_VIEW_TEXT_SIZE_LARGE, labels.view_text_size_large);
-    let _ = append_menu_string(view_size_menu, MF_STRING, IDM_VIEW_TEXT_SIZE_XLARGE, labels.view_text_size_xlarge);
-    let _ = append_menu_string(view_size_menu, MF_STRING, IDM_VIEW_TEXT_SIZE_XXLARGE, labels.view_text_size_xxlarge);
-    let _ = append_menu_string(view_menu, MF_POPUP, view_color_menu.0 as usize, labels.view_text_color);
-    let _ = append_menu_string(view_menu, MF_POPUP, view_size_menu.0 as usize, labels.view_text_size);
+    let _ = append_menu_string(
+        view_color_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_COLOR_BLACK,
+        labels.view_text_color_black,
+    );
+    let _ = append_menu_string(
+        view_color_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_COLOR_DARK_BLUE,
+        labels.view_text_color_dark_blue,
+    );
+    let _ = append_menu_string(
+        view_color_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_COLOR_DARK_GREEN,
+        labels.view_text_color_dark_green,
+    );
+    let _ = append_menu_string(
+        view_color_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_COLOR_DARK_BROWN,
+        labels.view_text_color_dark_brown,
+    );
+    let _ = append_menu_string(
+        view_color_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_COLOR_DARK_GRAY,
+        labels.view_text_color_dark_gray,
+    );
+    let _ = append_menu_string(
+        view_color_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_COLOR_LIGHT_BLUE,
+        labels.view_text_color_light_blue,
+    );
+    let _ = append_menu_string(
+        view_color_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_COLOR_LIGHT_GREEN,
+        labels.view_text_color_light_green,
+    );
+    let _ = append_menu_string(
+        view_color_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_COLOR_LIGHT_BROWN,
+        labels.view_text_color_light_brown,
+    );
+    let _ = append_menu_string(
+        view_color_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_COLOR_LIGHT_GRAY,
+        labels.view_text_color_light_gray,
+    );
+    let _ = append_menu_string(
+        view_size_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_SIZE_SMALL,
+        labels.view_text_size_small,
+    );
+    let _ = append_menu_string(
+        view_size_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_SIZE_NORMAL,
+        labels.view_text_size_normal,
+    );
+    let _ = append_menu_string(
+        view_size_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_SIZE_LARGE,
+        labels.view_text_size_large,
+    );
+    let _ = append_menu_string(
+        view_size_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_SIZE_XLARGE,
+        labels.view_text_size_xlarge,
+    );
+    let _ = append_menu_string(
+        view_size_menu,
+        MF_STRING,
+        IDM_VIEW_TEXT_SIZE_XXLARGE,
+        labels.view_text_size_xxlarge,
+    );
+    let _ = append_menu_string(
+        view_menu,
+        MF_POPUP,
+        view_color_menu.0 as usize,
+        labels.view_text_color,
+    );
+    let _ = append_menu_string(
+        view_menu,
+        MF_POPUP,
+        view_size_menu.0 as usize,
+        labels.view_text_size,
+    );
     let _ = append_menu_string(hmenu, MF_POPUP, view_menu.0 as usize, labels.menu_view);
 
-    let _ = append_menu_string(insert_menu, MF_STRING, IDM_INSERT_BOOKMARK, labels.insert_bookmark);
-    let _ = append_menu_string(insert_menu, MF_STRING, IDM_MANAGE_BOOKMARKS, labels.manage_bookmarks);
+    let _ = append_menu_string(
+        insert_menu,
+        MF_STRING,
+        IDM_INSERT_BOOKMARK,
+        labels.insert_bookmark,
+    );
+    let _ = append_menu_string(
+        insert_menu,
+        MF_STRING,
+        IDM_MANAGE_BOOKMARKS,
+        labels.manage_bookmarks,
+    );
     let _ = append_menu_string(hmenu, MF_POPUP, insert_menu.0 as usize, labels.menu_insert);
 
-    let _ = append_menu_string(tools_menu, MF_STRING, IDM_TOOLS_OPTIONS, labels.menu_options);
-    let _ = append_menu_string(tools_menu, MF_STRING, IDM_TOOLS_DICTIONARY, labels.menu_dictionary);
-    let _ = append_menu_string(tools_menu, MF_STRING, IDM_TOOLS_IMPORT_YOUTUBE, labels.menu_import_youtube);
+    let _ = append_menu_string(
+        tools_menu,
+        MF_STRING,
+        IDM_TOOLS_OPTIONS,
+        labels.menu_options,
+    );
+    let _ = append_menu_string(
+        tools_menu,
+        MF_STRING,
+        IDM_TOOLS_DICTIONARY,
+        labels.menu_dictionary,
+    );
+    let _ = append_menu_string(
+        tools_menu,
+        MF_STRING,
+        IDM_TOOLS_IMPORT_YOUTUBE,
+        labels.menu_import_youtube,
+    );
     let _ = append_menu_string(hmenu, MF_POPUP, tools_menu.0 as usize, labels.menu_tools);
 
     let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_GUIDE, labels.help_guide);
-    let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_CHANGELOG, labels.help_changelog);
-    let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_CHECK_UPDATES, labels.help_check_updates);
+    let _ = append_menu_string(
+        help_menu,
+        MF_STRING,
+        IDM_HELP_CHANGELOG,
+        labels.help_changelog,
+    );
+    let _ = append_menu_string(
+        help_menu,
+        MF_STRING,
+        IDM_HELP_CHECK_UPDATES,
+        labels.help_check_updates,
+    );
     let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_ABOUT, labels.help_about);
     let _ = append_menu_string(hmenu, MF_POPUP, help_menu.0 as usize, labels.menu_help);
 

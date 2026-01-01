@@ -1,18 +1,26 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+#![allow(
+    clippy::collapsible_if,
+    clippy::manual_pattern_char_comparison,
+    clippy::manual_range_contains,
+    clippy::needless_return,
+    clippy::unnecessary_cast,
+    clippy::unnecessary_mut_passed
+)]
 #![windows_subsystem = "windows"]
 
 mod accessibility;
 use accessibility::*;
 mod settings;
-use editor_manager::{Document};
+use editor_manager::Document;
 use settings::*;
 mod bookmarks;
 use bookmarks::*;
 mod tts_engine;
 use tts_engine::*;
-mod sapi5_engine;
-mod mf_encoder;
 mod file_handler;
+mod mf_encoder;
+mod sapi5_engine;
 use file_handler::*;
 mod menu;
 use menu::*;
@@ -31,7 +39,7 @@ use std::mem::size_of;
 
 use std::path::{Path, PathBuf};
 
-use std::sync::atomic::{AtomicBool};
+use std::sync::atomic::AtomicBool;
 
 use std::sync::Arc;
 
@@ -39,80 +47,56 @@ use chrono::Local;
 
 use serde::{Deserialize, Serialize};
 
-use windows::core::{w, PCWSTR, PWSTR};
+use windows::core::{PCWSTR, PWSTR, w};
 
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 
-use windows::Win32::Graphics::Gdi::{GetStockObject, HBRUSH, HFONT, COLOR_WINDOW, DEFAULT_GUI_FONT};
+use windows::Win32::Graphics::Gdi::{
+    COLOR_WINDOW, DEFAULT_GUI_FONT, GetStockObject, HBRUSH, HFONT,
+};
 
 use windows::Win32::System::DataExchange::COPYDATASTRUCT;
 
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, LoadLibraryW};
 
 use windows::Win32::UI::Controls::RichEdit::{
-
-    CHARRANGE, EM_EXSETSEL, EM_EXGETSEL, TEXTRANGEW, EM_GETTEXTRANGE
-
+    CHARRANGE, EM_EXGETSEL, EM_EXSETSEL, EM_GETTEXTRANGE, TEXTRANGEW,
 };
 
 use windows::Win32::UI::Controls::{
-
-    InitCommonControlsEx, ICC_TAB_CLASSES, INITCOMMONCONTROLSEX, NMHDR, TCM_GETCURSEL,
-
-    TCN_SELCHANGE, WC_TABCONTROLW, WC_COMBOBOXW, WC_STATIC, WC_BUTTON, BST_CHECKED,
-
+    BST_CHECKED, ICC_TAB_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx, NMHDR, TCM_GETCURSEL,
+    TCN_SELCHANGE, WC_BUTTON, WC_COMBOBOXW, WC_STATIC, WC_TABCONTROLW,
 };
 
-
-
 use windows::Win32::UI::Controls::Dialogs::{
-
-    FINDREPLACEW, FINDREPLACE_FLAGS, GetOpenFileNameW, GetSaveFileNameW,
-
-    OPENFILENAMEW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY, OFN_OVERWRITEPROMPT,
-
-    OFN_PATHMUSTEXIST,
-
+    FINDREPLACE_FLAGS, FINDREPLACEW, GetOpenFileNameW, GetSaveFileNameW, OFN_EXPLORER,
+    OFN_FILEMUSTEXIST, OFN_HIDEREADONLY, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
 };
 
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-
     EnableWindow, GetFocus, GetKeyState, SetFocus, VK_CONTROL, VK_F1, VK_F2, VK_F3, VK_F4, VK_F5,
-
-    VK_F6, VK_TAB, VK_SHIFT
-
+    VK_F6, VK_SHIFT, VK_TAB,
 };
 
 use windows::Win32::UI::Shell::{DragAcceptFiles, DragFinish, DragQueryFileW, HDROP};
 
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateAcceleratorTableW, CreateWindowExW,
-    DefWindowProcW, DestroyWindow, DispatchMessageW, FindWindowW,
-    GetMessageW, GetWindowLongPtrW, LoadCursorW, LoadIconW,
-    MessageBoxW, PostQuitMessage, RegisterClassW, SendMessageW,
-    RegisterWindowMessageW, SetForegroundWindow, SetWindowLongPtrW,
-    PostMessageW, WM_APP,
-    TranslateAcceleratorW, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
-    GWLP_USERDATA, CREATESTRUCTW, EN_CHANGE, CheckMenuItem, GetMenu, MF_BYCOMMAND,
-    MF_CHECKED, MF_UNCHECKED, MF_STRING, ShowWindow, SW_HIDE, SW_SHOW, WINDOW_STYLE, CBN_SELCHANGE,
-    CB_ADDSTRING, CB_RESETCONTENT, CB_SETCURSEL, CB_GETCURSEL, CB_GETITEMDATA,
-    CB_SETITEMDATA, CB_GETDROPPEDSTATE, CBS_DROPDOWNLIST, WM_SETFONT, BS_AUTOCHECKBOX,
-    BM_GETCHECK, BM_SETCHECK,
-    CreatePopupMenu, TrackPopupMenu, TPM_RIGHTBUTTON, WM_CONTEXTMENU, WM_NULL,
-    AppendMenuW, GetCursorPos,
-    HMENU, HCURSOR, HICON, IDC_ARROW, IDI_APPLICATION,
-    MB_ICONERROR, MB_ICONINFORMATION, MB_OK,
-    MSG, WM_CLOSE,
-    WM_COMMAND,
-    WM_CREATE, WM_DESTROY, WM_DROPFILES, WM_KEYDOWN, WM_NOTIFY, WM_SIZE, WM_TIMER, WNDCLASSW, WS_CHILD,
-    WS_CLIPCHILDREN, WS_OVERLAPPEDWINDOW, WS_VISIBLE, WS_TABSTOP, ACCEL, FVIRTKEY,
-    FCONTROL, FSHIFT, WM_SETFOCUS, WM_NCDESTROY, HACCEL, WM_UNDO, WM_CUT, WM_COPY,
-    WM_PASTE, WM_COPYDATA, KillTimer, SetTimer, SetWindowTextW, WS_EX_CLIENTEDGE, WM_NEXTDLGCTL,
+    ACCEL, AppendMenuW, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, CB_ADDSTRING, CB_GETCURSEL,
+    CB_GETDROPPEDSTATE, CB_GETITEMDATA, CB_RESETCONTENT, CB_SETCURSEL, CB_SETITEMDATA,
+    CBN_SELCHANGE, CBS_DROPDOWNLIST, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
+    CheckMenuItem, CreateAcceleratorTableW, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
+    DestroyWindow, DispatchMessageW, EN_CHANGE, FCONTROL, FSHIFT, FVIRTKEY, FindWindowW,
+    GWLP_USERDATA, GetCursorPos, GetMenu, GetMessageW, GetWindowLongPtrW, HACCEL, HCURSOR, HICON,
+    HMENU, IDC_ARROW, IDI_APPLICATION, KillTimer, LoadCursorW, LoadIconW, MB_ICONERROR,
+    MB_ICONINFORMATION, MB_OK, MF_BYCOMMAND, MF_CHECKED, MF_STRING, MF_UNCHECKED, MSG, MessageBoxW,
+    PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SW_HIDE, SW_SHOW,
+    SendMessageW, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowTextW, ShowWindow,
+    TPM_RIGHTBUTTON, TrackPopupMenu, TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE, WM_APP,
+    WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_COPY, WM_COPYDATA, WM_CREATE, WM_CUT, WM_DESTROY,
+    WM_DROPFILES, WM_KEYDOWN, WM_NCDESTROY, WM_NEXTDLGCTL, WM_NOTIFY, WM_NULL, WM_PASTE,
+    WM_SETFOCUS, WM_SETFONT, WM_SIZE, WM_TIMER, WM_UNDO, WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN,
+    WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
 };
-
-
-
-
 
 const WM_PDF_LOADED: u32 = WM_APP + 1;
 const WM_TTS_VOICES_LOADED: u32 = WM_APP + 2;
@@ -137,7 +121,9 @@ fn focus_editor(hwnd: HWND) {
         SetForegroundWindow(hwnd);
         if let Some(hwnd_edit) = with_state(hwnd, |state| {
             state.docs.get(state.current).map(|doc| doc.hwnd_edit)
-        }).flatten() {
+        })
+        .flatten()
+        {
             SetFocus(hwnd_edit);
             let _ = SendMessageW(hwnd_edit, WM_SETFOCUS, WPARAM(0), LPARAM(0));
             let _ = PostMessageW(hwnd, WM_NEXTDLGCTL, WPARAM(hwnd_edit.0 as usize), LPARAM(1));
@@ -172,16 +158,15 @@ pub(crate) fn log_debug(message: &str) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    if let Ok(mut log) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut log) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
         let _ = writeln!(log, "[{timestamp}] {message}");
     }
 }
-
-
-
-
-
 
 #[derive(Default)]
 pub(crate) struct AppState {
@@ -325,8 +310,8 @@ fn main() -> windows::core::Result<()> {
             app_windows::help_window::open_changelog(hwnd);
         }
 
-        let check_updates = with_state(hwnd, |state| state.settings.check_updates_on_startup)
-            .unwrap_or(true);
+        let check_updates =
+            with_state(hwnd, |state| state.settings.check_updates_on_startup).unwrap_or(true);
         if check_updates {
             updater::check_for_update(hwnd, false);
         }
@@ -365,7 +350,11 @@ fn main() -> windows::core::Result<()> {
             let _ = with_state(hwnd, |state| {
                 // Audiobook keyboard controls (ONLY if no secondary window is open)
                 if msg.message == WM_KEYDOWN {
-                    let is_audiobook = state.docs.get(state.current).map(|d| matches!(d.format, FileFormat::Audiobook)).unwrap_or(false);
+                    let is_audiobook = state
+                        .docs
+                        .get(state.current)
+                        .map(|d| matches!(d.format, FileFormat::Audiobook))
+                        .unwrap_or(false);
                     let secondary_open = state.bookmarks_window.0 != 0
                         || state.options_dialog.0 != 0
                         || state.help_window.0 != 0
@@ -374,7 +363,7 @@ fn main() -> windows::core::Result<()> {
                     let secondary_open = secondary_open
                         || state.dictionary_entry_dialog.0 != 0
                         || state.tts_tuning_dialog.0 != 0;
-                    
+
                     if is_audiobook && !secondary_open {
                         match handle_player_keyboard(&msg, state.settings.audiobook_skip_seconds) {
                             PlayerAction::TogglePause => {
@@ -405,9 +394,7 @@ fn main() -> windows::core::Result<()> {
                     handled = true;
                     return;
                 }
-                if state.replace_dialog.0 != 0
-                    && handle_accessibility(state.replace_dialog, &msg)
-                {
+                if state.replace_dialog.0 != 0 && handle_accessibility(state.replace_dialog, &msg) {
                     handled = true;
                     return;
                 }
@@ -446,21 +433,30 @@ fn main() -> windows::core::Result<()> {
                 }
 
                 if state.audiobook_progress.0 != 0 {
-                    if app_windows::audiobook_window::handle_navigation(state.audiobook_progress, &msg) {
+                    if app_windows::audiobook_window::handle_navigation(
+                        state.audiobook_progress,
+                        &msg,
+                    ) {
                         handled = true;
                         return;
                     }
                 }
 
                 if state.bookmarks_window.0 != 0 {
-                    if app_windows::bookmarks_window::handle_navigation(state.bookmarks_window, &msg) {
+                    if app_windows::bookmarks_window::handle_navigation(
+                        state.bookmarks_window,
+                        &msg,
+                    ) {
                         handled = true;
                         return;
                     }
                 }
 
                 if state.dictionary_window.0 != 0 {
-                    if app_windows::dictionary_window::handle_navigation(state.dictionary_window, &msg) {
+                    if app_windows::dictionary_window::handle_navigation(
+                        state.dictionary_window,
+                        &msg,
+                    ) {
                         handled = true;
                         return;
                     }
@@ -474,7 +470,10 @@ fn main() -> windows::core::Result<()> {
                 }
 
                 if state.tts_tuning_dialog.0 != 0 {
-                    if app_windows::tts_tuning_window::handle_navigation(state.tts_tuning_dialog, &msg) {
+                    if app_windows::tts_tuning_window::handle_navigation(
+                        state.tts_tuning_dialog,
+                        &msg,
+                    ) {
                         handled = true;
                         return;
                     }
@@ -632,7 +631,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 HINSTANCE(0),
                 None,
             );
-            for control in [label_engine, combo_engine, label_voice, combo_voice, checkbox_multilingual, label_favorites, combo_favorites] {
+            for control in [
+                label_engine,
+                combo_engine,
+                label_voice,
+                combo_voice,
+                checkbox_multilingual,
+                label_favorites,
+                combo_favorites,
+            ] {
                 if control.0 != 0 && hfont.0 != 0 {
                     let _ = SendMessageW(control, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
                 }
@@ -693,7 +700,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             if settings.show_favorite_panel {
                 set_favorites_panel_visible_internal(hwnd, true, false);
             }
-            
+
             let create_struct = lparam.0 as *const CREATESTRUCTW;
             let lp_create_params = (*create_struct).lpCreateParams as *const Option<String>;
             let file_to_open = if !lp_create_params.is_null() {
@@ -707,7 +714,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             } else {
                 editor_manager::new_document(hwnd);
             }
-            
+
             editor_manager::layout_children(hwnd);
             editor_manager::apply_text_limit_to_all_edits(hwnd);
             DragAcceptFiles(hwnd, true);
@@ -721,9 +728,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let _ = with_state(hwnd, |state| {
                 if let Some(doc) = state.docs.get(state.current) {
                     if matches!(doc.format, FileFormat::Audiobook) {
-                        unsafe { SetFocus(state.hwnd_tab); }
+                        unsafe {
+                            SetFocus(state.hwnd_tab);
+                        }
                     } else {
-                        unsafe { SetFocus(doc.hwnd_edit); }
+                        unsafe {
+                            SetFocus(doc.hwnd_edit);
+                        }
                     }
                 }
             });
@@ -816,9 +827,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     if current.id == session_id && state.settings.move_cursor_during_reading {
                         if let Some(doc) = state.docs.get(state.current) {
                             let new_pos = current.initial_caret_pos + offset;
-                            let mut cr = CHARRANGE { cpMin: new_pos, cpMax: new_pos };
+                            let mut cr = CHARRANGE {
+                                cpMin: new_pos,
+                                cpMax: new_pos,
+                            };
                             unsafe {
-                                SendMessageW(doc.hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize));
+                                SendMessageW(
+                                    doc.hwnd_edit,
+                                    EM_EXSETSEL,
+                                    WPARAM(0),
+                                    LPARAM(&mut cr as *mut _ as isize),
+                                );
                                 SendMessageW(doc.hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
                             }
                         }
@@ -846,7 +865,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }
             });
             if should_show {
-                let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+                let language =
+                    with_state(hwnd, |state| state.settings.language).unwrap_or_default();
                 show_error(hwnd, language, &message);
             } else {
                 log_debug(&format!(
@@ -859,12 +879,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             if lparam.0 == 0 {
                 return LRESULT(0);
             }
-            
+
             let _ = with_state(hwnd, |state| {
                 if state.audiobook_progress.0 != 0 {
-                     let _ = DestroyWindow(state.audiobook_progress);
-                     state.audiobook_progress = HWND(0);
-                     state.audiobook_cancel = None;
+                    let _ = DestroyWindow(state.audiobook_progress);
+                    state.audiobook_progress = HWND(0);
+                    state.audiobook_cancel = None;
                 }
                 if let Some(doc) = state.docs.get(state.current) {
                     SetFocus(doc.hwnd_edit);
@@ -879,8 +899,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 error_title(language)
             });
             let message = to_wide(&payload.message);
-            let flags = if payload.success { MB_OK | MB_ICONINFORMATION } else { MB_OK | MB_ICONERROR };
-            MessageBoxW(hwnd, PCWSTR(message.as_ptr()), PCWSTR(title.as_ptr()), flags);
+            let flags = if payload.success {
+                MB_OK | MB_ICONINFORMATION
+            } else {
+                MB_OK | MB_ICONERROR
+            };
+            MessageBoxW(
+                hwnd,
+                PCWSTR(message.as_ptr()),
+                PCWSTR(title.as_ptr()),
+                flags,
+            );
             LRESULT(0)
         }
         WM_FOCUS_EDITOR => {
@@ -1177,11 +1206,15 @@ unsafe fn cycle_favorite_voice(hwnd: HWND, direction: i32) {
     if favorites.is_empty() {
         return;
     }
-    let mut current_idx = favorites.iter().position(|fav| {
-        fav.engine == current_engine && fav.short_name == current_voice
-    });
+    let mut current_idx = favorites
+        .iter()
+        .position(|fav| fav.engine == current_engine && fav.short_name == current_voice);
     if current_idx.is_none() {
-        current_idx = Some(if direction >= 0 { 0 } else { favorites.len().saturating_sub(1) });
+        current_idx = Some(if direction >= 0 {
+            0
+        } else {
+            favorites.len().saturating_sub(1)
+        });
     }
     let idx = current_idx.unwrap_or(0);
     let len = favorites.len() as i32;
@@ -1191,7 +1224,9 @@ unsafe fn cycle_favorite_voice(hwnd: HWND, direction: i32) {
     } else if next_idx >= len {
         next_idx = 0;
     }
-    let Some(next_fav) = favorites.get(next_idx as usize).cloned() else { return; };
+    let Some(next_fav) = favorites.get(next_idx as usize).cloned() else {
+        return;
+    };
     if next_fav.engine == current_engine && next_fav.short_name == current_voice {
         return;
     }
@@ -1360,8 +1395,16 @@ unsafe fn update_voice_panel_menu_check(hwnd: HWND) {
     }
     let flags = if visible { MF_CHECKED } else { MF_UNCHECKED };
     let _ = CheckMenuItem(hmenu, IDM_VIEW_SHOW_VOICES as u32, (MF_BYCOMMAND | flags).0);
-    let fav_flags = if favorites_visible { MF_CHECKED } else { MF_UNCHECKED };
-    let _ = CheckMenuItem(hmenu, IDM_VIEW_SHOW_FAVORITES as u32, (MF_BYCOMMAND | fav_flags).0);
+    let fav_flags = if favorites_visible {
+        MF_CHECKED
+    } else {
+        MF_UNCHECKED
+    };
+    let _ = CheckMenuItem(
+        hmenu,
+        IDM_VIEW_SHOW_FAVORITES as u32,
+        (MF_BYCOMMAND | fav_flags).0,
+    );
 
     let color_items = [
         IDM_VIEW_TEXT_COLOR_BLACK,
@@ -1376,7 +1419,11 @@ unsafe fn update_voice_panel_menu_check(hwnd: HWND) {
     ];
     let selected_color = text_color_menu_id(text_color);
     for item in color_items {
-        let item_flags = if item == selected_color { MF_CHECKED } else { MF_UNCHECKED };
+        let item_flags = if item == selected_color {
+            MF_CHECKED
+        } else {
+            MF_UNCHECKED
+        };
         let _ = CheckMenuItem(hmenu, item as u32, (MF_BYCOMMAND | item_flags).0);
     }
 
@@ -1389,7 +1436,11 @@ unsafe fn update_voice_panel_menu_check(hwnd: HWND) {
     ];
     let selected_size = text_size_menu_id(text_size);
     for item in size_items {
-        let item_flags = if item == selected_size { MF_CHECKED } else { MF_UNCHECKED };
+        let item_flags = if item == selected_size {
+            MF_CHECKED
+        } else {
+            MF_UNCHECKED
+        };
         let _ = CheckMenuItem(hmenu, item as u32, (MF_BYCOMMAND | item_flags).0);
     }
 }
@@ -1404,25 +1455,32 @@ unsafe fn set_voice_panel_visible(hwnd: HWND, visible: bool) {
 }
 
 unsafe fn set_voice_panel_visible_internal(hwnd: HWND, visible: bool, persist: bool) {
-    let (label_engine, combo_engine, label_voice, combo_voice, checkbox_multilingual, changed) = match with_state(hwnd, |state| {
-        let changed = state.settings.show_voice_panel != visible;
-        state.voice_panel_visible = visible;
-        state.settings.show_voice_panel = visible;
-        (
-            state.voice_label_engine,
-            state.voice_combo_engine,
-            state.voice_label_voice,
-            state.voice_combo_voice,
-            state.voice_checkbox_multilingual,
-            changed,
-        )
-    }) {
-        Some(values) => values,
-        None => return,
-    };
+    let (label_engine, combo_engine, label_voice, combo_voice, checkbox_multilingual, changed) =
+        match with_state(hwnd, |state| {
+            let changed = state.settings.show_voice_panel != visible;
+            state.voice_panel_visible = visible;
+            state.settings.show_voice_panel = visible;
+            (
+                state.voice_label_engine,
+                state.voice_combo_engine,
+                state.voice_label_voice,
+                state.voice_combo_voice,
+                state.voice_checkbox_multilingual,
+                changed,
+            )
+        }) {
+            Some(values) => values,
+            None => return,
+        };
 
     let show = if visible { SW_SHOW } else { SW_HIDE };
-    for control in [label_engine, combo_engine, label_voice, combo_voice, checkbox_multilingual] {
+    for control in [
+        label_engine,
+        combo_engine,
+        label_voice,
+        combo_voice,
+        checkbox_multilingual,
+    ] {
         if control.0 != 0 {
             ShowWindow(control, show);
         }
@@ -1487,7 +1545,17 @@ unsafe fn set_favorites_panel_visible_internal(hwnd: HWND, visible: bool, persis
 }
 
 pub(crate) unsafe fn refresh_voice_panel(hwnd: HWND) {
-    let (voice_visible, label_engine, combo_engine, label_voice, combo_voice, checkbox_multilingual, favorites_visible, label_favorites, combo_favorites) = match with_state(hwnd, |state| {
+    let (
+        voice_visible,
+        label_engine,
+        combo_engine,
+        label_voice,
+        combo_voice,
+        checkbox_multilingual,
+        favorites_visible,
+        label_favorites,
+        combo_favorites,
+    ) = match with_state(hwnd, |state| {
         (
             state.voice_panel_visible,
             state.voice_label_engine,
@@ -1524,8 +1592,18 @@ pub(crate) unsafe fn refresh_voice_panel(hwnd: HWND) {
 
     if voice_visible && combo_engine.0 != 0 && combo_voice.0 != 0 {
         let _ = SendMessageW(combo_engine, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
-        let _ = SendMessageW(combo_engine, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(labels.engine_edge).as_ptr() as isize));
-        let _ = SendMessageW(combo_engine, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(labels.engine_sapi).as_ptr() as isize));
+        let _ = SendMessageW(
+            combo_engine,
+            CB_ADDSTRING,
+            WPARAM(0),
+            LPARAM(to_wide(labels.engine_edge).as_ptr() as isize),
+        );
+        let _ = SendMessageW(
+            combo_engine,
+            CB_ADDSTRING,
+            WPARAM(0),
+            LPARAM(to_wide(labels.engine_sapi).as_ptr() as isize),
+        );
         let engine_index = match settings.tts_engine {
             TtsEngine::Edge => 0,
             TtsEngine::Sapi5 => 1,
@@ -1535,7 +1613,11 @@ pub(crate) unsafe fn refresh_voice_panel(hwnd: HWND) {
         let _ = SendMessageW(
             checkbox_multilingual,
             BM_SETCHECK,
-            WPARAM(if settings.tts_only_multilingual { BST_CHECKED.0 as usize } else { 0 }),
+            WPARAM(if settings.tts_only_multilingual {
+                BST_CHECKED.0 as usize
+            } else {
+                0
+            }),
             LPARAM(0),
         );
         EnableWindow(checkbox_multilingual, is_edge);
@@ -1544,13 +1626,18 @@ pub(crate) unsafe fn refresh_voice_panel(hwnd: HWND) {
     }
 
     if voice_visible {
-        let voices = with_state(hwnd, |state| {
-            match settings.tts_engine {
-                TtsEngine::Edge => state.edge_voices.clone(),
-                TtsEngine::Sapi5 => state.sapi_voices.clone(),
-            }
-        }).unwrap_or_default();
-        populate_voice_panel_combo(combo_voice, &voices, &settings.tts_voice, settings.tts_only_multilingual, labels.voices_empty);
+        let voices = with_state(hwnd, |state| match settings.tts_engine {
+            TtsEngine::Edge => state.edge_voices.clone(),
+            TtsEngine::Sapi5 => state.sapi_voices.clone(),
+        })
+        .unwrap_or_default();
+        populate_voice_panel_combo(
+            combo_voice,
+            &voices,
+            &settings.tts_voice,
+            settings.tts_only_multilingual,
+            labels.voices_empty,
+        );
     }
     if favorites_visible {
         populate_favorites_combo(
@@ -1584,19 +1671,22 @@ unsafe fn refresh_voice_panel_voice_list(hwnd: HWND) {
     let _ = SendMessageW(
         checkbox_multilingual,
         BM_SETCHECK,
-        WPARAM(if settings.tts_only_multilingual { BST_CHECKED.0 as usize } else { 0 }),
+        WPARAM(if settings.tts_only_multilingual {
+            BST_CHECKED.0 as usize
+        } else {
+            0
+        }),
         LPARAM(0),
     );
     EnableWindow(checkbox_multilingual, is_edge);
     let multi_show = if is_edge { SW_SHOW } else { SW_HIDE };
     ShowWindow(checkbox_multilingual, multi_show);
 
-    let voices = with_state(hwnd, |state| {
-        match settings.tts_engine {
-            TtsEngine::Edge => state.edge_voices.clone(),
-            TtsEngine::Sapi5 => state.sapi_voices.clone(),
-        }
-    }).unwrap_or_default();
+    let voices = with_state(hwnd, |state| match settings.tts_engine {
+        TtsEngine::Edge => state.edge_voices.clone(),
+        TtsEngine::Sapi5 => state.sapi_voices.clone(),
+    })
+    .unwrap_or_default();
     populate_voice_panel_combo(
         combo_voice,
         &voices,
@@ -1607,7 +1697,14 @@ unsafe fn refresh_voice_panel_voice_list(hwnd: HWND) {
 }
 
 unsafe fn clear_voice_labels_if_hidden(hwnd: HWND) {
-    let (voice_visible, favorites_visible, label_engine, label_voice, checkbox_multilingual, label_favorites) = match with_state(hwnd, |state| {
+    let (
+        voice_visible,
+        favorites_visible,
+        label_engine,
+        label_voice,
+        checkbox_multilingual,
+        label_favorites,
+    ) = match with_state(hwnd, |state| {
         (
             state.voice_panel_visible,
             state.voice_favorites_visible,
@@ -1639,7 +1736,12 @@ unsafe fn populate_voice_panel_combo(
 ) {
     let _ = SendMessageW(combo_voice, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
     if voices.is_empty() {
-        let _ = SendMessageW(combo_voice, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(empty_label).as_ptr() as isize));
+        let _ = SendMessageW(
+            combo_voice,
+            CB_ADDSTRING,
+            WPARAM(0),
+            LPARAM(to_wide(empty_label).as_ptr() as isize),
+        );
         let _ = SendMessageW(combo_voice, CB_SETCURSEL, WPARAM(0), LPARAM(0));
         return;
     }
@@ -1651,9 +1753,20 @@ unsafe fn populate_voice_panel_combo(
             continue;
         }
         let label = format!("{} ({})", voice.short_name, voice.locale);
-        let idx = SendMessageW(combo_voice, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(&label).as_ptr() as isize)).0;
+        let idx = SendMessageW(
+            combo_voice,
+            CB_ADDSTRING,
+            WPARAM(0),
+            LPARAM(to_wide(&label).as_ptr() as isize),
+        )
+        .0;
         if idx >= 0 {
-            let _ = SendMessageW(combo_voice, CB_SETITEMDATA, WPARAM(idx as usize), LPARAM(voice_index as isize));
+            let _ = SendMessageW(
+                combo_voice,
+                CB_SETITEMDATA,
+                WPARAM(idx as usize),
+                LPARAM(voice_index as isize),
+            );
             if voice.short_name == selected {
                 selected_index = Some(combo_index);
             }
@@ -1677,7 +1790,12 @@ unsafe fn populate_favorites_combo(
 ) {
     let _ = SendMessageW(combo_favorites, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
     if favorites.is_empty() {
-        let _ = SendMessageW(combo_favorites, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(labels.favorites_empty).as_ptr() as isize));
+        let _ = SendMessageW(
+            combo_favorites,
+            CB_ADDSTRING,
+            WPARAM(0),
+            LPARAM(to_wide(labels.favorites_empty).as_ptr() as isize),
+        );
         let _ = SendMessageW(combo_favorites, CB_SETCURSEL, WPARAM(0), LPARAM(0));
         return;
     }
@@ -1688,9 +1806,20 @@ unsafe fn populate_favorites_combo(
             TtsEngine::Sapi5 => labels.engine_sapi,
         };
         let label = format!("{} ({})", fav.short_name, engine_label);
-        let cb_idx = SendMessageW(combo_favorites, CB_ADDSTRING, WPARAM(0), LPARAM(to_wide(&label).as_ptr() as isize)).0;
+        let cb_idx = SendMessageW(
+            combo_favorites,
+            CB_ADDSTRING,
+            WPARAM(0),
+            LPARAM(to_wide(&label).as_ptr() as isize),
+        )
+        .0;
         if cb_idx >= 0 {
-            let _ = SendMessageW(combo_favorites, CB_SETITEMDATA, WPARAM(cb_idx as usize), LPARAM(idx as isize));
+            let _ = SendMessageW(
+                combo_favorites,
+                CB_SETITEMDATA,
+                WPARAM(cb_idx as usize),
+                LPARAM(idx as isize),
+            );
             if fav.short_name == selected_voice && fav.engine == selected_engine {
                 selected_index = Some(cb_idx as usize);
             }
@@ -1711,7 +1840,11 @@ unsafe fn handle_voice_panel_engine_change(hwnd: HWND) {
         None => return,
     };
     let sel = SendMessageW(combo_engine, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
-    let new_engine = if sel == 1 { TtsEngine::Sapi5 } else { TtsEngine::Edge };
+    let new_engine = if sel == 1 {
+        TtsEngine::Sapi5
+    } else {
+        TtsEngine::Edge
+    };
     let (old_engine, old_voice) = with_state(hwnd, |state| {
         (state.settings.tts_engine, state.settings.tts_voice.clone())
     })
@@ -1740,7 +1873,8 @@ unsafe fn handle_voice_panel_engine_change(hwnd: HWND) {
 unsafe fn handle_voice_panel_voice_change(hwnd: HWND) {
     let engine = with_state(hwnd, |state| state.settings.tts_engine).unwrap_or_default();
     if let Some(voice_name) = current_voice_selection(hwnd, engine) {
-        let old_voice = with_state(hwnd, |state| state.settings.tts_voice.clone()).unwrap_or_default();
+        let old_voice =
+            with_state(hwnd, |state| state.settings.tts_voice.clone()).unwrap_or_default();
         if voice_name != old_voice {
             let _ = with_state(hwnd, |state| {
                 state.settings.tts_voice = voice_name;
@@ -1755,7 +1889,10 @@ unsafe fn handle_voice_panel_voice_change(hwnd: HWND) {
 
 unsafe fn handle_voice_panel_multilingual_toggle(hwnd: HWND) {
     let (checkbox, is_edge) = with_state(hwnd, |state| {
-        (state.voice_checkbox_multilingual, matches!(state.settings.tts_engine, TtsEngine::Edge))
+        (
+            state.voice_checkbox_multilingual,
+            matches!(state.settings.tts_engine, TtsEngine::Edge),
+        )
     })
     .unwrap_or((HWND(0), false));
     if checkbox.0 == 0 {
@@ -1764,7 +1901,8 @@ unsafe fn handle_voice_panel_multilingual_toggle(hwnd: HWND) {
     if !is_edge {
         return;
     }
-    let checked = SendMessageW(checkbox, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32 == BST_CHECKED.0;
+    let checked =
+        SendMessageW(checkbox, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32 == BST_CHECKED.0;
     let _ = with_state(hwnd, |state| {
         state.settings.tts_only_multilingual = checked;
     });
@@ -1776,7 +1914,10 @@ unsafe fn handle_voice_panel_multilingual_toggle(hwnd: HWND) {
 
 unsafe fn handle_voice_panel_favorite_change(hwnd: HWND) {
     let (combo_favorites, favorites) = with_state(hwnd, |state| {
-        (state.voice_combo_favorites, state.settings.favorite_voices.clone())
+        (
+            state.voice_combo_favorites,
+            state.settings.favorite_voices.clone(),
+        )
     })
     .unwrap_or((HWND(0), Vec::new()));
     if combo_favorites.0 == 0 || favorites.is_empty() {
@@ -1786,8 +1927,16 @@ unsafe fn handle_voice_panel_favorite_change(hwnd: HWND) {
     if sel < 0 {
         return;
     }
-    let fav_idx = SendMessageW(combo_favorites, CB_GETITEMDATA, WPARAM(sel as usize), LPARAM(0)).0 as usize;
-    let Some(fav) = favorites.get(fav_idx).cloned() else { return; };
+    let fav_idx = SendMessageW(
+        combo_favorites,
+        CB_GETITEMDATA,
+        WPARAM(sel as usize),
+        LPARAM(0),
+    )
+    .0 as usize;
+    let Some(fav) = favorites.get(fav_idx).cloned() else {
+        return;
+    };
     let (old_engine, old_voice) = with_state(hwnd, |state| {
         (state.settings.tts_engine, state.settings.tts_voice.clone())
     })
@@ -1823,13 +1972,17 @@ unsafe fn current_voice_selection(hwnd: HWND, engine: TtsEngine) -> Option<Strin
     if sel < 0 {
         return None;
     }
-    let voice_index = SendMessageW(combo_voice, CB_GETITEMDATA, WPARAM(sel as usize), LPARAM(0)).0 as usize;
+    let voice_index =
+        SendMessageW(combo_voice, CB_GETITEMDATA, WPARAM(sel as usize), LPARAM(0)).0 as usize;
     voices.get(voice_index).map(|v| v.short_name.clone())
 }
 
 unsafe fn current_favorite_selection(hwnd: HWND) -> Option<FavoriteVoice> {
     let (combo_favorites, favorites) = with_state(hwnd, |state| {
-        (state.voice_combo_favorites, state.settings.favorite_voices.clone())
+        (
+            state.voice_combo_favorites,
+            state.settings.favorite_voices.clone(),
+        )
     })?;
     if combo_favorites.0 == 0 || favorites.is_empty() {
         return None;
@@ -1838,7 +1991,13 @@ unsafe fn current_favorite_selection(hwnd: HWND) -> Option<FavoriteVoice> {
     if sel < 0 {
         return None;
     }
-    let fav_idx = SendMessageW(combo_favorites, CB_GETITEMDATA, WPARAM(sel as usize), LPARAM(0)).0 as usize;
+    let fav_idx = SendMessageW(
+        combo_favorites,
+        CB_GETITEMDATA,
+        WPARAM(sel as usize),
+        LPARAM(0),
+    )
+    .0 as usize;
     favorites.get(fav_idx).cloned()
 }
 
@@ -1855,11 +2014,21 @@ pub(crate) unsafe fn restart_tts_from_current_offset(hwnd: HWND) {
             }
         }
     });
-    let Some((hwnd_edit, pos)) = restart else { return; };
+    let Some((hwnd_edit, pos)) = restart else {
+        return;
+    };
     tts_engine::stop_tts_playback(hwnd);
     let pos = adjust_tts_restart_pos(hwnd_edit, pos);
-    let mut cr = CHARRANGE { cpMin: pos, cpMax: pos };
-    SendMessageW(hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize));
+    let mut cr = CHARRANGE {
+        cpMin: pos,
+        cpMax: pos,
+    };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXSETSEL,
+        WPARAM(0),
+        LPARAM(&mut cr as *mut _ as isize),
+    );
     tts_engine::start_tts_from_caret(hwnd);
 }
 
@@ -1905,8 +2074,14 @@ unsafe fn adjust_tts_restart_pos(hwnd_edit: HWND, pos: i32) -> i32 {
         break;
     }
 
-    let prev_is_word = prev.and_then(|idx| items.get(idx)).map(|v| v.2).unwrap_or(false);
-    let next_is_word = next.and_then(|idx| items.get(idx)).map(|v| v.2).unwrap_or(false);
+    let prev_is_word = prev
+        .and_then(|idx| items.get(idx))
+        .map(|v| v.2)
+        .unwrap_or(false);
+    let next_is_word = next
+        .and_then(|idx| items.get(idx))
+        .map(|v| v.2)
+        .unwrap_or(false);
     if prev_is_word && next_is_word {
         let mut idx = prev.unwrap();
         while idx > 0 && items[idx - 1].2 {
@@ -1940,9 +2115,15 @@ unsafe fn show_voice_context_menu(hwnd: HWND, target: HWND, lparam: LPARAM) {
             ctx_voice = Some(fav);
         }
     } else if target == combo_voice {
-        let Some(voice_name) = current_voice_selection(hwnd, engine) else { return; };
+        let Some(voice_name) = current_voice_selection(hwnd, engine) else {
+            return;
+        };
         let is_favorite = with_state(hwnd, |state| {
-            state.settings.favorite_voices.iter().any(|fav| fav.engine == engine && fav.short_name == voice_name)
+            state
+                .settings
+                .favorite_voices
+                .iter()
+                .any(|fav| fav.engine == engine && fav.short_name == voice_name)
         })
         .unwrap_or(false);
         if is_favorite {
@@ -1957,12 +2138,19 @@ unsafe fn show_voice_context_menu(hwnd: HWND, target: HWND, lparam: LPARAM) {
         return;
     }
 
-    let Some(ctx) = ctx_voice else { return; };
+    let Some(ctx) = ctx_voice else {
+        return;
+    };
     let menu = CreatePopupMenu().unwrap_or(HMENU(0));
     if menu.0 == 0 {
         return;
     }
-    let _ = AppendMenuW(menu, MF_STRING, action_id as usize, PCWSTR(to_wide(action_label).as_ptr()));
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
+        action_id as usize,
+        PCWSTR(to_wide(action_label).as_ptr()),
+    );
     let _ = with_state(hwnd, |state| {
         state.voice_context_voice = Some(ctx);
     });
@@ -1983,7 +2171,9 @@ unsafe fn show_voice_context_menu(hwnd: HWND, target: HWND, lparam: LPARAM) {
 
 unsafe fn handle_voice_context_favorite(hwnd: HWND, add: bool) {
     let ctx = with_state(hwnd, |state| state.voice_context_voice.clone()).unwrap_or(None);
-    let Some(fav) = ctx else { return; };
+    let Some(fav) = ctx else {
+        return;
+    };
     if add {
         add_favorite_voice(hwnd, fav.engine, &fav.short_name);
     } else {
@@ -1996,7 +2186,12 @@ unsafe fn handle_voice_context_favorite(hwnd: HWND, add: bool) {
 
 unsafe fn add_favorite_voice(hwnd: HWND, engine: TtsEngine, voice_name: &str) {
     let _ = with_state(hwnd, |state| {
-        if state.settings.favorite_voices.iter().any(|fav| fav.engine == engine && fav.short_name == voice_name) {
+        if state
+            .settings
+            .favorite_voices
+            .iter()
+            .any(|fav| fav.engine == engine && fav.short_name == voice_name)
+        {
             return;
         }
         state.settings.favorite_voices.push(FavoriteVoice {
@@ -2012,7 +2207,10 @@ unsafe fn add_favorite_voice(hwnd: HWND, engine: TtsEngine, voice_name: &str) {
 
 unsafe fn remove_favorite_voice(hwnd: HWND, engine: TtsEngine, voice_name: &str) {
     let _ = with_state(hwnd, |state| {
-        state.settings.favorite_voices.retain(|fav| !(fav.engine == engine && fav.short_name == voice_name));
+        state
+            .settings
+            .favorite_voices
+            .retain(|fav| !(fav.engine == engine && fav.short_name == voice_name));
     });
     if let Some(settings) = with_state(hwnd, |state| state.settings.clone()) {
         save_settings(settings);
@@ -2021,7 +2219,16 @@ unsafe fn remove_favorite_voice(hwnd: HWND, engine: TtsEngine, voice_name: &str)
 }
 
 unsafe fn handle_voice_panel_tab(hwnd: HWND) -> bool {
-    let (visible, combo_engine, combo_voice, checkbox_multilingual, combo_favorites, favorites_visible, is_edge, hwnd_tab) = match with_state(hwnd, |state| {
+    let (
+        visible,
+        combo_engine,
+        combo_voice,
+        checkbox_multilingual,
+        combo_favorites,
+        favorites_visible,
+        is_edge,
+        hwnd_tab,
+    ) = match with_state(hwnd, |state| {
         (
             state.voice_panel_visible,
             state.voice_combo_engine,
@@ -2056,9 +2263,12 @@ unsafe fn handle_voice_panel_tab(hwnd: HWND) -> bool {
     let (mut hwnd_edit, is_audiobook) = with_state(hwnd, |state| {
         let doc = state.docs.get(state.current);
         let hwnd_edit = doc.map(|d| d.hwnd_edit).unwrap_or(HWND(0));
-        let is_audiobook = doc.map(|d| matches!(d.format, FileFormat::Audiobook)).unwrap_or(false);
+        let is_audiobook = doc
+            .map(|d| matches!(d.format, FileFormat::Audiobook))
+            .unwrap_or(false);
         (hwnd_edit, is_audiobook)
-    }).unwrap_or((HWND(0), false));
+    })
+    .unwrap_or((HWND(0), false));
     if is_audiobook {
         hwnd_edit = hwnd_tab;
     }
@@ -2080,9 +2290,17 @@ unsafe fn handle_voice_panel_tab(hwnd: HWND) -> bool {
         }
         return true;
     }
-    let fallback_edit = if hwnd_edit.0 != 0 { hwnd_edit } else { hwnd_tab };
+    let fallback_edit = if hwnd_edit.0 != 0 {
+        hwnd_edit
+    } else {
+        hwnd_tab
+    };
     if focus == combo_engine {
-        let target = if shift_down { fallback_edit } else { combo_voice };
+        let target = if shift_down {
+            fallback_edit
+        } else {
+            combo_voice
+        };
         if target.0 != 0 {
             SetFocus(target);
             return true;
@@ -2119,7 +2337,11 @@ unsafe fn handle_voice_panel_tab(hwnd: HWND) -> bool {
     if favorites_visible && focus == combo_favorites {
         let target = if shift_down {
             if visible {
-                if is_edge { checkbox_multilingual } else { combo_voice }
+                if is_edge {
+                    checkbox_multilingual
+                } else {
+                    combo_voice
+                }
             } else {
                 fallback_edit
             }
@@ -2134,106 +2356,112 @@ unsafe fn handle_voice_panel_tab(hwnd: HWND) -> bool {
     false
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 unsafe fn create_accelerators() -> HACCEL {
     let virt = FCONTROL | FVIRTKEY;
     let virt_shift = FCONTROL | FSHIFT | FVIRTKEY;
     let mut accels = [
-        ACCEL { fVirt: virt, key: 'N' as u16, cmd: IDM_FILE_NEW as u16 },
-        ACCEL { fVirt: virt, key: 'O' as u16, cmd: IDM_FILE_OPEN as u16 },
-        ACCEL { fVirt: virt, key: 'S' as u16, cmd: IDM_FILE_SAVE as u16 },
-        ACCEL { fVirt: virt_shift, key: 'S' as u16, cmd: IDM_FILE_SAVE_ALL as u16 },
-        ACCEL { fVirt: virt, key: 'W' as u16, cmd: IDM_FILE_CLOSE as u16 },
-        ACCEL { fVirt: virt, key: 'F' as u16, cmd: IDM_EDIT_FIND as u16 },
-        ACCEL { fVirt: FVIRTKEY, key: VK_F3.0 as u16, cmd: IDM_EDIT_FIND_NEXT as u16 },
-        ACCEL { fVirt: virt, key: 'H' as u16, cmd: IDM_EDIT_REPLACE as u16 },
-        ACCEL { fVirt: virt, key: 'A' as u16, cmd: IDM_EDIT_SELECT_ALL as u16 },
-        ACCEL { fVirt: virt, key: VK_TAB.0 as u16, cmd: IDM_NEXT_TAB as u16 },
-        ACCEL { fVirt: FVIRTKEY, key: VK_F4.0 as u16, cmd: IDM_FILE_READ_PAUSE as u16 },
-        ACCEL { fVirt: FVIRTKEY, key: VK_F5.0 as u16, cmd: IDM_FILE_READ_START as u16 },
-        ACCEL { fVirt: FVIRTKEY, key: VK_F6.0 as u16, cmd: IDM_FILE_READ_STOP as u16 },
-        ACCEL { fVirt: virt, key: 'R' as u16, cmd: IDM_FILE_AUDIOBOOK as u16 },
-        ACCEL { fVirt: virt, key: 'Y' as u16, cmd: IDM_TOOLS_IMPORT_YOUTUBE as u16 },
-        ACCEL { fVirt: virt, key: 'B' as u16, cmd: IDM_INSERT_BOOKMARK as u16 },
+        ACCEL {
+            fVirt: virt,
+            key: 'N' as u16,
+            cmd: IDM_FILE_NEW as u16,
+        },
+        ACCEL {
+            fVirt: virt,
+            key: 'O' as u16,
+            cmd: IDM_FILE_OPEN as u16,
+        },
+        ACCEL {
+            fVirt: virt,
+            key: 'S' as u16,
+            cmd: IDM_FILE_SAVE as u16,
+        },
+        ACCEL {
+            fVirt: virt_shift,
+            key: 'S' as u16,
+            cmd: IDM_FILE_SAVE_ALL as u16,
+        },
+        ACCEL {
+            fVirt: virt,
+            key: 'W' as u16,
+            cmd: IDM_FILE_CLOSE as u16,
+        },
+        ACCEL {
+            fVirt: virt,
+            key: 'F' as u16,
+            cmd: IDM_EDIT_FIND as u16,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY,
+            key: VK_F3.0 as u16,
+            cmd: IDM_EDIT_FIND_NEXT as u16,
+        },
+        ACCEL {
+            fVirt: virt,
+            key: 'H' as u16,
+            cmd: IDM_EDIT_REPLACE as u16,
+        },
+        ACCEL {
+            fVirt: virt,
+            key: 'A' as u16,
+            cmd: IDM_EDIT_SELECT_ALL as u16,
+        },
+        ACCEL {
+            fVirt: virt,
+            key: VK_TAB.0 as u16,
+            cmd: IDM_NEXT_TAB as u16,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY,
+            key: VK_F4.0 as u16,
+            cmd: IDM_FILE_READ_PAUSE as u16,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY,
+            key: VK_F5.0 as u16,
+            cmd: IDM_FILE_READ_START as u16,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY,
+            key: VK_F6.0 as u16,
+            cmd: IDM_FILE_READ_STOP as u16,
+        },
+        ACCEL {
+            fVirt: virt,
+            key: 'R' as u16,
+            cmd: IDM_FILE_AUDIOBOOK as u16,
+        },
+        ACCEL {
+            fVirt: virt,
+            key: 'Y' as u16,
+            cmd: IDM_TOOLS_IMPORT_YOUTUBE as u16,
+        },
+        ACCEL {
+            fVirt: virt,
+            key: 'B' as u16,
+            cmd: IDM_INSERT_BOOKMARK as u16,
+        },
     ];
     CreateAcceleratorTableW(&mut accels).unwrap_or(HACCEL(0))
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 pub(crate) unsafe fn get_active_edit(hwnd: HWND) -> Option<HWND> {
-    with_state(hwnd, |state| state.docs.get(state.current).map(|doc| doc.hwnd_edit)).flatten()
+    with_state(hwnd, |state| {
+        state.docs.get(state.current).map(|doc| doc.hwnd_edit)
+    })
+    .flatten()
 }
 
-
-
-
-
-
-
 unsafe fn insert_bookmark(hwnd: HWND) {
-    let (hwnd_edit, path, format): (HWND, std::path::PathBuf, FileFormat) = match with_state(hwnd, |state| {
-        state.docs.get(state.current).and_then(|doc| {
-            doc.path.clone().map(|p| (doc.hwnd_edit, p, doc.format))
-        })
-    }) {
-        Some(Some(values)) => values,
-        _ => return,
-    };
+    let (hwnd_edit, path, format): (HWND, std::path::PathBuf, FileFormat) =
+        match with_state(hwnd, |state| {
+            state
+                .docs
+                .get(state.current)
+                .and_then(|doc| doc.path.clone().map(|p| (doc.hwnd_edit, p, doc.format)))
+        }) {
+            Some(Some(values)) => values,
+            _ => return,
+        };
 
     if matches!(format, FileFormat::Audiobook) {
         let (pos, snippet) = with_state(hwnd, |state| {
@@ -2245,11 +2473,15 @@ unsafe fn insert_bookmark(hwnd: HWND) {
                 };
                 let mins = current_total / 60;
                 let secs = current_total % 60;
-                (current_total as i32, format!("Posizione audio: {:02}:{:02}", mins, secs))
+                (
+                    current_total as i32,
+                    format!("Posizione audio: {:02}:{:02}", mins, secs),
+                )
             } else {
                 (0, "Audio non in riproduzione".to_string())
             }
-        }).unwrap_or((0, String::new()));
+        })
+        .unwrap_or((0, String::new()));
 
         let bookmark = Bookmark {
             position: pos,
@@ -2263,47 +2495,79 @@ unsafe fn insert_bookmark(hwnd: HWND) {
             list.push(bookmark);
             save_bookmarks(&state.bookmarks);
             state.bookmarks_window
-        }).unwrap_or(HWND(0));
+        })
+        .unwrap_or(HWND(0));
 
         if bookmarks_window.0 != 0 {
-            unsafe { app_windows::bookmarks_window::refresh_bookmarks_list(bookmarks_window); }
+            unsafe {
+                app_windows::bookmarks_window::refresh_bookmarks_list(bookmarks_window);
+            }
         }
         return;
     }
 
     let mut cr = CHARRANGE { cpMin: 0, cpMax: 0 };
-    unsafe { SendMessageW(hwnd_edit, EM_EXGETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize)); }
-    
+    unsafe {
+        SendMessageW(
+            hwnd_edit,
+            EM_EXGETSEL,
+            WPARAM(0),
+            LPARAM(&mut cr as *mut _ as isize),
+        );
+    }
+
     let pos = cr.cpMax;
-    
+
     // 1. Try to get up to 60 characters AFTER the cursor
     let mut buffer = vec![0u16; 62];
     let mut tr = TEXTRANGEW {
-        chrg: CHARRANGE { cpMin: pos, cpMax: pos + 60 },
+        chrg: CHARRANGE {
+            cpMin: pos,
+            cpMax: pos + 60,
+        },
         lpstrText: PWSTR(buffer.as_mut_ptr()),
     };
-    let copied = unsafe { SendMessageW(hwnd_edit, EM_GETTEXTRANGE, WPARAM(0), LPARAM(&mut tr as *mut _ as isize)).0 as usize };
+    let copied = unsafe {
+        SendMessageW(
+            hwnd_edit,
+            EM_GETTEXTRANGE,
+            WPARAM(0),
+            LPARAM(&mut tr as *mut _ as isize),
+        )
+        .0 as usize
+    };
     let mut snippet = String::from_utf16_lossy(&buffer[..copied]);
-    
+
     // Stop at the first newline
     if let Some(idx) = snippet.find(|c| c == '\r' || c == '\n') {
         snippet.truncate(idx);
     }
-    
+
     // 2. If the resulting snippet is empty (e.g. cursor at end of line), take text BEFORE the cursor
     if snippet.trim().is_empty() && pos > 0 {
         let start_pre = (pos - 60).max(0);
         let mut buffer_pre = vec![0u16; 62];
         let mut tr_pre = TEXTRANGEW {
-            chrg: CHARRANGE { cpMin: start_pre, cpMax: pos },
+            chrg: CHARRANGE {
+                cpMin: start_pre,
+                cpMax: pos,
+            },
             lpstrText: PWSTR(buffer_pre.as_mut_ptr()),
         };
-        let copied_pre = unsafe { SendMessageW(hwnd_edit, EM_GETTEXTRANGE, WPARAM(0), LPARAM(&mut tr_pre as *mut _ as isize)).0 as usize };
+        let copied_pre = unsafe {
+            SendMessageW(
+                hwnd_edit,
+                EM_GETTEXTRANGE,
+                WPARAM(0),
+                LPARAM(&mut tr_pre as *mut _ as isize),
+            )
+            .0 as usize
+        };
         let mut snippet_pre = String::from_utf16_lossy(&buffer_pre[..copied_pre]);
-        
+
         // Take text after the last newline in this prefix
         if let Some(idx) = snippet_pre.rfind(|c| c == '\r' || c == '\n') {
-            snippet_pre = snippet_pre[idx+1..].to_string();
+            snippet_pre = snippet_pre[idx + 1..].to_string();
         }
         snippet = snippet_pre;
     }
@@ -2320,42 +2584,43 @@ unsafe fn insert_bookmark(hwnd: HWND) {
         list.push(bookmark);
         save_bookmarks(&state.bookmarks);
         state.bookmarks_window
-    }).unwrap_or(HWND(0));
+    })
+    .unwrap_or(HWND(0));
 
     if bookmarks_window.0 != 0 {
-        unsafe { app_windows::bookmarks_window::refresh_bookmarks_list(bookmarks_window); }
+        unsafe {
+            app_windows::bookmarks_window::refresh_bookmarks_list(bookmarks_window);
+        }
     }
 }
 
-pub(crate) unsafe fn goto_first_bookmark(hwnd_edit: HWND, path: &Path, bookmarks: &BookmarkStore, format: FileFormat) {
+pub(crate) unsafe fn goto_first_bookmark(
+    hwnd_edit: HWND,
+    path: &Path,
+    bookmarks: &BookmarkStore,
+    format: FileFormat,
+) {
     let path_str = path.to_string_lossy().to_string();
     if let Some(list) = bookmarks.files.get(&path_str) {
         if let Some(bm) = list.first() {
             if matches!(format, FileFormat::Audiobook) {
                 // Audiobook position is handled by playback start
             } else {
-                let mut cr = CHARRANGE { cpMin: bm.position, cpMax: bm.position };
-                SendMessageW(hwnd_edit, EM_EXSETSEL, WPARAM(0), LPARAM(&mut cr as *mut _ as isize));
+                let mut cr = CHARRANGE {
+                    cpMin: bm.position,
+                    cpMax: bm.position,
+                };
+                SendMessageW(
+                    hwnd_edit,
+                    EM_EXSETSEL,
+                    WPARAM(0),
+                    LPARAM(&mut cr as *mut _ as isize),
+                );
                 SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
             }
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 pub(crate) unsafe fn rebuild_menus(hwnd: HWND) {
     let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
@@ -2385,7 +2650,9 @@ pub(crate) unsafe fn push_recent_file(hwnd: HWND, path: &Path) {
 
 unsafe fn open_recent_by_index(hwnd: HWND, index: usize) {
     let path = with_state(hwnd, |state| state.recent_files.get(index).cloned()).unwrap_or(None);
-    let Some(path) = path else { return; };
+    let Some(path) = path else {
+        return;
+    };
     let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
     if !path.exists() {
         show_error(hwnd, language, recent_missing_message(language));
@@ -2401,12 +2668,6 @@ unsafe fn open_recent_by_index(hwnd: HWND, index: usize) {
     open_document(hwnd, &path);
 }
 
-
-
-
-
-
-
 pub(crate) unsafe fn with_state<F, R>(hwnd: HWND, f: F) -> Option<R>
 where
     F: FnOnce(&mut AppState) -> R,
@@ -2419,14 +2680,14 @@ where
     }
 }
 
-
-
-
-
 pub(crate) unsafe fn open_pdf_document_async(hwnd: HWND, path: &Path) {
     let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
     let path_buf = path.to_path_buf();
-    let title = path.file_name().and_then(|s| s.to_str()).unwrap_or("File").to_string();
+    let title = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("File")
+        .to_string();
     let (hwnd_edit, new_index) = with_state(hwnd, |state| {
         let hwnd_edit = create_edit(
             hwnd,
@@ -2596,9 +2857,7 @@ pub(crate) fn pdf_loading_placeholder(frame: usize) -> String {
         "#".repeat(filled),
         "-".repeat(bar_width.saturating_sub(filled))
     );
-    format!(
-        "Caricamento PDF...\r\n\r\n[{bar}]\r\nAnalisi in corso {spinner}"
-    )
+    format!("Caricamento PDF...\r\n\r\n[{bar}]\r\nAnalisi in corso {spinner}")
 }
 
 unsafe fn handle_drop_files(hwnd: HWND, hdrop: HDROP) {
@@ -2617,8 +2876,6 @@ unsafe fn handle_drop_files(hwnd: HWND, hdrop: HDROP) {
     }
     DragFinish(hdrop);
 }
-
-
 
 unsafe fn next_tab_with_prompt(hwnd: HWND) {
     let (current, count) = match with_state(hwnd, |state| {
@@ -2644,11 +2901,7 @@ unsafe fn attempt_switch_to_selected_tab(hwnd: HWND) {
             return None;
         }
         let current = state.current;
-        Some((
-            current,
-            state.hwnd_tab,
-            state.docs.len(),
-        ))
+        Some((current, state.hwnd_tab, state.docs.len()))
     }) {
         Some(Some(values)) => values,
         _ => return,
@@ -2663,9 +2916,6 @@ unsafe fn attempt_switch_to_selected_tab(hwnd: HWND) {
     }
     select_tab(hwnd, sel);
 }
-
-
-
 
 fn suggested_filename_from_text(text: &str) -> Option<String> {
     let first_line = text.lines().next().unwrap_or("").trim();
@@ -2803,12 +3053,22 @@ unsafe fn save_file_dialog(hwnd: HWND, suggested_name: Option<&str>) -> Option<P
         let mut path = PathBuf::from(from_wide(file_buf.as_ptr()));
         if path.extension().is_none() {
             match ofn.nFilterIndex {
-                1 => { path.set_extension("txt"); },
-                2 => { path.set_extension("pdf"); },
-                3 => { path.set_extension("docx"); },
-                4 => { path.set_extension("xlsx"); },
-                5 => { path.set_extension("rtf"); },
-                _ => {},
+                1 => {
+                    path.set_extension("txt");
+                }
+                2 => {
+                    path.set_extension("pdf");
+                }
+                3 => {
+                    path.set_extension("docx");
+                }
+                4 => {
+                    path.set_extension("xlsx");
+                }
+                5 => {
+                    path.set_extension("rtf");
+                }
+                _ => {}
             }
         }
         Some(path)
@@ -2817,11 +3077,16 @@ unsafe fn save_file_dialog(hwnd: HWND, suggested_name: Option<&str>) -> Option<P
     }
 }
 
-pub(crate) unsafe fn save_audio_dialog(hwnd: HWND, suggested_name: Option<&str>) -> Option<PathBuf> {
+pub(crate) unsafe fn save_audio_dialog(
+    hwnd: HWND,
+    suggested_name: Option<&str>,
+) -> Option<PathBuf> {
     let mut file_buf = vec![0u16; 4096];
     if let Some(name) = suggested_name {
         let mut name_wide = to_wide(name);
-        if let Some(0) = name_wide.last() { name_wide.pop(); }
+        if let Some(0) = name_wide.last() {
+            name_wide.pop();
+        }
         let copy_len = name_wide.len().min(file_buf.len() - 1);
         file_buf[..copy_len].copy_from_slice(&name_wide[..copy_len]);
     }
@@ -2849,23 +3114,37 @@ pub(crate) unsafe fn save_audio_dialog(hwnd: HWND, suggested_name: Option<&str>)
     if GetSaveFileNameW(&mut ofn).as_bool() {
         let path = PathBuf::from(from_wide(file_buf.as_ptr()));
         let mut path = path;
-        if path.extension().is_none() { path.set_extension("mp3"); }
+        if path.extension().is_none() {
+            path.set_extension("mp3");
+        }
         Some(path)
-    } else { None }
+    } else {
+        None
+    }
 }
 
 pub(crate) unsafe fn show_error(hwnd: HWND, language: Language, message: &str) {
     log_debug(&format!("Error shown: {message}"));
     let wide = to_wide(message);
     let title = to_wide(error_title(language));
-    MessageBoxW(hwnd, PCWSTR(wide.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONERROR);
+    MessageBoxW(
+        hwnd,
+        PCWSTR(wide.as_ptr()),
+        PCWSTR(title.as_ptr()),
+        MB_OK | MB_ICONERROR,
+    );
 }
 
 pub(crate) unsafe fn show_info(hwnd: HWND, language: Language, message: &str) {
     log_debug(&format!("Info shown: {message}"));
     let wide = to_wide(message);
     let title = to_wide(info_title(language));
-    MessageBoxW(hwnd, PCWSTR(wide.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONINFORMATION);
+    MessageBoxW(
+        hwnd,
+        PCWSTR(wide.as_ptr()),
+        PCWSTR(title.as_ptr()),
+        MB_OK | MB_ICONINFORMATION,
+    );
 }
 
 pub(crate) unsafe fn send_open_file(hwnd: HWND, path: &str) -> bool {
@@ -2875,7 +3154,12 @@ pub(crate) unsafe fn send_open_file(hwnd: HWND, path: &str) -> bool {
         cbData: (wide.len() * std::mem::size_of::<u16>()) as u32,
         lpData: wide.as_ptr() as *mut std::ffi::c_void,
     };
-    SendMessageW(hwnd, WM_COPYDATA, WPARAM(0), LPARAM(&data as *const _ as isize));
+    SendMessageW(
+        hwnd,
+        WM_COPYDATA,
+        WPARAM(0),
+        LPARAM(&data as *const _ as isize),
+    );
     true
 }
 
@@ -2912,7 +3196,10 @@ fn save_recent_files(files: &[PathBuf]) {
         let _ = std::fs::create_dir_all(parent);
     }
     let store = RecentFileStore {
-        files: files.iter().map(|p| p.to_string_lossy().to_string()).collect(),
+        files: files
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect(),
     };
     if let Ok(json) = serde_json::to_string_pretty(&store) {
         let _ = std::fs::write(path, json);
