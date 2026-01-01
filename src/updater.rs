@@ -185,7 +185,9 @@ fn download_file(url: &str, target: &Path) -> Result<(), String> {
 
 fn launch_self_updater(current_exe: &Path, new_exe: &Path) -> io::Result<()> {
     let pid = std::process::id();
-    std::process::Command::new(current_exe)
+    let updater_exe = temp_updater_path(current_exe, pid)?;
+    std::fs::copy(current_exe, &updater_exe)?;
+    std::process::Command::new(updater_exe)
         .arg("--self-update")
         .arg("--pid")
         .arg(pid.to_string())
@@ -196,6 +198,16 @@ fn launch_self_updater(current_exe: &Path, new_exe: &Path) -> io::Result<()> {
         .arg("--restart")
         .spawn()?;
     Ok(())
+}
+
+fn temp_updater_path(current_exe: &Path, pid: u32) -> io::Result<PathBuf> {
+    let file_name = current_exe
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Invalid executable name"))?;
+    let mut path = std::env::temp_dir();
+    path.push(format!("{file_name}.updater.{pid}.exe"));
+    Ok(path)
 }
 
 pub(crate) fn run_self_update(args: &[String]) -> Result<(), String> {
