@@ -120,11 +120,15 @@ jobs:
 
         echo "file_count=$file_count" >> $GITHUB_OUTPUT
 
-    - name: Create release
+    - name: Create release (if missing)
       run: |
-        gh release create "${{ env.RELEASE_VERSION }}" \
-          --title "Novapad Release ${{ env.RELEASE_VERSION }}" \
-          --notes "Build: ${{ steps.get_run.outputs.run_id }} (${{ steps.get_run.outputs.run_sha }})"
+        if gh release view "${{ env.RELEASE_VERSION }}" >/dev/null 2>&1; then
+          echo "Release ${RELEASE_VERSION} already exists. Skipping creation."
+        else
+          gh release create "${{ env.RELEASE_VERSION }}" \
+            --title "Novapad Release ${{ env.RELEASE_VERSION }}" \
+            --notes "Build: ${{ steps.get_run.outputs.run_id }} (${{ steps.get_run.outputs.run_sha }})"
+        fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
