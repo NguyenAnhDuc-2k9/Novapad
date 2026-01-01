@@ -25,17 +25,22 @@
                  InstallScope="perMachine"
                  SummaryCodepage="!(loc.CargoPackagerCodepage)"/>
 
-        <!-- https://docs.microsoft.com/en-us/windows/win32/msi/reinstallmode -->
-        <Property Id="REINSTALLMODE" Value="amus" />
-
         {{#if allow_downgrades}}
-            <MajorUpgrade Schedule="afterInstallInitialize" AllowDowngrades="yes" />
+        <Upgrade Id="{{upgrade_code}}">
+            <UpgradeVersion Minimum="0.0.0" IncludeMinimum="yes" Maximum="{{version}}" IncludeMaximum="no" Property="WIX_UPGRADE_DETECTED" />
+        </Upgrade>
         {{else}}
-            <MajorUpgrade Schedule="afterInstallInitialize" DowngradeErrorMessage="!(loc.DowngradeErrorMessage)" AllowSameVersionUpgrades="yes" />
+        <Upgrade Id="{{upgrade_code}}">
+            <UpgradeVersion Minimum="0.0.0" IncludeMinimum="yes" Maximum="{{version}}" IncludeMaximum="no" Property="WIX_UPGRADE_DETECTED" />
+            <UpgradeVersion Minimum="{{version}}" IncludeMinimum="no" Property="WIX_DOWNGRADE_DETECTED" OnlyDetect="yes" />
+        </Upgrade>
+        <Condition Message="!(loc.DowngradeErrorMessage)">NOT WIX_DOWNGRADE_DETECTED</Condition>
         {{/if}}
 
         <InstallExecuteSequence>
             <RemoveShortcuts>Installed AND NOT UPGRADINGPRODUCTCODE</RemoveShortcuts>
+            <RemoveExistingProducts After="InstallInitialize">WIX_UPGRADE_DETECTED</RemoveExistingProducts>
+            <Custom Action="SetNovapadExePath" Before="WriteRegistryValues">NOT Installed</Custom>
         </InstallExecuteSequence>
 
         <Media Id="1" Cabinet="app.cab" EmbedCab="yes" />
@@ -56,6 +61,8 @@
         {{/if}}
         <Property Id="ARPNOREPAIR" Value="yes" Secure="yes" />
         <SetProperty Id="ARPNOMODIFY" Value="1" After="InstallValidate" Sequence="execute"/>
+        <Property Id="NOVAPAD_EXE_PATH" Secure="yes" />
+        <CustomAction Id="SetNovapadExePath" Property="NOVAPAD_EXE_PATH" Value="[INSTALLDIR]novapad.exe" />
 
         <!-- initialize with previous InstallDir -->
         <Property Id="INSTALLDIR">
@@ -73,20 +80,16 @@
             <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
 
             {{#unless license}}
-            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="2">1</Publish>
-            <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2">1</Publish>
-            <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="CustomizeDlg" Order="2">1</Publish>
-            <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="10">1</Publish>
-            <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="20">1</Publish>
-            <Publish Dialog="CustomizeDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" Order="2">1</Publish>
-            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="CustomizeDlg" Order="2">1</Publish>
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="CustomizeDlg" Order="2">1</Publish>
+            <Publish Dialog="CustomizeDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="3">1</Publish>
             {{/unless}}
         </UI>
 
         <UIRef Id="WixUI_FeatureTree" />
+        <UIRef Id="WixUI_ErrorProgressText" />
 
         <Directory Id="TARGETDIR" Name="SourceDir">
-            <Directory Id="DesktopFolder" Name="Desktop" />
+            <Directory Id="CommonDesktopFolder" Name="Desktop" />
             <Directory Id="$(var.PlatformProgramFilesFolder)" Name="PFiles">
                 <Directory Id="INSTALLDIR" Name="{{product_name}}"/>
             </Directory>
@@ -123,7 +126,7 @@
                 {{#each association.extensions as |ext| ~}}
                 <ProgId Id="{{../../product_name}}.{{ext}}" Description="{{association.description}}">
                     <Extension Id="{{ext}}">
-                        <Verb Id="open" Command="Open with {{../../product_name}}" Argument="&quot;%1&quot;" TargetFile="Path" />
+                        <Verb Id="open" Command="Open with {{../../product_name}}" Argument="&quot;%1&quot;" TargetProperty="NOVAPAD_EXE_PATH" />
                     </Extension>
                 </ProgId>
                 {{/each~}}
@@ -164,10 +167,10 @@
             </Component>
         </DirectoryRef>
 
-        <DirectoryRef Id="DesktopFolder">
+        <DirectoryRef Id="CommonDesktopFolder">
             <Component Id="ApplicationShortcutDesktop" Guid="*">
                 <Shortcut Id="ApplicationDesktopShortcut" Name="{{product_name}}" Description="Runs {{product_name}}" Target="[INSTALLDIR]novapad.exe" WorkingDirectory="INSTALLDIR" {{#if icon_path}}Icon="ProductIcon"{{/if}} />
-                <RemoveFolder Id="RemoveDesktopFolder" Directory="DesktopFolder" On="uninstall" />
+                <RemoveFolder Id="RemoveDesktopFolder" Directory="CommonDesktopFolder" On="uninstall" />
                 <RegistryValue Root="HKLM" Key="Software\\{{manufacturer}}\\{{product_name}}" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
             </Component>
         </DirectoryRef>
@@ -176,16 +179,21 @@
             <ComponentRef Id="RegistryEntries"/>
             <ComponentRef Id="Path"/>
             <ComponentRef Id="CMP_UninstallShortcut" />
-            {{#if file_associations}}
-            <ComponentRef Id="FileAssociations" />
-            <ComponentRef Id="ContextMenu" />
-            {{/if}}
             {{#each resource_file_ids as |id| ~}}<ComponentRef Id="{{ id }}"/>{{/each~}}
             {{#each binaries as |bin| ~}}<ComponentRef Id="{{ bin.id }}"/>{{/each~}}
 
-            <Feature Id="DesktopShortcutFeature" Title="Desktop Shortcut" Description="Create a desktop shortcut" Level="1" Absent="allow">
+            <Feature Id="DesktopShortcutFeature" Title="Desktop Shortcut" Description="Create a desktop shortcut" Level="1" Absent="allow" Display="expand">
                 <ComponentRef Id="ApplicationShortcutDesktop" />
             </Feature>
+
+            {{#if file_associations}}
+            <Feature Id="FileAssociationsFeature" Title="File Associations" Description="Associate file types with {{product_name}}" Level="1" Absent="allow" Display="expand">
+                <ComponentRef Id="FileAssociations" />
+            </Feature>
+            <Feature Id="ContextMenuFeature" Title="Context Menu" Description="Add 'Open with {{product_name}}' to the context menu" Level="1" Absent="allow" Display="expand">
+                <ComponentRef Id="ContextMenu" />
+            </Feature>
+            {{/if}}
         </Feature>
 
         <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLDIR]" After="CostFinalize"/>

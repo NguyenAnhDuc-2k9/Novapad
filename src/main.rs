@@ -2694,9 +2694,15 @@ fn is_reserved_filename(name: &str) -> bool {
 }
 
 unsafe fn open_file_dialog(hwnd: HWND) -> Option<PathBuf> {
-    let filter = to_wide(
-        "TXT (*.txt)\0*.txt\0PDF (*.pdf)\0*.pdf\0EPUB (*.epub)\0*.epub\0MP3 (*.mp3)\0*.mp3\0Word (*.doc;*.docx)\0*.doc;*.docx\0Excel (*.xls;*.xlsx)\0*.xls;*.xlsx\0RTF (*.rtf)\0*.rtf\0Tutti i file (*.*)\0*.*\0",
-    );
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    let filter = match language {
+        Language::Italian => to_wide(
+            "Tutti i formati supportati (*.txt;*.pdf;*.epub;*.mp3;*.doc;*.docx;*.xls;*.xlsx;*.rtf)\0*.txt;*.pdf;*.epub;*.mp3;*.doc;*.docx;*.xls;*.xlsx;*.rtf\0TXT (*.txt)\0*.txt\0PDF (*.pdf)\0*.pdf\0EPUB (*.epub)\0*.epub\0MP3 (*.mp3)\0*.mp3\0Word (*.doc;*.docx)\0*.doc;*.docx\0Excel (*.xls;*.xlsx)\0*.xls;*.xlsx\0RTF (*.rtf)\0*.rtf\0Tutti i file (*.*)\0*.*\0\0",
+        ),
+        Language::English => to_wide(
+            "All supported formats (*.txt;*.pdf;*.epub;*.mp3;*.doc;*.docx;*.xls;*.xlsx;*.rtf)\0*.txt;*.pdf;*.epub;*.mp3;*.doc;*.docx;*.xls;*.xlsx;*.rtf\0TXT (*.txt)\0*.txt\0PDF (*.pdf)\0*.pdf\0EPUB (*.epub)\0*.epub\0MP3 (*.mp3)\0*.mp3\0Word (*.doc;*.docx)\0*.doc;*.docx\0Excel (*.xls;*.xlsx)\0*.xls;*.xlsx\0RTF (*.rtf)\0*.rtf\0All files (*.*)\0*.*\0\0",
+        ),
+    };
     let mut file_buf = [0u16; 260];
     let mut ofn = OPENFILENAMEW {
         lStructSize: size_of::<OPENFILENAMEW>() as u32,
@@ -2704,6 +2710,7 @@ unsafe fn open_file_dialog(hwnd: HWND) -> Option<PathBuf> {
         lpstrFilter: PCWSTR(filter.as_ptr()),
         lpstrFile: PWSTR(file_buf.as_mut_ptr()),
         nMaxFile: file_buf.len() as u32,
+        nFilterIndex: 1,
         Flags: OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY,
         ..Default::default()
     };
@@ -2716,9 +2723,15 @@ unsafe fn open_file_dialog(hwnd: HWND) -> Option<PathBuf> {
 }
 
 unsafe fn save_file_dialog(hwnd: HWND, suggested_name: Option<&str>) -> Option<PathBuf> {
-    let filter = to_wide(
-        "TXT (*.txt)\0*.txt\0PDF (*.pdf)\0*.pdf\0EPUB (*.epub)\0*.epub\0Word (*.doc;*.docx)\0*.doc;*.docx\0Excel (*.xls;*.xlsx)\0*.xls;*.xlsx\0RTF (*.rtf)\0*.rtf\0Tutti i file (*.*)\0*.*\0",
-    );
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    let filter = match language {
+        Language::Italian => to_wide(
+            "TXT (*.txt)\0*.txt\0PDF (*.pdf)\0*.pdf\0EPUB (*.epub)\0*.epub\0Word (*.doc;*.docx)\0*.doc;*.docx\0Excel (*.xls;*.xlsx)\0*.xls;*.xlsx\0RTF (*.rtf)\0*.rtf\0Tutti i file (*.*)\0*.*\0\0",
+        ),
+        Language::English => to_wide(
+            "TXT (*.txt)\0*.txt\0PDF (*.pdf)\0*.pdf\0EPUB (*.epub)\0*.epub\0Word (*.doc;*.docx)\0*.doc;*.docx\0Excel (*.xls;*.xlsx)\0*.xls;*.xlsx\0RTF (*.rtf)\0*.rtf\0All files (*.*)\0*.*\0\0",
+        ),
+    };
     let mut file_buf = [0u16; 260];
     if let Some(name) = suggested_name {
         let mut idx = 0usize;
@@ -2767,8 +2780,17 @@ pub(crate) unsafe fn save_audio_dialog(hwnd: HWND, suggested_name: Option<&str>)
         let copy_len = name_wide.len().min(file_buf.len() - 1);
         file_buf[..copy_len].copy_from_slice(&name_wide[..copy_len]);
     }
-    let filter = to_wide("MP3 Files (*.mp3)\0*.mp3\0All Files (*.*)\0*.*\0\0");
-    let title = to_wide("Audiobook");
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    let (filter, title) = match language {
+        Language::Italian => (
+            to_wide("File MP3 (*.mp3)\0*.mp3\0Tutti i file (*.*)\0*.*\0\0"),
+            to_wide("Audiolibro"),
+        ),
+        Language::English => (
+            to_wide("MP3 Files (*.mp3)\0*.mp3\0All Files (*.*)\0*.*\0\0"),
+            to_wide("Audiobook"),
+        ),
+    };
     let mut ofn = OPENFILENAMEW {
         lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
         hwndOwner: hwnd,

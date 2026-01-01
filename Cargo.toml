@@ -13,12 +13,21 @@ publisher = "Ambrogio Riili"
 description = "A modern Notepad with PDF, DOCX, XLS and EPUB support and TTS capabilities."
 formats = ["nsis", "wix"]
 
+[[package.metadata.packager.file_associations]]
+extensions = ["txt", "doc", "docx", "epub", "pdf", "xls"]
+description = "Novapad Document"
+name = "Novapad Document"
+
 [[package.metadata.packager.binaries]]
 path = "novapad"
 main = true
 
 [package.metadata.packager.nsis]
 languages = ["Italian", "English"]
+template = "packager/nsis/installer.nsi"
+
+[package.metadata.packager.wix]
+template = "packager/wix/main.wxs"
 
 [dependencies]
 windows = { version = "0.54", features = [

@@ -1,0 +1,13 @@
+Guida per far passare la validazione MSI (ICE):
+
+1) Apri un Prompt dei comandi come Amministratore.
+2) Esegui:
+   msiexec /unregister
+   msiexec /regserver
+3) Riavvia Windows.
+4) Riprova:
+   cargo packager --release --format wix
+
+Se continua a fallire, possiamo usare il workaround con -sval:
+1) cargo packager --release --format wix
+2) .\scripts\build_msi.ps1

@@ -30,6 +30,14 @@ struct ProgressDialogState {
     hwnd_text: HWND,
     hwnd_cancel: HWND,
     total: usize,
+    language: Language,
+}
+
+fn progress_text(language: Language, pct: usize) -> String {
+    match language {
+        Language::Italian => format!("Creazione audiolibro in corso. Avanzamento: {}%", pct),
+        Language::English => format!("Creating audiobook. Progress: {}%", pct),
+    }
 }
 
 pub unsafe fn handle_navigation(hwnd: HWND, msg: &MSG) -> bool {
@@ -47,6 +55,12 @@ pub unsafe fn handle_navigation(hwnd: HWND, msg: &MSG) -> bool {
 pub unsafe fn open(parent: HWND, total: usize) -> HWND {
     let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
     let class_name = to_wide(PROGRESS_CLASS_NAME);
+    let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
+    let title = match language {
+        Language::Italian => "Creazione Audiolibro",
+        Language::English => "Creating Audiobook",
+    };
+    let title_w = to_wide(title);
     
     let wc = WNDCLASSW {
         hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(LoadCursorW(None, IDC_ARROW).unwrap_or_default().0),
@@ -61,7 +75,7 @@ pub unsafe fn open(parent: HWND, total: usize) -> HWND {
     let hwnd = CreateWindowExW(
         WS_EX_DLGMODALFRAME,
         PCWSTR(class_name.as_ptr()),
-        w!("Creazione Audiolibro"),
+        PCWSTR(title_w.as_ptr()),
         WS_POPUP | WS_CAPTION | WS_VISIBLE,
         CW_USEDEFAULT, CW_USEDEFAULT,
         300, 150,
@@ -101,12 +115,18 @@ unsafe extern "system" fn progress_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM,
     match msg {
         WM_CREATE => {
              let create_struct = lparam.0 as *const CREATESTRUCTW;
-             let _parent = HWND((*create_struct).lpCreateParams as isize);
+             let parent = HWND((*create_struct).lpCreateParams as isize);
+             let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
+             let label_text = progress_text(language, 0);
+             let cancel_text = match language {
+                 Language::Italian => "Annulla",
+                 Language::English => "Cancel",
+             };
              
              let label = CreateWindowExW(
                  Default::default(),
                  w!("EDIT"),
-                 w!("Creazione audiolibro in corso. Avanzamento: 0%"),
+                 PCWSTR(to_wide(&label_text).as_ptr()),
                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE((ES_CENTER | ES_READONLY) as u32),
                  20, 20, 240, 20,
                  hwnd, HMENU(0), HINSTANCE(0), None
@@ -124,13 +144,13 @@ unsafe extern "system" fn progress_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM,
              let hwnd_cancel = CreateWindowExW(
                  Default::default(),
                  WC_BUTTON,
-                 w!("Annulla"),
+                 PCWSTR(to_wide(cancel_text).as_ptr()),
                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
                  95, 80, 90, 28,
                  hwnd, HMENU(PROGRESS_ID_CANCEL as isize), HINSTANCE(0), None
              );
              
-             let state = Box::new(ProgressDialogState { hwnd_pb: pb, hwnd_text: label, hwnd_cancel, total: 0 }); 
+             let state = Box::new(ProgressDialogState { hwnd_pb: pb, hwnd_text: label, hwnd_cancel, total: 0, language }); 
              SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
              
              if label.0 != 0 {
@@ -159,7 +179,7 @@ unsafe extern "system" fn progress_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM,
                  let _ = SendMessageW(state.hwnd_pb, PBM_SETPOS, WPARAM(current), LPARAM(0));
                  if state.total > 0 {
                      let pct = (current * 100) / state.total;
-                     let text = format!("Creazione audiolibro in corso. Avanzamento: {}%", pct);
+                     let text = progress_text(state.language, pct);
                      let wide = to_wide(&text);
                      let _ = SetWindowTextW(state.hwnd_text, PCWSTR(wide.as_ptr()));
                  }
