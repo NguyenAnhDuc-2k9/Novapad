@@ -1099,6 +1099,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     app_windows::dictionary_window::open(hwnd);
                     LRESULT(0)
                 }
+                IDM_TOOLS_IMPORT_YOUTUBE => {
+                    log_debug("Menu: Import YouTube transcript");
+                    app_windows::youtube_transcript_window::import_youtube_transcript(hwnd);
+                    LRESULT(0)
+                }
                 IDM_HELP_GUIDE => {
                     log_debug("Menu: Guide");
                     app_windows::help_window::open(hwnd);
@@ -2171,6 +2176,7 @@ unsafe fn create_accelerators() -> HACCEL {
         ACCEL { fVirt: FVIRTKEY, key: VK_F5.0 as u16, cmd: IDM_FILE_READ_START as u16 },
         ACCEL { fVirt: FVIRTKEY, key: VK_F6.0 as u16, cmd: IDM_FILE_READ_STOP as u16 },
         ACCEL { fVirt: virt, key: 'R' as u16, cmd: IDM_FILE_AUDIOBOOK as u16 },
+        ACCEL { fVirt: virt, key: 'Y' as u16, cmd: IDM_TOOLS_IMPORT_YOUTUBE as u16 },
         ACCEL { fVirt: virt, key: 'B' as u16, cmd: IDM_INSERT_BOOKMARK as u16 },
     ];
     CreateAcceleratorTableW(&mut accels).unwrap_or(HACCEL(0))

@@ -54,6 +54,8 @@ and the ability to **create audiobooks directly from text using Microsoft voices
   - Set pitch, speed, and volume for voices (Microsoft and SAPI5), applied to reading and audiobook creation
 - **Modern Tech Stack**
   Written in Rust for safety, performance, and reliability.
+- **YouTube Transcript Import**
+  - Import YouTube captions with language selection and optional timestamps.
 
 ---
 

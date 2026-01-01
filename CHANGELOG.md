@@ -5,6 +5,7 @@
 - Added open-with-Novapad options and file associations for supported files during installation.
 - Improved message localization (errors, dialogs, audiobook export).
 - Added part selection when using "Split audiobook based on text", with a "Require the marker at line start" option.
+- Added YouTube transcript import with language selection, timestamp option, and improved focus handling.
 
 ## 0.5.1 - 2025-12-31
 - Automatic updates with confirmation, improved error handling and notifications.

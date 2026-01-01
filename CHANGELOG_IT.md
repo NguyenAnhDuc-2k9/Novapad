@@ -5,6 +5,7 @@
 - Aggiunte le opzioni "Apri con Novapad" e le associazioni per i file supportati durante l'installazione.
 - Migliorata la localizzazione dei messaggi (errori, dialoghi, esportazione audiolibro).
 - Aggiunta la selezione delle parti quando si usa "Dividi l'audiolibro in base al testo", con opzione "Il testo deve iniziare a capo".
+- Aggiunta l'importazione trascrizioni da YouTube con selezione lingua, opzione timestamp e gestione focus.
 
 ## 0.5.1 - 2025-12-31
 - Aggiornamento automatico con conferma, gestione errori e notifiche migliorate.

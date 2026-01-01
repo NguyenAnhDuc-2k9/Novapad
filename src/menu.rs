@@ -51,6 +51,7 @@ pub const IDM_VIEW_TEXT_SIZE_XXLARGE: usize = 6305;
 pub const IDM_FILE_RECENT_BASE: usize = 4000;
 pub const IDM_TOOLS_OPTIONS: usize = 5001;
 pub const IDM_TOOLS_DICTIONARY: usize = 5002;
+pub const IDM_TOOLS_IMPORT_YOUTUBE: usize = 5003;
 pub const IDM_HELP_GUIDE: usize = 7001;
 pub const IDM_HELP_ABOUT: usize = 7002;
 pub const IDM_HELP_CHECK_UPDATES: usize = 7003;
@@ -66,6 +67,7 @@ pub struct MenuLabels {
     pub menu_help: &'static str,
     pub menu_options: &'static str,
     pub menu_dictionary: &'static str,
+    pub menu_import_youtube: &'static str,
     pub view_text_color: &'static str,
     pub view_text_size: &'static str,
     pub view_text_color_black: &'static str,
@@ -124,6 +126,7 @@ pub fn menu_labels(language: Language) -> MenuLabels {
             menu_help: "&Aiuto",
             menu_options: "&Opzioni...",
             menu_dictionary: "&Dizionario",
+            menu_import_youtube: "Importa trascrizione da YouTube...\tCtrl+Y",
             view_text_color: "&Colore testo",
             view_text_size: "&Dimensioni testo",
             view_text_color_black: "&Nero",
@@ -179,6 +182,7 @@ pub fn menu_labels(language: Language) -> MenuLabels {
             menu_help: "&Help",
             menu_options: "&Options...",
             menu_dictionary: "&Dictionary",
+            menu_import_youtube: "Import YouTube transcript...\tCtrl+Y",
             view_text_color: "Text &color",
             view_text_size: "Text &size",
             view_text_color_black: "&Black",
@@ -299,6 +303,7 @@ pub unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
 
     let _ = append_menu_string(tools_menu, MF_STRING, IDM_TOOLS_OPTIONS, labels.menu_options);
     let _ = append_menu_string(tools_menu, MF_STRING, IDM_TOOLS_DICTIONARY, labels.menu_dictionary);
+    let _ = append_menu_string(tools_menu, MF_STRING, IDM_TOOLS_IMPORT_YOUTUBE, labels.menu_import_youtube);
     let _ = append_menu_string(hmenu, MF_POPUP, tools_menu.0 as usize, labels.menu_tools);
 
     let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_GUIDE, labels.help_guide);

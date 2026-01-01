@@ -55,6 +55,8 @@ e la possibilit… di **creare audiolibri direttamente dal testo utilizzando le 
   - Controlli per colore e dimensione del testo per una migliore lettura, con colori chiari/scuri e dimensioni grandi
 - **Regolazione voci**
   - Impostazioni di tono, velocita' e volume per le voci (Microsoft e SAPI5), valide per lettura e creazione audiolibri
+- **Importazione trascrizioni YouTube**
+  - Importa le trascrizioni con selezione lingua e timestamp opzionali.
 - **Tecnologia moderna**
   Scritto in Rust per garantire sicurezza, affidabilità e ottime prestazioni.
 
