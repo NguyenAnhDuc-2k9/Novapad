@@ -36,6 +36,7 @@ const OPTIONS_ID_MOVE_CURSOR: usize = 6009;
 const OPTIONS_ID_AUDIO_SKIP: usize = 6010;
 const OPTIONS_ID_AUDIO_SPLIT: usize = 6011;
 const OPTIONS_ID_AUDIO_SPLIT_TEXT: usize = 6013;
+const OPTIONS_ID_AUDIO_SPLIT_REQUIRE_NEWLINE: usize = 6016;
 const OPTIONS_ID_CHECK_UPDATES: usize = 6015;
 const OPTIONS_ID_OK: usize = 6005;
 const OPTIONS_ID_CANCEL: usize = 6006;
@@ -73,6 +74,7 @@ struct OptionsDialogState {
     combo_audio_split: HWND,
     label_audio_split_text: HWND,
     edit_audio_split_text: HWND,
+    checkbox_audio_split_requires_newline: HWND,
     checkbox_multilingual: HWND,
     button_tts_tuning: HWND,
     checkbox_split_on_newline: HWND,
@@ -97,6 +99,7 @@ struct OptionsLabels {
     label_audio_skip: &'static str,
     label_audio_split: &'static str,
     label_audio_split_text: &'static str,
+    label_audio_split_requires_newline: &'static str,
     lang_it: &'static str,
     lang_en: &'static str,
     open_new_tab: &'static str,
@@ -128,6 +131,7 @@ fn options_labels(language: Language) -> OptionsLabels {
             label_audio_skip: "Spostamento MP3 (frecce):",
             label_audio_split: "Dividi l'audiolibro in:",
             label_audio_split_text: "Testo per divisione:",
+            label_audio_split_requires_newline: "Il testo deve iniziare a capo",
             lang_it: "Italiano",
             lang_en: "Inglese",
             open_new_tab: "Apri file in nuovo tab",
@@ -156,6 +160,7 @@ fn options_labels(language: Language) -> OptionsLabels {
             label_audio_skip: "MP3 skip interval:",
             label_audio_split: "Split audiobook into:",
             label_audio_split_text: "Split marker text:",
+            label_audio_split_requires_newline: "Require the marker at line start",
             lang_it: "Italian",
             lang_en: "English",
             open_new_tab: "Open files in new tab",
@@ -306,6 +311,9 @@ unsafe extern "system" fn options_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             let edit_audio_split_text = CreateWindowExW(WS_EX_CLIENTEDGE, w!("EDIT"), PCWSTR::null(), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(ES_AUTOHSCROLL as u32), 170, y - 2, 300, 22, hwnd, HMENU(OPTIONS_ID_AUDIO_SPLIT_TEXT as isize), HINSTANCE(0), None);
             y += 34;
 
+            let checkbox_audio_split_requires_newline = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.label_audio_split_requires_newline).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32), 170, y, 300, 20, hwnd, HMENU(OPTIONS_ID_AUDIO_SPLIT_REQUIRE_NEWLINE as isize), HINSTANCE(0), None);
+            y += 24;
+
             let checkbox_split_on_newline = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.label_split_on_newline).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32), 170, y, 300, 20, hwnd, HMENU(OPTIONS_ID_SPLIT_ON_NEWLINE as isize), HINSTANCE(0), None);
             y += 24;
 
@@ -321,7 +329,7 @@ unsafe extern "system" fn options_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             let ok_button = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.ok).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32), 280, y, 90, 28, hwnd, HMENU(OPTIONS_ID_OK as isize), HINSTANCE(0), None);
             let cancel_button = CreateWindowExW(Default::default(), WC_BUTTON, PCWSTR(to_wide(labels.cancel).as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 380, y, 90, 28, hwnd, HMENU(OPTIONS_ID_CANCEL as isize), HINSTANCE(0), None);
 
-            for control in [label_lang, combo_lang, label_open, combo_open, label_tts_engine, combo_tts_engine, label_voice, combo_voice, label_audio_skip, combo_audio_skip, label_audio_split, combo_audio_split, label_audio_split_text, edit_audio_split_text, checkbox_multilingual, button_tts_tuning, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor, checkbox_check_updates, ok_button, cancel_button] {
+            for control in [label_lang, combo_lang, label_open, combo_open, label_tts_engine, combo_tts_engine, label_voice, combo_voice, label_audio_skip, combo_audio_skip, label_audio_split, combo_audio_split, label_audio_split_text, edit_audio_split_text, checkbox_audio_split_requires_newline, checkbox_multilingual, button_tts_tuning, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor, checkbox_check_updates, ok_button, cancel_button] {
                 if control.0 != 0 && hfont.0 != 0 {
                     let _ = SendMessageW(control, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
                 }
@@ -338,6 +346,7 @@ unsafe extern "system" fn options_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
                 combo_audio_split,
                 label_audio_split_text,
                 edit_audio_split_text,
+                checkbox_audio_split_requires_newline,
                 checkbox_multilingual,
                 button_tts_tuning,
                 checkbox_split_on_newline,
@@ -485,10 +494,10 @@ where
 }
 
 unsafe fn initialize_options_dialog(hwnd: HWND) {
-    let (parent, combo_lang, combo_open, combo_tts_engine, _combo_voice, combo_audio_skip, combo_audio_split, _label_audio_split_text, edit_audio_split_text, checkbox_multilingual, _button_tts_tuning, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor, checkbox_check_updates) = match with_options_state(hwnd, |state| {
+    let (parent, combo_lang, combo_open, combo_tts_engine, _combo_voice, combo_audio_skip, combo_audio_split, _label_audio_split_text, edit_audio_split_text, checkbox_audio_split_requires_newline, checkbox_multilingual, _button_tts_tuning, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor, checkbox_check_updates) = match with_options_state(hwnd, |state| {
         (
             state.parent, state.combo_lang, state.combo_open, state.combo_tts_engine, state.combo_voice, state.combo_audio_skip, state.combo_audio_split, state.label_audio_split_text, state.edit_audio_split_text,
-            state.checkbox_multilingual, state.button_tts_tuning, state.checkbox_split_on_newline, state.checkbox_word_wrap, state.checkbox_move_cursor, state.checkbox_check_updates
+            state.checkbox_audio_split_requires_newline, state.checkbox_multilingual, state.button_tts_tuning, state.checkbox_split_on_newline, state.checkbox_word_wrap, state.checkbox_move_cursor, state.checkbox_check_updates
         )
     }) {
         Some(values) => values,
@@ -526,6 +535,7 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
     let _ = SendMessageW(combo_tts_engine, CB_SETCURSEL, WPARAM(engine_index), LPARAM(0));
 
     let _ = SendMessageW(checkbox_multilingual, BM_SETCHECK, WPARAM(if settings.tts_only_multilingual { BST_CHECKED.0 as usize } else { 0 }), LPARAM(0));
+    let _ = SendMessageW(checkbox_audio_split_requires_newline, BM_SETCHECK, WPARAM(if settings.audiobook_split_text_requires_newline { BST_CHECKED.0 as usize } else { 0 }), LPARAM(0));
     let _ = SendMessageW(checkbox_split_on_newline, BM_SETCHECK, WPARAM(if settings.split_on_newline { BST_CHECKED.0 as usize } else { 0 }), LPARAM(0));
     let _ = SendMessageW(checkbox_word_wrap, BM_SETCHECK, WPARAM(if settings.word_wrap { BST_CHECKED.0 as usize } else { 0 }), LPARAM(0));
     let _ = SendMessageW(checkbox_move_cursor, BM_SETCHECK, WPARAM(if settings.move_cursor_during_reading { BST_CHECKED.0 as usize } else { 0 }), LPARAM(0));
@@ -609,8 +619,8 @@ unsafe fn populate_voice_combo(combo_voice: HWND, voices: &[VoiceInfo], selected
 }
 
 unsafe fn apply_options_dialog(hwnd: HWND) {
-    let (parent, combo_lang, combo_open, combo_tts_engine, combo_voice, combo_audio_skip, combo_audio_split, edit_audio_split_text, checkbox_multilingual, _button_tts_tuning, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor, checkbox_check_updates) = match with_options_state(hwnd, |state| {
-        (state.parent, state.combo_lang, state.combo_open, state.combo_tts_engine, state.combo_voice, state.combo_audio_skip, state.combo_audio_split, state.edit_audio_split_text, state.checkbox_multilingual, state.button_tts_tuning, state.checkbox_split_on_newline, state.checkbox_word_wrap, state.checkbox_move_cursor, state.checkbox_check_updates)
+    let (parent, combo_lang, combo_open, combo_tts_engine, combo_voice, combo_audio_skip, combo_audio_split, edit_audio_split_text, checkbox_audio_split_requires_newline, checkbox_multilingual, _button_tts_tuning, checkbox_split_on_newline, checkbox_word_wrap, checkbox_move_cursor, checkbox_check_updates) = match with_options_state(hwnd, |state| {
+        (state.parent, state.combo_lang, state.combo_open, state.combo_tts_engine, state.combo_voice, state.combo_audio_skip, state.combo_audio_split, state.edit_audio_split_text, state.checkbox_audio_split_requires_newline, state.checkbox_multilingual, state.button_tts_tuning, state.checkbox_split_on_newline, state.checkbox_word_wrap, state.checkbox_move_cursor, state.checkbox_check_updates)
     }) { Some(values) => values, None => return };
 
     let mut settings = with_state(parent, |state| state.settings.clone()).unwrap_or_default();
@@ -630,6 +640,7 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     settings.tts_engine = if engine_sel == 1 { TtsEngine::Sapi5 } else { TtsEngine::Edge };
 
     settings.tts_only_multilingual = SendMessageW(checkbox_multilingual, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32 == BST_CHECKED.0;
+    settings.audiobook_split_text_requires_newline = SendMessageW(checkbox_audio_split_requires_newline, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32 == BST_CHECKED.0;
     settings.split_on_newline = SendMessageW(checkbox_split_on_newline, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32 == BST_CHECKED.0;
     settings.word_wrap = SendMessageW(checkbox_word_wrap, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32 == BST_CHECKED.0;
     settings.move_cursor_during_reading = SendMessageW(checkbox_move_cursor, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32 == BST_CHECKED.0;
@@ -698,8 +709,8 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
 }
 
 unsafe fn update_audio_split_text_visibility(hwnd: HWND) {
-    let (combo_audio_split, label_audio_split_text, edit_audio_split_text) = match with_options_state(hwnd, |state| {
-        (state.combo_audio_split, state.label_audio_split_text, state.edit_audio_split_text)
+    let (combo_audio_split, label_audio_split_text, edit_audio_split_text, checkbox_audio_split_requires_newline) = match with_options_state(hwnd, |state| {
+        (state.combo_audio_split, state.label_audio_split_text, state.edit_audio_split_text, state.checkbox_audio_split_requires_newline)
     }) {
         Some(values) => values,
         None => return,
@@ -716,7 +727,9 @@ unsafe fn update_audio_split_text_visibility(hwnd: HWND) {
     let show = if selected { SW_SHOW } else { SW_HIDE };
     ShowWindow(label_audio_split_text, show);
     ShowWindow(edit_audio_split_text, show);
+    ShowWindow(checkbox_audio_split_requires_newline, show);
     EnableWindow(edit_audio_split_text, selected);
+    EnableWindow(checkbox_audio_split_requires_newline, selected);
 }
 
 pub(crate) fn ensure_voice_lists_loaded(hwnd: HWND, language: Language) {

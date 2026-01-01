@@ -664,45 +664,66 @@ fn normalize_newlines(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
 }
 
-fn split_text_by_marker(text: &str, marker: &str) -> Option<Vec<String>> {
-    if marker.trim().is_empty() {
-        return None;
-    }
+struct MarkerEntry {
+    pos: usize,
+    label: String,
+}
 
+fn marker_label_for_position(text: &str, pos: usize, marker: &str) -> String {
+    let start = text[..pos].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+    let end = text[pos..].find('\n').map(|idx| pos + idx).unwrap_or(text.len());
+    let line = text[start..end].trim();
+    if line.is_empty() { marker.to_string() } else { line.to_string() }
+}
+
+fn collect_marker_entries(text: &str, marker: &str, require_newline: bool) -> (String, Vec<MarkerEntry>) {
     let normalized = normalize_newlines(text);
-    let mut positions: Vec<usize> = Vec::new();
-
-    if normalized.starts_with(marker) {
-        positions.push(0);
+    if marker.trim().is_empty() {
+        return (normalized, Vec::new());
     }
 
-    let needle = format!("\n{marker}");
-    for (idx, _) in normalized.match_indices(&needle) {
-        positions.push(idx + 1);
+    let mut entries = Vec::new();
+    for (idx, _) in normalized.match_indices(marker) {
+        if require_newline {
+            if idx != 0 && !normalized[..idx].ends_with('\n') {
+                continue;
+            }
+        }
+        let label = marker_label_for_position(&normalized, idx, marker);
+        entries.push(MarkerEntry { pos: idx, label });
     }
 
-    positions.sort_unstable();
-    positions.dedup();
+    (normalized, entries)
+}
+
+fn split_text_by_positions(text: &str, positions: &[usize]) -> Option<Vec<String>> {
     if positions.is_empty() {
         return None;
     }
 
+    let mut positions = positions.to_vec();
+    positions.sort_unstable();
+    positions.dedup();
+
     let mut parts = Vec::new();
     let mut start = 0usize;
-    for pos in positions.iter().skip(1) {
-        if *pos > start && *pos <= normalized.len() {
-            parts.push(normalized[start..*pos].to_string());
+    for pos in positions.iter() {
+        if *pos == 0 {
+            continue;
+        }
+        if *pos > start && *pos <= text.len() {
+            parts.push(text[start..*pos].to_string());
             start = *pos;
         }
     }
-    if start <= normalized.len() {
-        parts.push(normalized[start..].to_string());
+    if start <= text.len() {
+        parts.push(text[start..].to_string());
     }
     Some(parts)
 }
 
-fn build_audiobook_parts_by_marker(text: &str, marker: &str, split_on_newline: bool, dictionary: &[DictionaryEntry]) -> Option<Vec<Vec<String>>> {
-    let parts_text = split_text_by_marker(text, marker)?;
+fn build_audiobook_parts_by_positions(text: &str, positions: &[usize], split_on_newline: bool, dictionary: &[DictionaryEntry]) -> Option<Vec<Vec<String>>> {
+    let parts_text = split_text_by_positions(text, positions)?;
     let mut parts_chunks = Vec::new();
 
     for part_text in parts_text {
@@ -852,13 +873,14 @@ pub fn start_audiobook(hwnd: HWND) {
         })
     };
 
-    let (split_on_newline, audiobook_split, audiobook_split_by_text, audiobook_split_text, tts_engine, dictionary, tts_rate, tts_pitch, tts_volume) = unsafe { 
+    let (split_on_newline, audiobook_split, audiobook_split_by_text, audiobook_split_text, audiobook_split_text_requires_newline, tts_engine, dictionary, tts_rate, tts_pitch, tts_volume) = unsafe { 
         with_state(hwnd, |state| {
             (
                 state.settings.split_on_newline,
                 state.settings.audiobook_split,
                 state.settings.audiobook_split_by_text,
                 state.settings.audiobook_split_text.clone(),
+                state.settings.audiobook_split_text_requires_newline,
                 state.settings.tts_engine,
                 state.settings.dictionary.clone(),
                 state.settings.tts_rate,
@@ -866,15 +888,28 @@ pub fn start_audiobook(hwnd: HWND) {
                 state.settings.tts_volume,
             )
         }) 
-    }.unwrap_or((true, 0, false, String::new(), TtsEngine::Edge, Vec::new(), 0, 0, 100));
+    }.unwrap_or((true, 0, false, String::new(), true, TtsEngine::Edge, Vec::new(), 0, 0, 100));
 
     let cleaned = strip_dashed_lines(&text);
     let mut split_parts = audiobook_split;
     let mut marker_parts: Option<Vec<Vec<String>>> = None;
     if audiobook_split_by_text {
-        marker_parts = build_audiobook_parts_by_marker(&cleaned, &audiobook_split_text, split_on_newline, &dictionary);
-        if marker_parts.is_none() {
+        let (normalized, entries) = collect_marker_entries(&cleaned, &audiobook_split_text, audiobook_split_text_requires_newline);
+        if entries.is_empty() {
             split_parts = 0;
+        } else {
+            let labels: Vec<String> = entries.iter().map(|entry| entry.label.clone()).collect();
+            let selected = crate::app_windows::marker_select_window::select_marker_entries(hwnd, &labels, language);
+            let Some(selected) = selected else { return; };
+            let positions: Vec<usize> = selected.iter().filter_map(|idx| entries.get(*idx).map(|e| e.pos)).collect();
+            if positions.is_empty() {
+                split_parts = 0;
+            } else {
+                marker_parts = build_audiobook_parts_by_positions(&normalized, &positions, split_on_newline, &dictionary);
+                if marker_parts.is_none() {
+                    split_parts = 0;
+                }
+            }
         }
     }
 
