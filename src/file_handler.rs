@@ -752,7 +752,9 @@ pub fn extract_rtf_text(bytes: &[u8]) -> String {
                                 }
                             }
                             "uc" => {
-                                if let Some(n) = num && n >= 0 {
+                                if let Some(n) = num
+                                    && n >= 0
+                                {
                                     uc_skip = n as usize;
                                 }
                             }

@@ -186,12 +186,10 @@ pub fn load_settings() -> AppSettings {
     };
     match serde_json::from_str(&data) {
         Ok(settings) => settings,
-        Err(_) => {
-            AppSettings {
-                language: system_language(),
-                ..Default::default()
-            }
-        }
+        Err(_) => AppSettings {
+            language: system_language(),
+            ..Default::default()
+        },
     }
 }
 
