@@ -198,6 +198,7 @@ pub(crate) struct AppState {
     replace_dialog: HWND,
     options_dialog: HWND,
     help_window: HWND,
+    changelog_window: HWND,
     bookmarks_window: HWND,
     dictionary_window: HWND,
     dictionary_entry_dialog: HWND,
@@ -349,6 +350,7 @@ fn main() -> windows::core::Result<()> {
                     let secondary_open = state.bookmarks_window.0 != 0
                         || state.options_dialog.0 != 0
                         || state.help_window.0 != 0
+                        || state.changelog_window.0 != 0
                         || state.dictionary_window.0 != 0;
                     let secondary_open = secondary_open
                         || state.dictionary_entry_dialog.0 != 0
@@ -400,6 +402,18 @@ fn main() -> windows::core::Result<()> {
                     }
 
                     if handle_accessibility(state.help_window, &msg) {
+                        handled = true;
+                        return;
+                    }
+                }
+                if state.changelog_window.0 != 0 {
+                    if msg.message == WM_KEYDOWN && msg.wParam.0 as u32 == VK_TAB.0 as u32 {
+                        app_windows::help_window::handle_tab(state.changelog_window);
+                        handled = true;
+                        return;
+                    }
+
+                    if handle_accessibility(state.changelog_window, &msg) {
                         handled = true;
                         return;
                     }
@@ -619,6 +633,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 replace_dialog: HWND(0),
                 options_dialog: HWND(0),
                 help_window: HWND(0),
+                changelog_window: HWND(0),
                 bookmarks_window: HWND(0),
                 dictionary_window: HWND(0),
                 dictionary_entry_dialog: HWND(0),
@@ -1068,6 +1083,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 IDM_HELP_GUIDE => {
                     log_debug("Menu: Guide");
                     app_windows::help_window::open(hwnd);
+                    LRESULT(0)
+                }
+                IDM_HELP_CHANGELOG => {
+                    log_debug("Menu: Changelog");
+                    app_windows::help_window::open_changelog(hwnd);
                     LRESULT(0)
                 }
                 IDM_HELP_CHECK_UPDATES => {

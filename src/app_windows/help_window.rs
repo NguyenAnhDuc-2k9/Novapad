@@ -21,14 +21,40 @@ use crate::accessibility::{to_wide, normalize_to_crlf};
 const HELP_CLASS_NAME: &str = "NovapadHelp";
 const HELP_ID_OK: usize = 7003;
 
+#[derive(Clone, Copy)]
+enum HelpWindowKind {
+    Guide,
+    Changelog,
+}
+
+struct HelpWindowInit {
+    parent: HWND,
+    kind: HelpWindowKind,
+    language: Language,
+}
+
 struct HelpWindowState {
     parent: HWND,
     edit: HWND,
     ok_button: HWND,
+    kind: HelpWindowKind,
 }
 
 pub unsafe fn open(parent: HWND) {
-    let existing = with_state(parent, |state| state.help_window).unwrap_or(HWND(0));
+    open_window(parent, HelpWindowKind::Guide);
+}
+
+pub unsafe fn open_changelog(parent: HWND) {
+    open_window(parent, HelpWindowKind::Changelog);
+}
+
+unsafe fn open_window(parent: HWND, kind: HelpWindowKind) {
+    let existing = with_state(parent, |state| {
+        match kind {
+            HelpWindowKind::Guide => state.help_window,
+            HelpWindowKind::Changelog => state.changelog_window,
+        }
+    }).unwrap_or(HWND(0));
     if existing.0 != 0 {
         SetForegroundWindow(existing);
         return;
@@ -47,7 +73,9 @@ pub unsafe fn open(parent: HWND) {
     RegisterClassW(&wc);
 
     let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
-    let title = to_wide(help_title(language));
+    let title = to_wide(help_title(language, kind));
+    let init = Box::new(HelpWindowInit { parent, kind, language });
+    let init_ptr = Box::into_raw(init);
     let window = CreateWindowExW(
         WS_EX_CONTROLPARENT,
         PCWSTR(class_name.as_ptr()),
@@ -60,14 +88,19 @@ pub unsafe fn open(parent: HWND) {
         parent,
         None,
         hinstance,
-        Some(parent.0 as *const std::ffi::c_void),
+        Some(init_ptr as *const std::ffi::c_void),
     );
 
     if window.0 != 0 {
         let _ = with_state(parent, |state| {
-            state.help_window = window;
+            match kind {
+                HelpWindowKind::Guide => state.help_window = window,
+                HelpWindowKind::Changelog => state.changelog_window = window,
+            }
         });
         SetForegroundWindow(window);
+    } else if !init_ptr.is_null() {
+        let _ = Box::from_raw(init_ptr);
     }
 }
 
@@ -96,7 +129,12 @@ unsafe extern "system" fn help_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpa
     match msg {
         WM_CREATE => {
             let create_struct = lparam.0 as *const CREATESTRUCTW;
-            let parent = HWND((*create_struct).lpCreateParams as isize);
+            let init_ptr = (*create_struct).lpCreateParams as *mut HelpWindowInit;
+            if init_ptr.is_null() {
+                return LRESULT(0);
+            }
+            let init = Box::from_raw(init_ptr);
+            let parent = init.parent;
             let hfont = with_state(parent, |state| state.hfont).unwrap_or(HFONT(0));
 
             let edit = CreateWindowExW(
@@ -142,17 +180,22 @@ unsafe extern "system" fn help_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpa
                 let _ = SendMessageW(ok_button, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
             }
 
-            let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
-            let guide_content = match language {
-                Language::Italian => include_str!("../../guida.txt"),
-                Language::English => include_str!("../../guida_en.txt"),
+            let content = match init.kind {
+                HelpWindowKind::Guide => match init.language {
+                    Language::Italian => include_str!("../../guida.txt"),
+                    Language::English => include_str!("../../guida_en.txt"),
+                },
+                HelpWindowKind::Changelog => match init.language {
+                    Language::Italian => include_str!("../../CHANGELOG_IT.md"),
+                    Language::English => include_str!("../../CHANGELOG.md"),
+                },
             };
-            let guide = normalize_to_crlf(guide_content);
-            let guide_wide = to_wide(&guide);
-            let _ = SetWindowTextW(edit, PCWSTR(guide_wide.as_ptr()));
+            let content = normalize_to_crlf(content);
+            let content_wide = to_wide(&content);
+            let _ = SetWindowTextW(edit, PCWSTR(content_wide.as_ptr()));
             SetFocus(edit);
 
-            let state = Box::new(HelpWindowState { parent, edit, ok_button });
+            let state = Box::new(HelpWindowState { parent, edit, ok_button, kind: init.kind });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
             LRESULT(0)
         }
@@ -191,10 +234,13 @@ unsafe extern "system" fn help_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpa
             LRESULT(0)
         }
         WM_DESTROY => {
-            let parent = with_help_state(hwnd, |state| state.parent).unwrap_or(HWND(0));
+            let (parent, kind) = with_help_state(hwnd, |state| (state.parent, state.kind)).unwrap_or((HWND(0), HelpWindowKind::Guide));
             if parent.0 != 0 {
                 let _ = with_state(parent, |state| {
-                    state.help_window = HWND(0);
+                    match kind {
+                        HelpWindowKind::Guide => state.help_window = HWND(0),
+                        HelpWindowKind::Changelog => state.changelog_window = HWND(0),
+                    }
                 });
             }
             LRESULT(0)
@@ -237,9 +283,15 @@ where
     }
 }
 
-fn help_title(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Guida",
-        Language::English => "Guide",
+fn help_title(language: Language, kind: HelpWindowKind) -> &'static str {
+    match kind {
+        HelpWindowKind::Guide => match language {
+            Language::Italian => "Guida",
+            Language::English => "Guide",
+        },
+        HelpWindowKind::Changelog => match language {
+            Language::Italian => "Registro modifiche",
+            Language::English => "Changelog",
+        },
     }
 }
