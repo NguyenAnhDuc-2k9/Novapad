@@ -49,10 +49,10 @@ jobs:
       run: cargo build --verbose --release
 
     - name: Package Application (NSIS)
-      run: cargo packager --release --format nsis
+      run: cargo packager --release --formats nsis
 
     - name: Generate WiX Artifacts
-      run: cargo packager --release --format wix || cmd /c "exit /b 0"
+      run: cargo packager --release --formats wix || cmd /c "exit /b 0"
 
     - name: Package Application (MSI)
       shell: powershell
