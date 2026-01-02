@@ -1,0 +1,11 @@
+Ho implementato la funzione ?Pulisci testo Markdown? in Modifica con scorciatoia Ctrl+Shift+M.
+Cosa fa:
+- Rimuove markup Markdown base (titoli, quote, liste, **bold**, *italic*, ~~strike~~, `code`).
+- Converte i link [testo](url) in testo semplice.
+- Per immagini ![alt](url) mantiene solo il testo alt.
+- Aggiorna il testo dell?editor e marca il documento come modificato.
+
+File modificati:
+- src\menu.rs (nuova voce nel menu)
+- src\main.rs (handler e acceleratore)
+- src\editor_manager.rs (funzioni di pulizia)

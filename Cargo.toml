@@ -1,6 +1,6 @@
 [package]
 name = "novapad"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2024"
 authors = ["Ambrogio Riili"]
 description = "A modern Notepad with PDF, DOCX, XLS and EPUB support and TTS capabilities."
@@ -45,6 +45,7 @@ windows = { version = "0.54", features = [
   "Win32_UI_Controls_RichEdit",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
+  "Win32_UI_Shell_Common",
   "Win32_UI_WindowsAndMessaging",
 ] }
 encoding_rs = "0.8"

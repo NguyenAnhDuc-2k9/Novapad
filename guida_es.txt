@@ -1,0 +1,80 @@
+Guia del programa
+
+Archivo:
+Nuevo: Crear un nuevo documento (Ctrl+N).
+Abrir: Abrir archivos de texto, PDF, EPUB, MP3 y otros formatos compatibles (Ctrl+O).
+Guardar: Guardar el documento (Ctrl+S).
+Guardar como: Guardar con un nombre nuevo.
+Guardar todo: Guardar todos los documentos (Ctrl+Shift+S).
+Cerrar pestaña: Cerrar el documento actual (Ctrl+W).
+Archivos recientes: Abrir un archivo reciente.
+Lectura: F5 iniciar lectura, F4 pausar/reanudar, F6 detener lectura.
+Favoritos durante lectura: F1 voz favorita anterior, F2 voz favorita siguiente.
+Grabar audiolibro: Crear un archivo MP3 desde el texto actual (Ctrl+R).
+
+Audiolibros MP3:
+Cuando abres un archivo MP3, Novapad actua como reproductor de audio.
+Controles de teclado:
+- ESPACIO: Reproducir / Pausar.
+- FLECHA DERECHA: Avanzar 1 minuto.
+- FLECHA IZQUIERDA: Retroceder 1 minuto.
+- FLECHA ARRIBA: Subir volumen.
+- FLECHA ABAJO: Bajar volumen.
+- CTRL+B: Insertar un marcador en el tiempo exacto.
+
+Edicion:
+Deshacer: Deshacer la ultima operacion (Ctrl+Z).
+Cortar: Eliminar el texto seleccionado y copiarlo al portapapeles (Ctrl+X).
+Copiar: Copiar el texto seleccionado al portapapeles (Ctrl+C).
+Pegar: Pegar el contenido del portapapeles en el documento (Ctrl+V).
+Seleccionar todo: Seleccionar todo el texto (Ctrl+A).
+Buscar: Buscar texto en el documento (Ctrl+F).
+Buscar en archivos: Buscar texto en varios archivos (Ctrl+Shift+F).
+Buscar siguiente: Buscar la siguiente coincidencia (F3).
+Reemplazar: Buscar y reemplazar texto (Ctrl+H).
+Normalizar espacios en blanco: Recorta bordes y reduce lineas en blanco (Ctrl+Shift+Enter).
+Unir lineas: Une las lineas del parrafo o la seleccion (Ctrl+Shift+J).
+Salto de linea duro: Refluye el parrafo o la seleccion (Ctrl+Shift+H).
+Eliminar etiquetas Markdown: Quitar etiquetas Markdown (Ctrl+Shift+M).
+Ordenar lineas: Ordena las lineas del parrafo o la seleccion (Alt+Shift+O).
+Eliminar duplicados: Quita lineas duplicadas en el parrafo o la seleccion (Alt+Shift+K).
+Invertir lineas: Invierte el orden de las lineas en el parrafo o la seleccion (Alt+Shift+Z).
+Comentar lineas: Agrega un prefijo a las lineas del parrafo o la seleccion (Ctrl+Q).
+Descomentar lineas: Quita el prefijo de las lineas del parrafo o la seleccion (Ctrl+Shift+Q).
+Estadisticas de texto: Muestra caracteres, palabras y lineas en seleccion o documento (Alt+Y).
+
+Vista:
+Mostrar voces en el editor: Mostrar sistema de voces, lista de voces y filtro multilingue.
+Mostrar voces favoritas: Mostrar la lista de voces favoritas en el editor.
+Color del texto: Cambiar el color del texto (incluye colores claros y oscuros).
+Tamano del texto: Cambiar el tamano del texto (pequeno, normal, grande, extra grande, extra extra grande).
+Cuando la lista de entradas esta visible, al pulsar Tab se mueve el foco entre el editor y los controles, mientras que Shift+Tab lo mueve hacia atras.
+Para agregar o quitar una entrada de favoritos, usa Tab para ir a la lista y agregala o quitala con la tecla Aplicaciones o el boton derecho del mouse. En la lista de favoritos tambien puedes usar la tecla Aplicaciones para quitar entradas ya agregadas.
+Atajos de teclado: es posible pulsar F1 y F2 para cambiar entre entradas durante la lectura, recorriendo las agregadas a favoritos.
+
+Insertar:
+Insertar marcador: Guardar la posicion actual del cursor o el tiempo del audiolibro (Ctrl+B).
+Gestionar marcadores: Ver, saltar o eliminar marcadores guardados. Al abrir un archivo con marcadores, el cursor o la reproduccion se reanudara automaticamente desde el primero disponible.
+
+Herramientas:
+Diccionario: Abrir la ventana del diccionario. La lista se navega con las flechas Arriba/Abajo.
+Tab mueve a "Agregar entradas al diccionario", activado con Enter o Espacio.
+En la ventana agregar/editar: ingresa "Palabra original", luego Tab a "Palabra de reemplazo", luego OK o Cancelar (Enter/Espacio). ESC cancela.
+En la lista, Tab mueve a "Editar entrada" y "Eliminar entrada seleccionada".
+Los reemplazos del diccionario se aplican durante la lectura y la creacion de audiolibros y se guardan.
+Importar transcripcion de YouTube: pega una URL, elige el idioma e importa el texto al editor (Ctrl+Y). Opcional con marcas de tiempo.
+
+Opciones:
+Idioma: Cambiar el idioma de la interfaz.
+Comportamiento de apertura: Abrir archivos en nueva pestaña o nueva ventana.
+Voz: Elegir la voz para la lectura.
+Voces multilingues: Filtrar la lista de voces.
+Elegir tono, velocidad y volumen: Ajusta tono, velocidad y volumen para las voces (Microsoft y SAPI5). Se aplica a lectura y audiolibros.
+Mover cursor durante lectura: Seguir visualmente el texto mientras se lee.
+Division de audiolibro por texto: Divide cuando el marcador aparece al inicio de una linea (sensible a mayusculas: "Chapter" y "chapter" son diferentes). Ejemplo: con "Chapter" crea una parte por capitulo, incluyendo autor e introduccion en la primera parte hasta el primer Chapter. Si no se encuentra, no se divide.
+Otras opciones para dividir el audiolibro: 2 partes, 4 partes, 6 partes, 8 partes.
+
+Ayuda:
+Guia: Abrir esta guia.
+Changelog: Abrir la ventana de cambios.
+Acerca de: Mostrar la informacion del programa.

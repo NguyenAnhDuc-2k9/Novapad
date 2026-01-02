@@ -1,5 +1,6 @@
 #![allow(clippy::identity_op, clippy::fn_to_numeric_cast)]
 use crate::accessibility::{handle_accessibility, to_wide};
+use crate::i18n;
 use crate::settings::{Language, save_settings};
 use crate::with_state;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
@@ -41,115 +42,65 @@ struct TtsTuningState {
 }
 
 struct TtsTuningLabels {
-    title: &'static str,
-    label_speed: &'static str,
-    label_pitch: &'static str,
-    label_volume: &'static str,
-    ok: &'static str,
-    cancel: &'static str,
-    speed_items: [(&'static str, i32); 11],
-    pitch_items: [(&'static str, i32); 11],
-    volume_items: [(&'static str, i32); 12],
+    title: String,
+    label_speed: String,
+    label_pitch: String,
+    label_volume: String,
+    ok: String,
+    cancel: String,
+    speed_items: [(String, i32); 11],
+    pitch_items: [(String, i32); 11],
+    volume_items: [(String, i32); 12],
 }
 
 fn tuning_labels(language: Language) -> TtsTuningLabels {
-    match language {
-        Language::Italian => TtsTuningLabels {
-            title: "Tono, velocita' e volume",
-            label_speed: "Velocita':",
-            label_pitch: "Tono:",
-            label_volume: "Volume:",
-            ok: "OK",
-            cancel: "Annulla",
-            speed_items: [
-                ("Estremamente lenta", -30),
-                ("Molto lenta", -25),
-                ("Lenta", -20),
-                ("Poco lenta", -10),
-                ("Leggermente lenta", -5),
-                ("Normale", 0),
-                ("Leggermente veloce", 5),
-                ("Poco veloce", 10),
-                ("Veloce", 15),
-                ("Molto veloce", 20),
-                ("Velocissima", 30),
-            ],
-            pitch_items: [
-                ("Molto basso", -12),
-                ("Basso", -10),
-                ("Poco basso", -7),
-                ("Leggermente basso", -5),
-                ("Poco piu' basso", -2),
-                ("Normale", 0),
-                ("Poco piu' alto", 2),
-                ("Leggermente alto", 5),
-                ("Poco alto", 7),
-                ("Alto", 9),
-                ("Molto alto", 12),
-            ],
-            volume_items: [
-                ("Molto basso", 25),
-                ("Basso", 40),
-                ("Poco basso", 55),
-                ("Medio basso", 70),
-                ("Leggermente basso", 85),
-                ("Normale", 100),
-                ("Leggermente alto", 115),
-                ("Medio alto", 130),
-                ("Poco alto", 145),
-                ("Alto", 160),
-                ("Molto alto", 180),
-                ("Massimo", 200),
-            ],
-        },
-        Language::English => TtsTuningLabels {
-            title: "Pitch, speed, and volume",
-            label_speed: "Speed:",
-            label_pitch: "Pitch:",
-            label_volume: "Volume:",
-            ok: "OK",
-            cancel: "Cancel",
-            speed_items: [
-                ("Extremely slow", -30),
-                ("Very slow", -25),
-                ("Slow", -20),
-                ("A bit slow", -10),
-                ("Slightly slow", -5),
-                ("Normal", 0),
-                ("Slightly fast", 5),
-                ("A bit fast", 10),
-                ("Fast", 15),
-                ("Very fast", 20),
-                ("Super fast", 30),
-            ],
-            pitch_items: [
-                ("Very low", -12),
-                ("Low", -10),
-                ("A bit low", -7),
-                ("Slightly low", -5),
-                ("A little lower", -2),
-                ("Normal", 0),
-                ("A little higher", 2),
-                ("Slightly high", 5),
-                ("A bit high", 7),
-                ("High", 9),
-                ("Very high", 12),
-            ],
-            volume_items: [
-                ("Very low", 25),
-                ("Low", 40),
-                ("A bit low", 55),
-                ("Medium low", 70),
-                ("Slightly low", 85),
-                ("Normal", 100),
-                ("Slightly high", 115),
-                ("Medium high", 130),
-                ("A bit high", 145),
-                ("High", 160),
-                ("Very high", 180),
-                ("Maximum", 200),
-            ],
-        },
+    TtsTuningLabels {
+        title: i18n::tr(language, "tts_tuning.title"),
+        label_speed: i18n::tr(language, "tts_tuning.label_speed"),
+        label_pitch: i18n::tr(language, "tts_tuning.label_pitch"),
+        label_volume: i18n::tr(language, "tts_tuning.label_volume"),
+        ok: i18n::tr(language, "tts_tuning.ok"),
+        cancel: i18n::tr(language, "tts_tuning.cancel"),
+        speed_items: [
+            (i18n::tr(language, "tts_tuning.speed.extremely_slow"), -30),
+            (i18n::tr(language, "tts_tuning.speed.very_slow"), -25),
+            (i18n::tr(language, "tts_tuning.speed.slow"), -20),
+            (i18n::tr(language, "tts_tuning.speed.a_bit_slow"), -10),
+            (i18n::tr(language, "tts_tuning.speed.slightly_slow"), -5),
+            (i18n::tr(language, "tts_tuning.speed.normal"), 0),
+            (i18n::tr(language, "tts_tuning.speed.slightly_fast"), 5),
+            (i18n::tr(language, "tts_tuning.speed.a_bit_fast"), 10),
+            (i18n::tr(language, "tts_tuning.speed.fast"), 15),
+            (i18n::tr(language, "tts_tuning.speed.very_fast"), 20),
+            (i18n::tr(language, "tts_tuning.speed.super_fast"), 30),
+        ],
+        pitch_items: [
+            (i18n::tr(language, "tts_tuning.pitch.very_low"), -12),
+            (i18n::tr(language, "tts_tuning.pitch.low"), -10),
+            (i18n::tr(language, "tts_tuning.pitch.a_bit_low"), -7),
+            (i18n::tr(language, "tts_tuning.pitch.slightly_low"), -5),
+            (i18n::tr(language, "tts_tuning.pitch.a_little_lower"), -2),
+            (i18n::tr(language, "tts_tuning.pitch.normal"), 0),
+            (i18n::tr(language, "tts_tuning.pitch.a_little_higher"), 2),
+            (i18n::tr(language, "tts_tuning.pitch.slightly_high"), 5),
+            (i18n::tr(language, "tts_tuning.pitch.a_bit_high"), 7),
+            (i18n::tr(language, "tts_tuning.pitch.high"), 9),
+            (i18n::tr(language, "tts_tuning.pitch.very_high"), 12),
+        ],
+        volume_items: [
+            (i18n::tr(language, "tts_tuning.volume.very_low"), 25),
+            (i18n::tr(language, "tts_tuning.volume.low"), 40),
+            (i18n::tr(language, "tts_tuning.volume.a_bit_low"), 55),
+            (i18n::tr(language, "tts_tuning.volume.medium_low"), 70),
+            (i18n::tr(language, "tts_tuning.volume.slightly_low"), 85),
+            (i18n::tr(language, "tts_tuning.volume.normal"), 100),
+            (i18n::tr(language, "tts_tuning.volume.slightly_high"), 115),
+            (i18n::tr(language, "tts_tuning.volume.medium_high"), 130),
+            (i18n::tr(language, "tts_tuning.volume.a_bit_high"), 145),
+            (i18n::tr(language, "tts_tuning.volume.high"), 160),
+            (i18n::tr(language, "tts_tuning.volume.very_high"), 180),
+            (i18n::tr(language, "tts_tuning.volume.maximum"), 200),
+        ],
     }
 }
 
@@ -212,7 +163,7 @@ pub unsafe fn open(parent: HWND, owner: HWND) {
     let dialog = CreateWindowExW(
         WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME,
         PCWSTR(class_name.as_ptr()),
-        PCWSTR(to_wide(labels.title).as_ptr()),
+        PCWSTR(to_wide(&labels.title).as_ptr()),
         WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
         0,
         0,
@@ -293,7 +244,7 @@ unsafe extern "system" fn tts_tuning_wndproc(
             let label_speed = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.label_speed).as_ptr()),
+                PCWSTR(to_wide(&labels.label_speed).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
                 y,
@@ -323,7 +274,7 @@ unsafe extern "system" fn tts_tuning_wndproc(
             let label_pitch = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.label_pitch).as_ptr()),
+                PCWSTR(to_wide(&labels.label_pitch).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
                 y,
@@ -353,7 +304,7 @@ unsafe extern "system" fn tts_tuning_wndproc(
             let label_volume = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.label_volume).as_ptr()),
+                PCWSTR(to_wide(&labels.label_volume).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
                 y,
@@ -383,7 +334,7 @@ unsafe extern "system" fn tts_tuning_wndproc(
             let ok_button = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.ok).as_ptr()),
+                PCWSTR(to_wide(&labels.ok).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
                 200,
                 y,
@@ -397,7 +348,7 @@ unsafe extern "system" fn tts_tuning_wndproc(
             let cancel_button = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.cancel).as_ptr()),
+                PCWSTR(to_wide(&labels.cancel).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 290,
                 y,
@@ -553,7 +504,7 @@ where
     }
 }
 
-fn init_combo(hwnd: HWND, items: &[(&'static str, i32)]) {
+fn init_combo(hwnd: HWND, items: &[(String, i32)]) {
     unsafe {
         let _ = SendMessageW(hwnd, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
         for (label, value) in items {

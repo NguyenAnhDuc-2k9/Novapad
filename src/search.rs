@@ -122,8 +122,8 @@ pub unsafe fn handle_find_message(hwnd: HWND, lparam: LPARAM) {
         let replaced = replace_selection_if_match(hwnd_edit, &search, &replace, find_flags);
         let found = find_next(hwnd_edit, &search, find_flags, true);
         if !replaced && !found {
-            let message = to_wide(text_not_found_message(language));
-            let title = to_wide(find_title(language));
+            let message = to_wide(&text_not_found_message(language));
+            let title = to_wide(&find_title(language));
             MessageBoxW(
                 hwnd,
                 PCWSTR(message.as_ptr()),
@@ -137,8 +137,8 @@ pub unsafe fn handle_find_message(hwnd: HWND, lparam: LPARAM) {
     if find_next(hwnd_edit, &search, find_flags, true) {
         return;
     }
-    let message = to_wide(text_not_found_message(language));
-    let title = to_wide(find_title(language));
+    let message = to_wide(&text_not_found_message(language));
+    let title = to_wide(&find_title(language));
     MessageBoxW(
         hwnd,
         PCWSTR(message.as_ptr()),
@@ -162,8 +162,8 @@ pub unsafe fn find_next_from_state(hwnd: HWND) {
         return;
     };
     if !find_next(hwnd_edit, &search, flags, true) {
-        let message = to_wide(text_not_found_message(language));
-        let title = to_wide(find_title(language));
+        let message = to_wide(&text_not_found_message(language));
+        let title = to_wide(&find_title(language));
         MessageBoxW(
             hwnd,
             PCWSTR(message.as_ptr()),
@@ -366,8 +366,8 @@ pub unsafe fn replace_all(
 
     if !replaced_any {
         let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
-        let message = to_wide(text_not_found_message(language));
-        let title = to_wide(find_title(language));
+        let message = to_wide(&text_not_found_message(language));
+        let title = to_wide(&find_title(language));
         MessageBoxW(
             hwnd,
             PCWSTR(message.as_ptr()),

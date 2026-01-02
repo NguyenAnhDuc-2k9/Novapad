@@ -22,6 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{PCWSTR, w};
 
 use crate::accessibility::to_wide;
+use crate::i18n;
 use crate::settings::Language;
 use crate::with_state;
 
@@ -46,29 +47,20 @@ struct MarkerSelectState {
 }
 
 struct MarkerSelectLabels {
-    title: &'static str,
-    hint: &'static str,
-    toggle_all: &'static str,
-    ok: &'static str,
-    cancel: &'static str,
+    title: String,
+    hint: String,
+    toggle_all: String,
+    ok: String,
+    cancel: String,
 }
 
 fn labels(language: Language) -> MarkerSelectLabels {
-    match language {
-        Language::Italian => MarkerSelectLabels {
-            title: "Seleziona parti",
-            hint: "Spazio per attivare/disattivare le voci trovate:",
-            toggle_all: "Seleziona tutto",
-            ok: "OK",
-            cancel: "Annulla",
-        },
-        Language::English => MarkerSelectLabels {
-            title: "Select parts",
-            hint: "Use Space to toggle the found entries:",
-            toggle_all: "Select all",
-            ok: "OK",
-            cancel: "Cancel",
-        },
+    MarkerSelectLabels {
+        title: i18n::tr(language, "marker_select.title"),
+        hint: i18n::tr(language, "marker_select.hint"),
+        toggle_all: i18n::tr(language, "marker_select.toggle_all"),
+        ok: i18n::tr(language, "marker_select.ok"),
+        cancel: i18n::tr(language, "marker_select.cancel"),
     }
 }
 
@@ -103,7 +95,7 @@ pub fn select_marker_entries(
         result: result.clone(),
     });
     let labels = labels(language);
-    let title = to_wide(labels.title);
+    let title = to_wide(&labels.title);
 
     let hwnd = unsafe {
         CreateWindowExW(
@@ -196,7 +188,7 @@ unsafe extern "system" fn marker_select_wndproc(
             let hint = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.hint).as_ptr()),
+                PCWSTR(to_wide(&labels.hint).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 16,
                 14,
@@ -249,7 +241,7 @@ unsafe extern "system" fn marker_select_wndproc(
             let toggle_all = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.toggle_all).as_ptr()),
+                PCWSTR(to_wide(&labels.toggle_all).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 16,
                 270,
@@ -264,7 +256,7 @@ unsafe extern "system" fn marker_select_wndproc(
             let ok = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.ok).as_ptr()),
+                PCWSTR(to_wide(&labels.ok).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
                 250,
                 270,
@@ -279,7 +271,7 @@ unsafe extern "system" fn marker_select_wndproc(
             let cancel = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.cancel).as_ptr()),
+                PCWSTR(to_wide(&labels.cancel).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 346,
                 270,
@@ -440,17 +432,11 @@ fn set_all_selected(list: HWND, selected: bool) {
 
 fn update_toggle_all_label(button: HWND, language: Language, list: HWND) {
     let label = if list_has_unselected(list) {
-        match language {
-            Language::Italian => "Seleziona tutto",
-            Language::English => "Select all",
-        }
+        i18n::tr(language, "marker_select.select_all")
     } else {
-        match language {
-            Language::Italian => "Deseleziona tutto",
-            Language::English => "Deselect all",
-        }
+        i18n::tr(language, "marker_select.deselect_all")
     };
-    let wide = to_wide(label);
+    let wide = to_wide(&label);
     unsafe {
         let _ = SetWindowTextW(button, PCWSTR(wide.as_ptr()));
     }

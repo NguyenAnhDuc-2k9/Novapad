@@ -1,5 +1,6 @@
 #![allow(clippy::let_unit_value)]
 use crate::accessibility::to_wide;
+use crate::i18n;
 use crate::settings::Language;
 use crate::with_state;
 use std::path::Path;
@@ -29,6 +30,17 @@ pub const IDM_EDIT_SELECT_ALL: usize = 2005;
 pub const IDM_EDIT_FIND: usize = 2006;
 pub const IDM_EDIT_FIND_NEXT: usize = 2007;
 pub const IDM_EDIT_REPLACE: usize = 2008;
+pub const IDM_EDIT_FIND_IN_FILES: usize = 2009;
+pub const IDM_EDIT_STRIP_MARKDOWN: usize = 2010;
+pub const IDM_EDIT_NORMALIZE_WHITESPACE: usize = 2011;
+pub const IDM_EDIT_HARD_LINE_BREAK: usize = 2012;
+pub const IDM_EDIT_ORDER_ITEMS: usize = 2013;
+pub const IDM_EDIT_KEEP_UNIQUE_ITEMS: usize = 2014;
+pub const IDM_EDIT_REVERSE_ITEMS: usize = 2015;
+pub const IDM_EDIT_QUOTE_LINES: usize = 2016;
+pub const IDM_EDIT_UNQUOTE_LINES: usize = 2017;
+pub const IDM_EDIT_TEXT_STATS: usize = 2018;
+pub const IDM_EDIT_JOIN_LINES: usize = 2019;
 pub const IDM_INSERT_BOOKMARK: usize = 2101;
 pub const IDM_MANAGE_BOOKMARKS: usize = 2102;
 pub const IDM_NEXT_TAB: usize = 3001;
@@ -59,176 +71,140 @@ pub const IDM_HELP_CHANGELOG: usize = 7004;
 pub const MAX_RECENT: usize = 5;
 
 pub struct MenuLabels {
-    pub menu_file: &'static str,
-    pub menu_edit: &'static str,
-    pub menu_view: &'static str,
-    pub menu_insert: &'static str,
-    pub menu_tools: &'static str,
-    pub menu_help: &'static str,
-    pub menu_options: &'static str,
-    pub menu_dictionary: &'static str,
-    pub menu_import_youtube: &'static str,
-    pub view_text_color: &'static str,
-    pub view_text_size: &'static str,
-    pub view_text_color_black: &'static str,
-    pub view_text_color_dark_blue: &'static str,
-    pub view_text_color_dark_green: &'static str,
-    pub view_text_color_dark_brown: &'static str,
-    pub view_text_color_dark_gray: &'static str,
-    pub view_text_color_light_blue: &'static str,
-    pub view_text_color_light_green: &'static str,
-    pub view_text_color_light_brown: &'static str,
-    pub view_text_color_light_gray: &'static str,
-    pub view_text_size_small: &'static str,
-    pub view_text_size_normal: &'static str,
-    pub view_text_size_large: &'static str,
-    pub view_text_size_xlarge: &'static str,
-    pub view_text_size_xxlarge: &'static str,
-    pub view_show_voices: &'static str,
-    pub view_show_favorites: &'static str,
-    pub file_new: &'static str,
-    pub file_open: &'static str,
-    pub file_save: &'static str,
-    pub file_save_as: &'static str,
-    pub file_save_all: &'static str,
-    pub file_close: &'static str,
-    pub file_recent: &'static str,
-    pub file_read_start: &'static str,
-    pub file_read_pause: &'static str,
-    pub file_read_stop: &'static str,
-    pub file_audiobook: &'static str,
-    pub file_exit: &'static str,
-    pub edit_undo: &'static str,
-    pub edit_cut: &'static str,
-    pub edit_copy: &'static str,
-    pub edit_paste: &'static str,
-    pub edit_select_all: &'static str,
-    pub edit_find: &'static str,
-    pub edit_find_next: &'static str,
-    pub edit_replace: &'static str,
-    pub insert_bookmark: &'static str,
-    pub manage_bookmarks: &'static str,
-    pub help_guide: &'static str,
-    pub help_changelog: &'static str,
-    pub help_check_updates: &'static str,
-    pub help_about: &'static str,
-    pub recent_empty: &'static str,
+    pub menu_file: String,
+    pub menu_edit: String,
+    pub menu_view: String,
+    pub menu_insert: String,
+    pub menu_tools: String,
+    pub menu_help: String,
+    pub menu_options: String,
+    pub menu_dictionary: String,
+    pub menu_import_youtube: String,
+    pub view_text_color: String,
+    pub view_text_size: String,
+    pub view_text_color_black: String,
+    pub view_text_color_dark_blue: String,
+    pub view_text_color_dark_green: String,
+    pub view_text_color_dark_brown: String,
+    pub view_text_color_dark_gray: String,
+    pub view_text_color_light_blue: String,
+    pub view_text_color_light_green: String,
+    pub view_text_color_light_brown: String,
+    pub view_text_color_light_gray: String,
+    pub view_text_size_small: String,
+    pub view_text_size_normal: String,
+    pub view_text_size_large: String,
+    pub view_text_size_xlarge: String,
+    pub view_text_size_xxlarge: String,
+    pub view_show_voices: String,
+    pub view_show_favorites: String,
+    pub file_new: String,
+    pub file_open: String,
+    pub file_save: String,
+    pub file_save_as: String,
+    pub file_save_all: String,
+    pub file_close: String,
+    pub file_recent: String,
+    pub file_read_start: String,
+    pub file_read_pause: String,
+    pub file_read_stop: String,
+    pub file_audiobook: String,
+    pub file_exit: String,
+    pub edit_undo: String,
+    pub edit_cut: String,
+    pub edit_copy: String,
+    pub edit_paste: String,
+    pub edit_select_all: String,
+    pub edit_find: String,
+    pub edit_find_next: String,
+    pub edit_replace: String,
+    pub edit_find_in_files: String,
+    pub edit_strip_markdown: String,
+    pub edit_normalize_whitespace: String,
+    pub edit_hard_line_break: String,
+    pub edit_order_items: String,
+    pub edit_keep_unique_items: String,
+    pub edit_reverse_items: String,
+    pub edit_quote_lines: String,
+    pub edit_unquote_lines: String,
+    pub edit_text_stats: String,
+    pub edit_join_lines: String,
+    pub insert_bookmark: String,
+    pub manage_bookmarks: String,
+    pub help_guide: String,
+    pub help_changelog: String,
+    pub help_check_updates: String,
+    pub help_about: String,
+    pub recent_empty: String,
 }
 
 pub fn menu_labels(language: Language) -> MenuLabels {
-    match language {
-        Language::Italian => MenuLabels {
-            menu_file: "&File",
-            menu_edit: "&Modifica",
-            menu_view: "&Visualizza",
-            menu_insert: "&Inserisci",
-            menu_tools: "S&trumenti",
-            menu_help: "&Aiuto",
-            menu_options: "&Opzioni...",
-            menu_dictionary: "&Dizionario",
-            menu_import_youtube: "Importa trascrizione da YouTube...\tCtrl+Y",
-            view_text_color: "&Colore testo",
-            view_text_size: "&Dimensioni testo",
-            view_text_color_black: "&Nero",
-            view_text_color_dark_blue: "Blu &scuro",
-            view_text_color_dark_green: "Verde sc&uro",
-            view_text_color_dark_brown: "Marr&one scuro",
-            view_text_color_dark_gray: "Grigio scu&ro",
-            view_text_color_light_blue: "Blu c&hiaro",
-            view_text_color_light_green: "Verde ch&iaro",
-            view_text_color_light_brown: "Marrone chi&aro",
-            view_text_color_light_gray: "Grigio &chiaro",
-            view_text_size_small: "&Piccola",
-            view_text_size_normal: "&Normale",
-            view_text_size_large: "&Grande",
-            view_text_size_xlarge: "Molto gran&de",
-            view_text_size_xxlarge: "E&xtra grande",
-            view_show_voices: "Visualizza &voci nell'editor",
-            view_show_favorites: "Visualizza le voci &preferite",
-            file_new: "&Nuovo\tCtrl+N",
-            file_open: "&Apri...\tCtrl+O",
-            file_save: "&Salva\tCtrl+S",
-            file_save_as: "Salva &come...",
-            file_save_all: "Salva &tutto\tCtrl+Shift+S",
-            file_close: "&Chiudi tab\tCtrl+W",
-            file_recent: "File &recenti",
-            file_read_start: "Avvia lettura\tF5",
-            file_read_pause: "Pausa lettura\tF4",
-            file_read_stop: "Stop lettura\tF6",
-            file_audiobook: "Registra audiolibro...\tCtrl+R",
-            file_exit: "&Esci",
-            edit_undo: "&Annulla\tCtrl+Z",
-            edit_cut: "&Taglia\tCtrl+X",
-            edit_copy: "&Copia\tCtrl+C",
-            edit_paste: "&Incolla\tCtrl+V",
-            edit_select_all: "Seleziona &tutto\tCtrl+A",
-            edit_find: "&Trova...\tCtrl+F",
-            edit_find_next: "Trova &successivo\tF3",
-            edit_replace: "&Sostituisci...\tCtrl+H",
-            insert_bookmark: "Inserisci &segnalibro\tCtrl+B",
-            manage_bookmarks: "&Gestisci segnalibri...",
-            help_guide: "&Guida",
-            help_changelog: "Registro &modifiche",
-            help_check_updates: "Controlla &aggiornamenti",
-            help_about: "Informazioni &sul programma",
-            recent_empty: "Nessun file recente",
-        },
-        Language::English => MenuLabels {
-            menu_file: "&File",
-            menu_edit: "&Edit",
-            menu_view: "&View",
-            menu_insert: "&Insert",
-            menu_tools: "&Tools",
-            menu_help: "&Help",
-            menu_options: "&Options...",
-            menu_dictionary: "&Dictionary",
-            menu_import_youtube: "Import YouTube transcript...\tCtrl+Y",
-            view_text_color: "Text &color",
-            view_text_size: "Text &size",
-            view_text_color_black: "&Black",
-            view_text_color_dark_blue: "Dar&k blue",
-            view_text_color_dark_green: "Dark g&reen",
-            view_text_color_dark_brown: "Dark br&own",
-            view_text_color_dark_gray: "Dark gra&y",
-            view_text_color_light_blue: "&Light blue",
-            view_text_color_light_green: "Light gree&n",
-            view_text_color_light_brown: "Light bro&wn",
-            view_text_color_light_gray: "Light gr&ay",
-            view_text_size_small: "&Small",
-            view_text_size_normal: "&Normal",
-            view_text_size_large: "&Large",
-            view_text_size_xlarge: "E&xtra large",
-            view_text_size_xxlarge: "Ex&tra extra large",
-            view_show_voices: "Show &voices in editor",
-            view_show_favorites: "Show &favorite voices",
-            file_new: "&New\tCtrl+N",
-            file_open: "&Open...\tCtrl+O",
-            file_save: "&Save\tCtrl+S",
-            file_save_as: "Save &As...",
-            file_save_all: "Save &All\tCtrl+Shift+S",
-            file_close: "&Close tab\tCtrl+W",
-            file_recent: "Recent &Files",
-            file_read_start: "Start reading\tF5",
-            file_read_pause: "Pause reading\tF4",
-            file_read_stop: "Stop reading\tF6",
-            file_audiobook: "Record audiobook...\tCtrl+R",
-            file_exit: "E&xit",
-            edit_undo: "&Undo\tCtrl+Z",
-            edit_cut: "Cu&t\tCtrl+X",
-            edit_copy: "&Copy\tCtrl+C",
-            edit_paste: "&Paste\tCtrl+V",
-            edit_select_all: "Select &All\tCtrl+A",
-            edit_find: "&Find...\tCtrl+F",
-            edit_find_next: "Find &Next\tF3",
-            edit_replace: "&Replace...\tCtrl+H",
-            insert_bookmark: "Insert &Bookmark\tCtrl+B",
-            manage_bookmarks: "&Manage Bookmarks...",
-            help_guide: "&Guide",
-            help_changelog: "&Changelog",
-            help_check_updates: "Check for &updates",
-            help_about: "&About the program",
-            recent_empty: "No recent files",
-        },
+    MenuLabels {
+        menu_file: i18n::tr(language, "menu.file"),
+        menu_edit: i18n::tr(language, "menu.edit"),
+        menu_view: i18n::tr(language, "menu.view"),
+        menu_insert: i18n::tr(language, "menu.insert"),
+        menu_tools: i18n::tr(language, "menu.tools"),
+        menu_help: i18n::tr(language, "menu.help"),
+        menu_options: i18n::tr(language, "menu.options"),
+        menu_dictionary: i18n::tr(language, "menu.dictionary"),
+        menu_import_youtube: i18n::tr(language, "menu.import_youtube"),
+        view_text_color: i18n::tr(language, "view.text_color"),
+        view_text_size: i18n::tr(language, "view.text_size"),
+        view_text_color_black: i18n::tr(language, "view.text_color.black"),
+        view_text_color_dark_blue: i18n::tr(language, "view.text_color.dark_blue"),
+        view_text_color_dark_green: i18n::tr(language, "view.text_color.dark_green"),
+        view_text_color_dark_brown: i18n::tr(language, "view.text_color.dark_brown"),
+        view_text_color_dark_gray: i18n::tr(language, "view.text_color.dark_gray"),
+        view_text_color_light_blue: i18n::tr(language, "view.text_color.light_blue"),
+        view_text_color_light_green: i18n::tr(language, "view.text_color.light_green"),
+        view_text_color_light_brown: i18n::tr(language, "view.text_color.light_brown"),
+        view_text_color_light_gray: i18n::tr(language, "view.text_color.light_gray"),
+        view_text_size_small: i18n::tr(language, "view.text_size.small"),
+        view_text_size_normal: i18n::tr(language, "view.text_size.normal"),
+        view_text_size_large: i18n::tr(language, "view.text_size.large"),
+        view_text_size_xlarge: i18n::tr(language, "view.text_size.xlarge"),
+        view_text_size_xxlarge: i18n::tr(language, "view.text_size.xxlarge"),
+        view_show_voices: i18n::tr(language, "view.show_voices"),
+        view_show_favorites: i18n::tr(language, "view.show_favorites"),
+        file_new: i18n::tr(language, "file.new"),
+        file_open: i18n::tr(language, "file.open"),
+        file_save: i18n::tr(language, "file.save"),
+        file_save_as: i18n::tr(language, "file.save_as"),
+        file_save_all: i18n::tr(language, "file.save_all"),
+        file_close: i18n::tr(language, "file.close"),
+        file_recent: i18n::tr(language, "file.recent"),
+        file_read_start: i18n::tr(language, "file.read_start"),
+        file_read_pause: i18n::tr(language, "file.read_pause"),
+        file_read_stop: i18n::tr(language, "file.read_stop"),
+        file_audiobook: i18n::tr(language, "file.audiobook"),
+        file_exit: i18n::tr(language, "file.exit"),
+        edit_undo: i18n::tr(language, "edit.undo"),
+        edit_cut: i18n::tr(language, "edit.cut"),
+        edit_copy: i18n::tr(language, "edit.copy"),
+        edit_paste: i18n::tr(language, "edit.paste"),
+        edit_select_all: i18n::tr(language, "edit.select_all"),
+        edit_find: i18n::tr(language, "edit.find"),
+        edit_find_next: i18n::tr(language, "edit.find_next"),
+        edit_replace: i18n::tr(language, "edit.replace"),
+        edit_find_in_files: i18n::tr(language, "edit.find_in_files"),
+        edit_strip_markdown: i18n::tr(language, "edit.strip_markdown"),
+        edit_normalize_whitespace: i18n::tr(language, "edit.normalize_whitespace"),
+        edit_hard_line_break: i18n::tr(language, "edit.hard_line_break"),
+        edit_order_items: i18n::tr(language, "edit.order_items"),
+        edit_keep_unique_items: i18n::tr(language, "edit.keep_unique_items"),
+        edit_reverse_items: i18n::tr(language, "edit.reverse_items"),
+        edit_quote_lines: i18n::tr(language, "edit.quote_lines"),
+        edit_unquote_lines: i18n::tr(language, "edit.unquote_lines"),
+        edit_text_stats: i18n::tr(language, "edit.text_stats"),
+        edit_join_lines: i18n::tr(language, "edit.join_lines"),
+        insert_bookmark: i18n::tr(language, "insert.bookmark"),
+        manage_bookmarks: i18n::tr(language, "insert.manage_bookmarks"),
+        help_guide: i18n::tr(language, "help.guide"),
+        help_changelog: i18n::tr(language, "help.changelog"),
+        help_check_updates: i18n::tr(language, "help.check_updates"),
+        help_about: i18n::tr(language, "help.about"),
+        recent_empty: i18n::tr(language, "recent.empty"),
     }
 }
 
@@ -246,236 +222,302 @@ pub unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
 
     let labels = menu_labels(language);
 
-    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_NEW, labels.file_new);
-    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_OPEN, labels.file_open);
-    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_SAVE, labels.file_save);
-    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_SAVE_AS, labels.file_save_as);
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_NEW, &labels.file_new);
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_OPEN, &labels.file_open);
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_SAVE, &labels.file_save);
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_SAVE_AS, &labels.file_save_as);
     let _ = append_menu_string(
         file_menu,
         MF_STRING,
         IDM_FILE_SAVE_ALL,
-        labels.file_save_all,
+        &labels.file_save_all,
     );
-    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_CLOSE, labels.file_close);
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_CLOSE, &labels.file_close);
     let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = append_menu_string(
         file_menu,
         MF_POPUP,
         recent_menu.0 as usize,
-        labels.file_recent,
+        &labels.file_recent,
     );
     let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = append_menu_string(
         file_menu,
         MF_STRING,
         IDM_FILE_READ_START,
-        labels.file_read_start,
+        &labels.file_read_start,
     );
     let _ = append_menu_string(
         file_menu,
         MF_STRING,
         IDM_FILE_READ_PAUSE,
-        labels.file_read_pause,
+        &labels.file_read_pause,
     );
     let _ = append_menu_string(
         file_menu,
         MF_STRING,
         IDM_FILE_READ_STOP,
-        labels.file_read_stop,
+        &labels.file_read_stop,
     );
     let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = append_menu_string(
         file_menu,
         MF_STRING,
         IDM_FILE_AUDIOBOOK,
-        labels.file_audiobook,
+        &labels.file_audiobook,
     );
     let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
-    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_EXIT, labels.file_exit);
-    let _ = append_menu_string(hmenu, MF_POPUP, file_menu.0 as usize, labels.menu_file);
+    let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_EXIT, &labels.file_exit);
+    let _ = append_menu_string(hmenu, MF_POPUP, file_menu.0 as usize, &labels.menu_file);
 
-    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_UNDO, labels.edit_undo);
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_UNDO, &labels.edit_undo);
     let _ = AppendMenuW(edit_menu, MF_SEPARATOR, 0, PCWSTR::null());
-    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_CUT, labels.edit_cut);
-    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_COPY, labels.edit_copy);
-    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_PASTE, labels.edit_paste);
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_CUT, &labels.edit_cut);
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_COPY, &labels.edit_copy);
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_PASTE, &labels.edit_paste);
     let _ = append_menu_string(
         edit_menu,
         MF_STRING,
         IDM_EDIT_SELECT_ALL,
-        labels.edit_select_all,
+        &labels.edit_select_all,
     );
     let _ = AppendMenuW(edit_menu, MF_SEPARATOR, 0, PCWSTR::null());
-    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_FIND, labels.edit_find);
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_FIND, &labels.edit_find);
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_FIND_IN_FILES,
+        &labels.edit_find_in_files,
+    );
     let _ = append_menu_string(
         edit_menu,
         MF_STRING,
         IDM_EDIT_FIND_NEXT,
-        labels.edit_find_next,
+        &labels.edit_find_next,
     );
-    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_REPLACE, labels.edit_replace);
-    let _ = append_menu_string(hmenu, MF_POPUP, edit_menu.0 as usize, labels.menu_edit);
+    let _ = append_menu_string(edit_menu, MF_STRING, IDM_EDIT_REPLACE, &labels.edit_replace);
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_STRIP_MARKDOWN,
+        &labels.edit_strip_markdown,
+    );
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_NORMALIZE_WHITESPACE,
+        &labels.edit_normalize_whitespace,
+    );
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_HARD_LINE_BREAK,
+        &labels.edit_hard_line_break,
+    );
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_ORDER_ITEMS,
+        &labels.edit_order_items,
+    );
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_KEEP_UNIQUE_ITEMS,
+        &labels.edit_keep_unique_items,
+    );
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_REVERSE_ITEMS,
+        &labels.edit_reverse_items,
+    );
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_QUOTE_LINES,
+        &labels.edit_quote_lines,
+    );
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_UNQUOTE_LINES,
+        &labels.edit_unquote_lines,
+    );
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_JOIN_LINES,
+        &labels.edit_join_lines,
+    );
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_TEXT_STATS,
+        &labels.edit_text_stats,
+    );
+    let _ = append_menu_string(hmenu, MF_POPUP, edit_menu.0 as usize, &labels.menu_edit);
 
     let _ = append_menu_string(
         view_menu,
         MF_STRING,
         IDM_VIEW_SHOW_VOICES,
-        labels.view_show_voices,
+        &labels.view_show_voices,
     );
     let _ = append_menu_string(
         view_menu,
         MF_STRING,
         IDM_VIEW_SHOW_FAVORITES,
-        labels.view_show_favorites,
+        &labels.view_show_favorites,
     );
     let _ = AppendMenuW(view_menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = append_menu_string(
         view_color_menu,
         MF_STRING,
         IDM_VIEW_TEXT_COLOR_BLACK,
-        labels.view_text_color_black,
+        &labels.view_text_color_black,
     );
     let _ = append_menu_string(
         view_color_menu,
         MF_STRING,
         IDM_VIEW_TEXT_COLOR_DARK_BLUE,
-        labels.view_text_color_dark_blue,
+        &labels.view_text_color_dark_blue,
     );
     let _ = append_menu_string(
         view_color_menu,
         MF_STRING,
         IDM_VIEW_TEXT_COLOR_DARK_GREEN,
-        labels.view_text_color_dark_green,
+        &labels.view_text_color_dark_green,
     );
     let _ = append_menu_string(
         view_color_menu,
         MF_STRING,
         IDM_VIEW_TEXT_COLOR_DARK_BROWN,
-        labels.view_text_color_dark_brown,
+        &labels.view_text_color_dark_brown,
     );
     let _ = append_menu_string(
         view_color_menu,
         MF_STRING,
         IDM_VIEW_TEXT_COLOR_DARK_GRAY,
-        labels.view_text_color_dark_gray,
+        &labels.view_text_color_dark_gray,
     );
     let _ = append_menu_string(
         view_color_menu,
         MF_STRING,
         IDM_VIEW_TEXT_COLOR_LIGHT_BLUE,
-        labels.view_text_color_light_blue,
+        &labels.view_text_color_light_blue,
     );
     let _ = append_menu_string(
         view_color_menu,
         MF_STRING,
         IDM_VIEW_TEXT_COLOR_LIGHT_GREEN,
-        labels.view_text_color_light_green,
+        &labels.view_text_color_light_green,
     );
     let _ = append_menu_string(
         view_color_menu,
         MF_STRING,
         IDM_VIEW_TEXT_COLOR_LIGHT_BROWN,
-        labels.view_text_color_light_brown,
+        &labels.view_text_color_light_brown,
     );
     let _ = append_menu_string(
         view_color_menu,
         MF_STRING,
         IDM_VIEW_TEXT_COLOR_LIGHT_GRAY,
-        labels.view_text_color_light_gray,
+        &labels.view_text_color_light_gray,
     );
     let _ = append_menu_string(
         view_size_menu,
         MF_STRING,
         IDM_VIEW_TEXT_SIZE_SMALL,
-        labels.view_text_size_small,
+        &labels.view_text_size_small,
     );
     let _ = append_menu_string(
         view_size_menu,
         MF_STRING,
         IDM_VIEW_TEXT_SIZE_NORMAL,
-        labels.view_text_size_normal,
+        &labels.view_text_size_normal,
     );
     let _ = append_menu_string(
         view_size_menu,
         MF_STRING,
         IDM_VIEW_TEXT_SIZE_LARGE,
-        labels.view_text_size_large,
+        &labels.view_text_size_large,
     );
     let _ = append_menu_string(
         view_size_menu,
         MF_STRING,
         IDM_VIEW_TEXT_SIZE_XLARGE,
-        labels.view_text_size_xlarge,
+        &labels.view_text_size_xlarge,
     );
     let _ = append_menu_string(
         view_size_menu,
         MF_STRING,
         IDM_VIEW_TEXT_SIZE_XXLARGE,
-        labels.view_text_size_xxlarge,
+        &labels.view_text_size_xxlarge,
     );
     let _ = append_menu_string(
         view_menu,
         MF_POPUP,
         view_color_menu.0 as usize,
-        labels.view_text_color,
+        &labels.view_text_color,
     );
     let _ = append_menu_string(
         view_menu,
         MF_POPUP,
         view_size_menu.0 as usize,
-        labels.view_text_size,
+        &labels.view_text_size,
     );
-    let _ = append_menu_string(hmenu, MF_POPUP, view_menu.0 as usize, labels.menu_view);
+    let _ = append_menu_string(hmenu, MF_POPUP, view_menu.0 as usize, &labels.menu_view);
 
     let _ = append_menu_string(
         insert_menu,
         MF_STRING,
         IDM_INSERT_BOOKMARK,
-        labels.insert_bookmark,
+        &labels.insert_bookmark,
     );
     let _ = append_menu_string(
         insert_menu,
         MF_STRING,
         IDM_MANAGE_BOOKMARKS,
-        labels.manage_bookmarks,
+        &labels.manage_bookmarks,
     );
-    let _ = append_menu_string(hmenu, MF_POPUP, insert_menu.0 as usize, labels.menu_insert);
+    let _ = append_menu_string(hmenu, MF_POPUP, insert_menu.0 as usize, &labels.menu_insert);
 
     let _ = append_menu_string(
         tools_menu,
         MF_STRING,
         IDM_TOOLS_OPTIONS,
-        labels.menu_options,
+        &labels.menu_options,
     );
     let _ = append_menu_string(
         tools_menu,
         MF_STRING,
         IDM_TOOLS_DICTIONARY,
-        labels.menu_dictionary,
+        &labels.menu_dictionary,
     );
     let _ = append_menu_string(
         tools_menu,
         MF_STRING,
         IDM_TOOLS_IMPORT_YOUTUBE,
-        labels.menu_import_youtube,
+        &labels.menu_import_youtube,
     );
-    let _ = append_menu_string(hmenu, MF_POPUP, tools_menu.0 as usize, labels.menu_tools);
+    let _ = append_menu_string(hmenu, MF_POPUP, tools_menu.0 as usize, &labels.menu_tools);
 
-    let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_GUIDE, labels.help_guide);
+    let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_GUIDE, &labels.help_guide);
     let _ = append_menu_string(
         help_menu,
         MF_STRING,
         IDM_HELP_CHANGELOG,
-        labels.help_changelog,
+        &labels.help_changelog,
     );
     let _ = append_menu_string(
         help_menu,
         MF_STRING,
         IDM_HELP_CHECK_UPDATES,
-        labels.help_check_updates,
+        &labels.help_check_updates,
     );
-    let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_ABOUT, labels.help_about);
-    let _ = append_menu_string(hmenu, MF_POPUP, help_menu.0 as usize, labels.menu_help);
+    let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_ABOUT, &labels.help_about);
+    let _ = append_menu_string(hmenu, MF_POPUP, help_menu.0 as usize, &labels.menu_help);
 
     let _ = SetMenu(hwnd, hmenu);
     (hmenu, recent_menu)
@@ -495,7 +537,7 @@ pub unsafe fn update_recent_menu(hwnd: HWND, hmenu_recent: HMENU) {
     .unwrap_or_default();
     if files.is_empty() {
         let labels = menu_labels(language);
-        let _ = append_menu_string(hmenu_recent, MF_STRING | MF_GRAYED, 0, labels.recent_empty);
+        let _ = append_menu_string(hmenu_recent, MF_STRING | MF_GRAYED, 0, &labels.recent_empty);
     } else {
         for (i, path) in files.iter().enumerate() {
             let label = format!("&{} {}", i + 1, abbreviate_recent_label(path));

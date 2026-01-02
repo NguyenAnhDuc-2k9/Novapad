@@ -1,4 +1,5 @@
 use crate::accessibility::to_wide;
+use crate::i18n;
 use crate::settings::Language;
 use crate::with_state;
 use windows::Win32::Foundation::HWND;
@@ -8,7 +9,7 @@ use windows::core::PCWSTR;
 pub unsafe fn show(hwnd: HWND) {
     let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
     let message = to_wide(&about_message(language));
-    let title = to_wide(about_title(language));
+    let title = to_wide(&about_title(language));
     MessageBoxW(
         hwnd,
         PCWSTR(message.as_ptr()),
@@ -17,21 +18,11 @@ pub unsafe fn show(hwnd: HWND) {
     );
 }
 
-fn about_title(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Informazioni sul programma",
-        Language::English => "About the program",
-    }
+fn about_title(language: Language) -> String {
+    i18n::tr(language, "about.title")
 }
 
 fn about_message(language: Language) -> String {
     let version = env!("CARGO_PKG_VERSION");
-    match language {
-        Language::Italian => format!(
-            "Novapad è un editor di testo per Windows con supporto multi-formato. Apre file TXT, PDF, DOCX, EPUB e fogli di calcolo; legge il testo con sintesi vocale, crea audiolibri MP3 e riproduce audiolibri. Versione: {version}. Autore: Ambrogio Riili."
-        ),
-        Language::English => format!(
-            "Novapad is a Windows text editor with multi-format support. It opens TXT, PDF, DOCX, EPUB, and spreadsheet files; reads text with TTS, creates MP3 audiobooks, and plays audiobooks. Version: {version}. Author: Ambrogio Riili."
-        ),
-    }
+    i18n::tr_f(language, "about.message", &[("version", version)])
 }

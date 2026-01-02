@@ -1,4 +1,5 @@
 use crate::accessibility::{ES_CENTER, ES_READONLY, handle_accessibility, to_wide};
+use crate::i18n;
 use crate::settings::Language;
 use crate::with_state;
 use std::sync::atomic::Ordering;
@@ -30,10 +31,7 @@ struct ProgressDialogState {
 }
 
 fn progress_text(language: Language, pct: usize) -> String {
-    match language {
-        Language::Italian => format!("Creazione audiolibro in corso. Avanzamento: {}%", pct),
-        Language::English => format!("Creating audiobook. Progress: {}%", pct),
-    }
+    i18n::tr_f(language, "audiobook.progress", &[("pct", &pct.to_string())])
 }
 
 pub unsafe fn handle_navigation(hwnd: HWND, msg: &MSG) -> bool {
@@ -52,11 +50,7 @@ pub unsafe fn open(parent: HWND, total: usize) -> HWND {
     let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
     let class_name = to_wide(PROGRESS_CLASS_NAME);
     let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
-    let title = match language {
-        Language::Italian => "Creazione Audiolibro",
-        Language::English => "Creating Audiobook",
-    };
-    let title_w = to_wide(title);
+    let title_w = to_wide(&i18n::tr(language, "audiobook.title"));
 
     let wc = WNDCLASSW {
         hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(
@@ -128,10 +122,7 @@ unsafe extern "system" fn progress_wndproc(
             let parent = HWND((*create_struct).lpCreateParams as isize);
             let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
             let label_text = progress_text(language, 0);
-            let cancel_text = match language {
-                Language::Italian => "Annulla",
-                Language::English => "Cancel",
-            };
+            let cancel_text = i18n::tr(language, "audiobook.cancel");
 
             let label = CreateWindowExW(
                 Default::default(),
@@ -166,7 +157,7 @@ unsafe extern "system" fn progress_wndproc(
             let hwnd_cancel = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(cancel_text).as_ptr()),
+                PCWSTR(to_wide(&cancel_text).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
                 95,
                 80,
@@ -264,19 +255,11 @@ pub unsafe fn request_cancel(hwnd: HWND) {
     }
 
     let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
-    let (msg, title) = match language {
-        Language::Italian => (
-            "Sei sicuro di voler annullare la creazione dell'audiolibro?",
-            "Conferma",
-        ),
-        Language::English => (
-            "Are you sure you want to cancel the audiobook creation?",
-            "Confirm",
-        ),
-    };
+    let msg = i18n::tr(language, "audiobook.cancel_confirm");
+    let title = i18n::tr(language, "app.confirm_title");
 
-    let msg_w = to_wide(msg);
-    let title_w = to_wide(title);
+    let msg_w = to_wide(&msg);
+    let title_w = to_wide(&title);
 
     if MessageBoxW(
         hwnd,

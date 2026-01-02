@@ -1,4 +1,19 @@
 # Changelog
+Version 0.5.3 – 2026-01-02
+New features
+• Added Find in Files.
+• Added new text tools: Normalize Whitespace, Hard Line Break, and Strip Markdown.
+• Added Text Statistics (Alt+Y).
+• Added new list commands in the Edit menu:
+• Order Items (Alt+Shift+O)
+• Keep Unique Items (Alt+Shift+K)
+• Reverse Items (Alt+Shift+Z)
+• Added Quote / Unquote Lines (Ctrl+Q / Ctrl+Shift+Q).
+Localization
+• Added Spanish localization.
+• Added Portuguese localization.
+Improvements
+• When an EPUB file is open, Save now automatically switches to Save As and exports the content as a .txt file to prevent EPUB corruption.
 
 ## 0.5.2 - 2026-01-01
 - Added a changelog.

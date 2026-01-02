@@ -1,5 +1,6 @@
 #![allow(clippy::if_same_then_else, clippy::collapsible_else_if)]
 use crate::accessibility::{normalize_to_crlf, to_wide};
+use crate::i18n;
 use crate::settings::Language;
 use crate::with_state;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
@@ -76,7 +77,7 @@ unsafe fn open_window(parent: HWND, kind: HelpWindowKind) {
     RegisterClassW(&wc);
 
     let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
-    let title = to_wide(help_title(language, kind));
+    let title = to_wide(&help_title(language, kind));
     let init = Box::new(HelpWindowInit {
         parent,
         kind,
@@ -199,10 +200,14 @@ unsafe extern "system" fn help_wndproc(
                 HelpWindowKind::Guide => match init.language {
                     Language::Italian => include_str!("../../guida.txt"),
                     Language::English => include_str!("../../guida_en.txt"),
+                    Language::Spanish => include_str!("../../guida_es.txt"),
+                    Language::Portuguese => include_str!("../../guida_pt.txt"),
                 },
                 HelpWindowKind::Changelog => match init.language {
                     Language::Italian => include_str!("../../CHANGELOG_IT.md"),
                     Language::English => include_str!("../../CHANGELOG.md"),
+                    Language::Spanish => include_str!("../../CHANGELOG_ES.md"),
+                    Language::Portuguese => include_str!("../../CHANGELOG_PT.md"),
                 },
             };
             let content = normalize_to_crlf(content);
@@ -302,15 +307,9 @@ where
     }
 }
 
-fn help_title(language: Language, kind: HelpWindowKind) -> &'static str {
+fn help_title(language: Language, kind: HelpWindowKind) -> String {
     match kind {
-        HelpWindowKind::Guide => match language {
-            Language::Italian => "Guida",
-            Language::English => "Guide",
-        },
-        HelpWindowKind::Changelog => match language {
-            Language::Italian => "Registro modifiche",
-            Language::English => "Changelog",
-        },
+        HelpWindowKind::Guide => i18n::tr(language, "help.window.guide"),
+        HelpWindowKind::Changelog => i18n::tr(language, "help.window.changelog"),
     }
 }

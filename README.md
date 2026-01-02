@@ -50,12 +50,16 @@ and the ability to **create audiobooks directly from text using Microsoft voices
   Designed to work correctly with screen readers such as NVDA and JAWS.
 - **Readable UI Options**
   - Text color and text size controls for better readability, including light/dark colors and larger sizes
+- **Editing tools**
+  - Find in Files, Strip Markdown Tags, Normalize Whitespace, Hard Line Break
 - **Voice Tuning Options**
   - Set pitch, speed, and volume for voices (Microsoft and SAPI5), applied to reading and audiobook creation
 - **Modern Tech Stack**
   Written in Rust for safety, performance, and reliability.
 - **YouTube Transcript Import**
   - Import YouTube captions with language selection and optional timestamps.
+- **Localization**
+  - English, Italian, Spanish, Portuguese.
 
 ---
 

@@ -7,6 +7,7 @@
     clippy::too_many_arguments
 )]
 use crate::editor_manager::get_edit_text;
+use crate::i18n;
 use crate::settings;
 use crate::settings::{
     AudiobookResult, DictionaryEntry, Language, TRUSTED_CLIENT_TOKEN, TtsEngine,
@@ -64,11 +65,8 @@ pub struct TtsChunk {
     pub original_len: usize,
 }
 
-fn cancelled_message(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Operazione annullata.",
-        Language::English => "Operation cancelled.",
-    }
+fn cancelled_message(language: Language) -> String {
+    i18n::tr(language, "tts.cancelled")
 }
 
 pub fn prevent_sleep(enable: bool) {
@@ -125,7 +123,7 @@ pub fn start_tts_from_caret(hwnd: HWND) {
     let (text, initial_caret_pos) = unsafe { get_text_from_caret(hwnd_edit) };
     if text.trim().is_empty() {
         unsafe {
-            show_error(hwnd, language, settings::tts_no_text_message(language));
+            show_error(hwnd, language, &settings::tts_no_text_message(language));
         }
         return;
     }
@@ -475,16 +473,15 @@ pub async fn download_audio_chunk(
             Ok(data) => return Ok(data),
             Err(e) => {
                 last_error = e;
-                let msg = match language {
-                    Language::Italian => format!(
-                        "Errore download chunk (tentativo {}/{}) : {}. Riprovo...",
-                        attempt, max_retries, last_error
-                    ),
-                    Language::English => format!(
-                        "Chunk download error (attempt {}/{}): {}. Retrying...",
-                        attempt, max_retries, last_error
-                    ),
-                };
+                let msg = i18n::tr_f(
+                    language,
+                    "tts.chunk_download_retry",
+                    &[
+                        ("attempt", &attempt.to_string()),
+                        ("max", &max_retries.to_string()),
+                        ("err", &last_error),
+                    ],
+                );
                 log_debug(&msg);
                 if attempt < max_retries {
                     tokio::time::sleep(Duration::from_millis(500 * attempt as u64)).await;
@@ -492,10 +489,11 @@ pub async fn download_audio_chunk(
             }
         }
     }
-    Err(match language {
-        Language::Italian => format!("Errore download chunk: {}", last_error),
-        Language::English => format!("Chunk download error: {}", last_error),
-    })
+    Err(i18n::tr_f(
+        language,
+        "tts.chunk_download_error",
+        &[("err", &last_error)],
+    ))
 }
 
 async fn download_audio_chunk_attempt(
@@ -1106,7 +1104,7 @@ pub fn start_audiobook(hwnd: HWND) {
     let text = unsafe { get_edit_text(hwnd_edit) };
     if text.trim().is_empty() {
         unsafe {
-            show_error(hwnd, language, settings::tts_no_text_message(language));
+            show_error(hwnd, language, &settings::tts_no_text_message(language));
         }
         return;
     }
@@ -1299,10 +1297,7 @@ pub fn start_audiobook(hwnd: HWND) {
         };
         let success = result.is_ok();
         let message = match result {
-            Ok(()) => match language {
-                Language::Italian => "Audiolibro salvato con successo.".to_string(),
-                Language::English => "Audiobook saved successfully.".to_string(),
-            },
+            Ok(()) => i18n::tr(language, "tts.audiobook_saved"),
             Err(err) => err,
         };
         let payload = Box::new(AudiobookResult { success, message });
@@ -1616,18 +1611,11 @@ fn run_tts_audiobook_part(
                             if cancel.load(Ordering::Relaxed) {
                                 return Err("Cancelled".to_string());
                             }
-                            let msg = match language {
-                                Language::Italian => format!(
-                                    "Errore download chunk {}: {}. Riprovo tra 5 secondi...",
-                                    i + 1,
-                                    err
-                                ),
-                                Language::English => format!(
-                                    "Chunk download error {}: {}. Retrying in 5 seconds...",
-                                    i + 1,
-                                    err
-                                ),
-                            };
+                            let msg = i18n::tr_f(
+                                language,
+                                "tts.chunk_download_retry_wait",
+                                &[("index", &(i + 1).to_string()), ("err", &err)],
+                            );
                             log_debug(&msg);
 
                             tokio::select! {
@@ -1650,11 +1638,11 @@ fn run_tts_audiobook_part(
 
         while let Some(result) = stream.next().await {
             if cancel.load(Ordering::Relaxed) {
-                return Err(cancelled_message(language).to_string());
+                return Err(cancelled_message(language));
             }
             let audio = match result {
                 Ok(data) => data,
-                Err(e) if e == "Cancelled" => return Err(cancelled_message(language).to_string()),
+                Err(e) if e == "Cancelled" => return Err(cancelled_message(language)),
                 Err(e) => return Err(e),
             };
 
@@ -1662,7 +1650,7 @@ fn run_tts_audiobook_part(
             *current_global_progress += 1;
             if progress_hwnd.0 != 0 {
                 if cancel.load(Ordering::Relaxed) {
-                    return Err(cancelled_message(language).to_string());
+                    return Err(cancelled_message(language));
                 }
                 unsafe {
                     let _ = PostMessageW(

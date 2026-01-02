@@ -29,6 +29,7 @@ use yt_transcript_rs::{Transcript, TranscriptList, YouTubeTranscriptApi};
 
 use crate::accessibility::{from_wide, to_wide, to_wide_normalized};
 use crate::editor_manager::get_edit_text;
+use crate::i18n;
 use crate::settings::{Language, save_settings};
 use crate::with_state;
 use crate::{WM_FOCUS_EDITOR, get_active_edit, show_error};
@@ -70,56 +71,38 @@ struct ImportState {
 }
 
 struct Labels {
-    title: &'static str,
-    url: &'static str,
-    load: &'static str,
-    language: &'static str,
-    include_timestamps: &'static str,
-    loading: &'static str,
-    ok: &'static str,
-    cancel: &'static str,
-    auto: &'static str,
-    invalid_url: &'static str,
-    no_transcript: &'static str,
-    network_error: &'static str,
-    import_error: &'static str,
-    no_document: &'static str,
+    title: String,
+    url: String,
+    load: String,
+    language: String,
+    include_timestamps: String,
+    loading: String,
+    ok: String,
+    cancel: String,
+    auto: String,
+    invalid_url: String,
+    no_transcript: String,
+    network_error: String,
+    import_error: String,
+    no_document: String,
 }
 
 fn labels(language: Language) -> Labels {
-    match language {
-        Language::Italian => Labels {
-            title: "Importa trascrizione da YouTube",
-            url: "URL YouTube:",
-            load: "Carica lingue",
-            language: "Lingua:",
-            include_timestamps: "Includi timestamp",
-            loading: "Caricamento...",
-            ok: "OK",
-            cancel: "Annulla",
-            auto: "Auto",
-            invalid_url: "URL YouTube non valido.",
-            no_transcript: "Nessuna trascrizione disponibile per questo video.",
-            network_error: "Errore di rete durante il download della trascrizione.",
-            import_error: "Errore durante il recupero della trascrizione.",
-            no_document: "Apri o crea un documento per importare la trascrizione.",
-        },
-        Language::English => Labels {
-            title: "Import YouTube transcript",
-            url: "YouTube URL:",
-            load: "Load languages",
-            language: "Language:",
-            include_timestamps: "Include timestamps",
-            loading: "Loading...",
-            ok: "OK",
-            cancel: "Cancel",
-            auto: "Auto",
-            invalid_url: "Invalid YouTube URL.",
-            no_transcript: "No transcript available for this video.",
-            network_error: "Network error while downloading the transcript.",
-            import_error: "Error while retrieving the transcript.",
-            no_document: "Open or create a document to import the transcript.",
-        },
+    Labels {
+        title: i18n::tr(language, "youtube.title"),
+        url: i18n::tr(language, "youtube.url"),
+        load: i18n::tr(language, "youtube.load"),
+        language: i18n::tr(language, "youtube.language"),
+        include_timestamps: i18n::tr(language, "youtube.include_timestamps"),
+        loading: i18n::tr(language, "youtube.loading"),
+        ok: i18n::tr(language, "youtube.ok"),
+        cancel: i18n::tr(language, "youtube.cancel"),
+        auto: i18n::tr(language, "youtube.auto"),
+        invalid_url: i18n::tr(language, "youtube.invalid_url"),
+        no_transcript: i18n::tr(language, "youtube.no_transcript"),
+        network_error: i18n::tr(language, "youtube.network_error"),
+        import_error: i18n::tr(language, "youtube.import_error"),
+        no_document: i18n::tr(language, "youtube.no_document"),
     }
 }
 
@@ -150,7 +133,7 @@ pub fn import_youtube_transcript(parent: HWND) {
         Ok(text) => text,
         Err(err) => {
             unsafe {
-                show_error(parent, language, error_message(language, &err));
+                show_error(parent, language, &error_message(language, &err));
                 let _ = PostMessageW(parent, WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
             }
             return;
@@ -159,7 +142,7 @@ pub fn import_youtube_transcript(parent: HWND) {
 
     unsafe {
         let Some(hwnd_edit) = get_active_edit(parent) else {
-            show_error(parent, language, labels(language).no_document);
+            show_error(parent, language, &labels(language).no_document);
             let _ = PostMessageW(parent, WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
             return;
         };
@@ -212,7 +195,7 @@ fn show_import_dialog(
         result: result.clone(),
     });
     let labels = labels(language);
-    let title = to_wide(labels.title);
+    let title = to_wide(&labels.title);
 
     let hwnd = unsafe {
         CreateWindowExW(
@@ -297,7 +280,7 @@ unsafe extern "system" fn import_wndproc(
             let label_url = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.url).as_ptr()),
+                PCWSTR(to_wide(&labels.url).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 16,
                 18,
@@ -327,7 +310,7 @@ unsafe extern "system" fn import_wndproc(
             let load_button = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.load).as_ptr()),
+                PCWSTR(to_wide(&labels.load).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 410,
                 15,
@@ -342,7 +325,7 @@ unsafe extern "system" fn import_wndproc(
             let label_lang = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.language).as_ptr()),
+                PCWSTR(to_wide(&labels.language).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 16,
                 60,
@@ -387,7 +370,7 @@ unsafe extern "system" fn import_wndproc(
             let timestamp_check = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.include_timestamps).as_ptr()),
+                PCWSTR(to_wide(&labels.include_timestamps).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
                 110,
                 112,
@@ -402,7 +385,7 @@ unsafe extern "system" fn import_wndproc(
             let ok_button = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.ok).as_ptr()),
+                PCWSTR(to_wide(&labels.ok).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
                 310,
                 154,
@@ -417,7 +400,7 @@ unsafe extern "system" fn import_wndproc(
             let cancel_button = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.cancel).as_ptr()),
+                PCWSTR(to_wide(&labels.cancel).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 410,
                 154,
@@ -555,6 +538,7 @@ unsafe extern "system" fn import_wndproc(
             let _ = with_import_state(hwnd, |state| {
                 EnableWindow(state.parent, true);
                 SetForegroundWindow(state.parent);
+                let _ = PostMessageW(state.parent, WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
             });
             LRESULT(0)
         }
@@ -620,7 +604,7 @@ fn start_load_languages(hwnd: HWND) -> bool {
 
     let labels_data = labels(language);
     unsafe {
-        let _ = SetWindowTextW(status, PCWSTR(to_wide(labels_data.loading).as_ptr()));
+        let _ = SetWindowTextW(status, PCWSTR(to_wide(&labels_data.loading).as_ptr()));
         let _ = EnableWindow(edit, false);
         let _ = EnableWindow(load_button, false);
         let _ = EnableWindow(combo, false);
@@ -702,7 +686,7 @@ fn finish_load_languages(hwnd: HWND, result: LoadResult) {
 
     if let Some(err) = result.error {
         unsafe {
-            show_error(hwnd, language, error_message(language, &err));
+            show_error(hwnd, language, &error_message(language, &err));
             let _ = SetFocus(edit);
         }
         return;
@@ -877,7 +861,7 @@ fn map_transcript_error(err: yt_transcript_rs::errors::CouldNotRetrieveTranscrip
     }
 }
 
-fn error_message(language: Language, err: &ImportError) -> &'static str {
+fn error_message(language: Language, err: &ImportError) -> String {
     let labels = labels(language);
     match err {
         ImportError::InvalidUrl => labels.invalid_url,

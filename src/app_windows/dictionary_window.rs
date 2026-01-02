@@ -1,4 +1,5 @@
 use crate::accessibility::{handle_accessibility, to_wide};
+use crate::i18n;
 use crate::settings::{DictionaryEntry, Language, save_settings};
 use crate::with_state;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
@@ -51,47 +52,32 @@ struct DictionaryEntryState {
 }
 
 struct DictionaryLabels {
-    title: &'static str,
-    add: &'static str,
-    edit: &'static str,
-    remove: &'static str,
-    close: &'static str,
-    entry_title_add: &'static str,
-    entry_title_edit: &'static str,
-    entry_original: &'static str,
-    entry_replacement: &'static str,
-    entry_ok: &'static str,
-    entry_cancel: &'static str,
+    title: String,
+    add: String,
+    edit: String,
+    remove: String,
+    close: String,
+    entry_title_add: String,
+    entry_title_edit: String,
+    entry_original: String,
+    entry_replacement: String,
+    entry_ok: String,
+    entry_cancel: String,
 }
 
 fn dictionary_labels(language: Language) -> DictionaryLabels {
-    match language {
-        Language::Italian => DictionaryLabels {
-            title: "Dizionario",
-            add: "Aggiungi voci al dizionario",
-            edit: "Modifica voce",
-            remove: "Rimuovi voce selezionata",
-            close: "Chiudi",
-            entry_title_add: "Aggiungi voce",
-            entry_title_edit: "Modifica voce",
-            entry_original: "Parola originale:",
-            entry_replacement: "Parola in sostituzione:",
-            entry_ok: "OK",
-            entry_cancel: "Annulla",
-        },
-        Language::English => DictionaryLabels {
-            title: "Dictionary",
-            add: "Add entries to dictionary",
-            edit: "Edit entry",
-            remove: "Remove selected entry",
-            close: "Close",
-            entry_title_add: "Add entry",
-            entry_title_edit: "Edit entry",
-            entry_original: "Original word:",
-            entry_replacement: "Replacement word:",
-            entry_ok: "OK",
-            entry_cancel: "Cancel",
-        },
+    DictionaryLabels {
+        title: i18n::tr(language, "dictionary.title"),
+        add: i18n::tr(language, "dictionary.add"),
+        edit: i18n::tr(language, "dictionary.edit"),
+        remove: i18n::tr(language, "dictionary.remove"),
+        close: i18n::tr(language, "dictionary.close"),
+        entry_title_add: i18n::tr(language, "dictionary.entry_title_add"),
+        entry_title_edit: i18n::tr(language, "dictionary.entry_title_edit"),
+        entry_original: i18n::tr(language, "dictionary.entry_original"),
+        entry_replacement: i18n::tr(language, "dictionary.entry_replacement"),
+        entry_ok: i18n::tr(language, "dictionary.entry_ok"),
+        entry_cancel: i18n::tr(language, "dictionary.entry_cancel"),
     }
 }
 
@@ -125,7 +111,7 @@ pub unsafe fn open(parent: HWND) {
 
     let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
     let labels = dictionary_labels(language);
-    let title = to_wide(labels.title);
+    let title = to_wide(&labels.title);
 
     let window = CreateWindowExW(
         WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME,
@@ -187,7 +173,7 @@ unsafe extern "system" fn dictionary_wndproc(
             let hwnd_add = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.add).as_ptr()),
+                PCWSTR(to_wide(&labels.add).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 10,
                 290,
@@ -202,7 +188,7 @@ unsafe extern "system" fn dictionary_wndproc(
             let hwnd_edit = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.edit).as_ptr()),
+                PCWSTR(to_wide(&labels.edit).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 260,
                 290,
@@ -217,7 +203,7 @@ unsafe extern "system" fn dictionary_wndproc(
             let hwnd_remove = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.remove).as_ptr()),
+                PCWSTR(to_wide(&labels.remove).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 10,
                 330,
@@ -232,7 +218,7 @@ unsafe extern "system" fn dictionary_wndproc(
             let hwnd_close = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.close).as_ptr()),
+                PCWSTR(to_wide(&labels.close).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
                 260,
                 330,
@@ -465,9 +451,9 @@ unsafe fn open_entry_dialog(owner: HWND, index: Option<usize>) {
     let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
     let labels = dictionary_labels(language);
     let title = if index.is_some() {
-        labels.entry_title_edit
+        &labels.entry_title_edit
     } else {
-        labels.entry_title_add
+        &labels.entry_title_add
     };
 
     let params = Box::new(DictionaryEntryState {
@@ -524,7 +510,7 @@ unsafe extern "system" fn dictionary_entry_wndproc(
             let label_original = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.entry_original).as_ptr()),
+                PCWSTR(to_wide(&labels.entry_original).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 10,
                 10,
@@ -553,7 +539,7 @@ unsafe extern "system" fn dictionary_entry_wndproc(
             let label_replacement = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.entry_replacement).as_ptr()),
+                PCWSTR(to_wide(&labels.entry_replacement).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 10,
                 64,
@@ -582,7 +568,7 @@ unsafe extern "system" fn dictionary_entry_wndproc(
             let ok_button = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.entry_ok).as_ptr()),
+                PCWSTR(to_wide(&labels.entry_ok).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
                 200,
                 130,
@@ -596,7 +582,7 @@ unsafe extern "system" fn dictionary_entry_wndproc(
             let cancel_button = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.entry_cancel).as_ptr()),
+                PCWSTR(to_wide(&labels.entry_cancel).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 300,
                 130,

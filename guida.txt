@@ -30,8 +30,19 @@ Copia: copia il testo selezionato negli appunti (Ctrl+C).
 Incolla: incolla il contenuto degli appunti nel documento (Ctrl+V).
 Seleziona tutto: seleziona tutto il testo (Ctrl+A).
 Trova: cerca un testo nel documento (Ctrl+F).
+Trova nei file: cerca un testo tra più file (Ctrl+Shift+F).
 Trova successivo: trova la prossima occorrenza (F3).
 Sostituisci: cerca e sostituisce il testo (Ctrl+H).
+Normalizza spazi bianchi: rimuove spazi iniziali/finali e riduce righe vuote (Ctrl+Shift+Invio).
+Unisci righe: unisce le righe del paragrafo o della selezione (Ctrl+Shift+J).
+Riformatta righe: reimpagina il paragrafo o la selezione (Ctrl+Shift+H).
+Pulisci testo Markdown: rimuove i tag Markdown (Ctrl+Shift+M).
+Ordina righe: ordina le righe del paragrafo o della selezione (Alt+Shift+O).
+Rimuovi duplicati: rimuove le righe duplicate nel paragrafo o nella selezione (Alt+Shift+K).
+Inverti righe: inverte l'ordine delle righe nel paragrafo o nella selezione (Alt+Shift+Z).
+Commenta righe: aggiunge un prefisso alle righe del paragrafo o della selezione (Ctrl+Q).
+Decommenta righe: rimuove il prefisso dalle righe del paragrafo o della selezione (Ctrl+Shift+Q).
+Statistiche testo: mostra caratteri, parole e righe su selezione o documento (Alt+Y).
 
 Visualizza:
 Visualizza voci nell'editor: mostra i controlli per sistema di voci, elenco voci e filtro multilingua.

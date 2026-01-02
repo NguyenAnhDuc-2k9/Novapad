@@ -1,6 +1,7 @@
 use crate::accessibility::{EM_SCROLLCARET, handle_accessibility, to_wide};
 use crate::audio_player::start_audiobook_at;
-use crate::settings::{FileFormat, Language};
+use crate::i18n;
+use crate::settings::FileFormat;
 use crate::with_state;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{COLOR_WINDOW, HBRUSH, HFONT};
@@ -66,11 +67,7 @@ pub unsafe fn open(parent: HWND) {
     RegisterClassW(&wc);
 
     let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
-    let title = to_wide(if language == Language::Italian {
-        "Gestisci segnalibri"
-    } else {
-        "Manage Bookmarks"
-    });
+    let title = to_wide(&i18n::tr(language, "bookmarks.title"));
 
     let window = CreateWindowExW(
         WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME,
@@ -128,15 +125,11 @@ unsafe extern "system" fn bookmarks_wndproc(
                 None,
             );
 
-            let btn_goto_text = if language == Language::Italian {
-                "Vai a"
-            } else {
-                "Go to"
-            };
+            let btn_goto_text = i18n::tr(language, "bookmarks.goto");
             let hwnd_goto = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(btn_goto_text).as_ptr()),
+                PCWSTR(to_wide(&btn_goto_text).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
                 10,
                 320,
@@ -148,15 +141,11 @@ unsafe extern "system" fn bookmarks_wndproc(
                 None,
             );
 
-            let btn_del_text = if language == Language::Italian {
-                "Elimina"
-            } else {
-                "Delete"
-            };
+            let btn_del_text = i18n::tr(language, "bookmarks.delete");
             let hwnd_delete = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(btn_del_text).as_ptr()),
+                PCWSTR(to_wide(&btn_del_text).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 130,
                 320,

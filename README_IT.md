@@ -53,10 +53,14 @@ e la possibilit… di **creare audiolibri direttamente dal testo utilizzando le 
   come NVDA e JAWS.
 - **Opzioni di leggibilita'**
   - Controlli per colore e dimensione del testo per una migliore lettura, con colori chiari/scuri e dimensioni grandi
+- **Strumenti di modifica**
+  - Trova nei file, Pulisci testo Markdown, Normalizza spazi bianchi, Riformatta righe
 - **Regolazione voci**
   - Impostazioni di tono, velocita' e volume per le voci (Microsoft e SAPI5), valide per lettura e creazione audiolibri
 - **Importazione trascrizioni YouTube**
   - Importa le trascrizioni con selezione lingua e timestamp opzionali.
+- **Localizzazione**
+  - Italiano, inglese, spagnolo, portoghese.
 - **Tecnologia moderna**
   Scritto in Rust per garantire sicurezza, affidabilità e ottime prestazioni.
 

@@ -73,6 +73,10 @@ pub enum Language {
     Italian,
     #[serde(rename = "en")]
     English,
+    #[serde(rename = "es")]
+    Spanish,
+    #[serde(rename = "pt")]
+    Portuguese,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -94,6 +98,8 @@ pub struct AppSettings {
     pub tts_only_multilingual: bool,
     pub split_on_newline: bool,
     pub word_wrap: bool,
+    pub wrap_width: u32,
+    pub quote_prefix: String,
     pub move_cursor_during_reading: bool,
     pub audiobook_skip_seconds: u32,
     pub audiobook_split: u32,
@@ -124,6 +130,8 @@ impl Default for AppSettings {
             tts_only_multilingual: false,
             split_on_newline: false,
             word_wrap: true,
+            wrap_width: 80,
+            quote_prefix: "> ".to_string(),
             move_cursor_during_reading: false,
             audiobook_skip_seconds: 60,
             audiobook_split: 0,
@@ -159,8 +167,15 @@ fn system_language() -> Language {
     let len = unsafe { GetUserDefaultLocaleName(&mut buffer) };
     if len > 0 {
         let locale = String::from_utf16_lossy(&buffer[..(len as usize).saturating_sub(1)]);
-        if locale.to_lowercase().starts_with("it") {
+        let lower = locale.to_lowercase();
+        if lower.starts_with("it") {
             return Language::Italian;
+        }
+        if lower.starts_with("es") {
+            return Language::Spanish;
+        }
+        if lower.starts_with("pt") {
+            return Language::Portuguese;
         }
         return Language::English;
     }
@@ -205,97 +220,66 @@ pub fn save_settings(settings: AppSettings) {
     }
 }
 
-pub fn untitled_base(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Senza titolo",
-        Language::English => "Untitled",
-    }
+pub fn untitled_base(language: Language) -> String {
+    crate::i18n::tr(language, "app.untitled_base")
 }
 
 pub fn untitled_title(language: Language, count: usize) -> String {
     format!("{} {}", untitled_base(language), count)
 }
 
-pub fn recent_missing_message(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Il file recente non esiste piu'.",
-        Language::English => "The recent file no longer exists.",
-    }
+pub fn recent_missing_message(language: Language) -> String {
+    crate::i18n::tr(language, "app.recent_missing")
 }
 
 pub fn confirm_save_message(language: Language, title: &str) -> String {
-    match language {
-        Language::Italian => format!("Il documento \"{}\" e' modificato. Salvare?", title),
-        Language::English => format!("The document \"{}\" has been modified. Save?", title),
-    }
+    crate::i18n::tr_f(language, "app.confirm_save", &[("title", title)])
 }
 
-pub fn confirm_title(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Conferma",
-        Language::English => "Confirm",
-    }
+pub fn confirm_title(language: Language) -> String {
+    crate::i18n::tr(language, "app.confirm_title")
 }
 
-pub fn error_title(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Errore",
-        Language::English => "Error",
-    }
+pub fn error_title(language: Language) -> String {
+    crate::i18n::tr(language, "app.error_title")
 }
 
-pub fn tts_no_text_message(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Non c'e' testo da leggere.",
-        Language::English => "There is no text to read.",
-    }
+pub fn tts_no_text_message(language: Language) -> String {
+    crate::i18n::tr(language, "app.tts_no_text")
 }
 
-pub fn audiobook_done_title(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Audiolibro",
-        Language::English => "Audiobook",
-    }
+pub fn audiobook_done_title(language: Language) -> String {
+    crate::i18n::tr(language, "app.audiobook_done_title")
 }
 
-pub fn info_title(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Info",
-        Language::English => "Info",
-    }
+pub fn info_title(language: Language) -> String {
+    crate::i18n::tr(language, "app.info_title")
 }
 
-pub fn pdf_loaded_message(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "PDF caricato.",
-        Language::English => "PDF loaded.",
-    }
+pub fn pdf_loaded_message(language: Language) -> String {
+    crate::i18n::tr(language, "app.pdf_loaded")
 }
 
-pub fn text_not_found_message(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Testo non trovato.",
-        Language::English => "Text not found.",
-    }
+pub fn text_not_found_message(language: Language) -> String {
+    crate::i18n::tr(language, "app.text_not_found")
 }
 
-pub fn find_title(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Trova",
-        Language::English => "Find",
-    }
+pub fn find_title(language: Language) -> String {
+    crate::i18n::tr(language, "app.find_title")
 }
 
 pub fn error_open_file_message(language: Language, _err: impl std::fmt::Display) -> String {
-    match language {
-        Language::Italian => format!("Errore apertura file: {_err}"),
-        Language::English => format!("Error opening file: {_err}"),
-    }
+    crate::i18n::tr_f(
+        language,
+        "app.error_open_file",
+        &[("err", &format!("{_err}"))],
+    )
 }
 
 pub fn error_save_file_message(language: Language, _err: impl std::fmt::Display) -> String {
-    match language {
-        Language::Italian => format!("Errore salvataggio file: {_err}"),
-        Language::English => format!("Error saving file: {_err}"),
-    }
+    crate::i18n::tr_f(
+        language,
+        "app.error_save_file",
+        &[("err", &format!("{_err}"))],
+    )
 }

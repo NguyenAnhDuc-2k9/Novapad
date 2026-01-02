@@ -9,7 +9,7 @@ use crate::settings::{
     Language, OpenBehavior, TRUSTED_CLIENT_TOKEN, TtsEngine, VOICE_LIST_URL, VoiceInfo,
     save_settings,
 };
-use crate::{rebuild_menus, refresh_voice_panel, with_state};
+use crate::{i18n, rebuild_menus, refresh_voice_panel, with_state};
 use std::thread;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{COLOR_WINDOW, HBRUSH, HFONT};
@@ -46,6 +46,8 @@ const OPTIONS_ID_AUDIO_SKIP: usize = 6010;
 const OPTIONS_ID_AUDIO_SPLIT: usize = 6011;
 const OPTIONS_ID_AUDIO_SPLIT_TEXT: usize = 6013;
 const OPTIONS_ID_AUDIO_SPLIT_REQUIRE_NEWLINE: usize = 6016;
+const OPTIONS_ID_WRAP_WIDTH: usize = 6017;
+const OPTIONS_ID_QUOTE_PREFIX: usize = 6018;
 const OPTIONS_ID_CHECK_UPDATES: usize = 6015;
 const OPTIONS_ID_OK: usize = 6005;
 const OPTIONS_ID_CANCEL: usize = 6006;
@@ -93,101 +95,85 @@ struct OptionsDialogState {
     button_tts_tuning: HWND,
     checkbox_split_on_newline: HWND,
     checkbox_word_wrap: HWND,
+    label_wrap_width: HWND,
+    edit_wrap_width: HWND,
+    label_quote_prefix: HWND,
+    edit_quote_prefix: HWND,
     checkbox_move_cursor: HWND,
     checkbox_check_updates: HWND,
     ok_button: HWND,
 }
 
 struct OptionsLabels {
-    title: &'static str,
-    label_language: &'static str,
-    label_open: &'static str,
-    label_tts_engine: &'static str,
-    label_voice: &'static str,
-    label_multilingual: &'static str,
-    label_tts_tuning: &'static str,
-    label_split_on_newline: &'static str,
-    label_word_wrap: &'static str,
-    label_move_cursor: &'static str,
-    label_check_updates: &'static str,
-    label_audio_skip: &'static str,
-    label_audio_split: &'static str,
-    label_audio_split_text: &'static str,
-    label_audio_split_requires_newline: &'static str,
-    lang_it: &'static str,
-    lang_en: &'static str,
-    open_new_tab: &'static str,
-    open_new_window: &'static str,
-    engine_edge: &'static str,
-    engine_sapi5: &'static str,
-    split_none: &'static str,
-    split_by_text: &'static str,
-    split_parts: &'static str,
-    ok: &'static str,
-    cancel: &'static str,
-    voices_empty: &'static str,
+    title: String,
+    label_language: String,
+    label_open: String,
+    label_tts_engine: String,
+    label_voice: String,
+    label_multilingual: String,
+    label_tts_tuning: String,
+    label_split_on_newline: String,
+    label_word_wrap: String,
+    label_wrap_width: String,
+    label_quote_prefix: String,
+    label_move_cursor: String,
+    label_check_updates: String,
+    label_audio_skip: String,
+    label_audio_split: String,
+    label_audio_split_text: String,
+    label_audio_split_requires_newline: String,
+    lang_it: String,
+    lang_en: String,
+    lang_es: String,
+    lang_pt: String,
+    open_new_tab: String,
+    open_new_window: String,
+    engine_edge: String,
+    engine_sapi5: String,
+    split_none: String,
+    split_by_text: String,
+    split_parts: String,
+    ok: String,
+    cancel: String,
+    voices_empty: String,
 }
 
 fn options_labels(language: Language) -> OptionsLabels {
-    match language {
-        Language::Italian => OptionsLabels {
-            title: "Opzioni",
-            label_language: "Lingua interfaccia:",
-            label_open: "Apertura file:",
-            label_tts_engine: "Sistema sintesi vocale:",
-            label_voice: "Voce:",
-            label_multilingual: "Mostra solo voci multilingua",
-            label_tts_tuning: "Scegli tono, velocita' e volume",
-            label_split_on_newline: "Spezza la lettura quando si va a capo",
-            label_word_wrap: "A capo automatico nella finestra",
-            label_move_cursor: "Sposta il cursore durante la lettura",
-            label_check_updates: "Controlla aggiornamenti all'avvio",
-            label_audio_skip: "Spostamento MP3 (frecce):",
-            label_audio_split: "Dividi l'audiolibro in:",
-            label_audio_split_text: "Testo per divisione:",
-            label_audio_split_requires_newline: "Il testo deve iniziare a capo",
-            lang_it: "Italiano",
-            lang_en: "Inglese",
-            open_new_tab: "Apri file in nuovo tab",
-            open_new_window: "Apri file in nuova finestra",
-            engine_edge: "Voci Microsoft",
-            engine_sapi5: "SAPI5",
-            split_none: "Nessuna divisione",
-            split_by_text: "In base al testo",
-            split_parts: "parti",
-            ok: "OK",
-            cancel: "Annulla",
-            voices_empty: "Nessuna voce disponibile",
-        },
-        Language::English => OptionsLabels {
-            title: "Options",
-            label_language: "Interface language:",
-            label_open: "Open behavior:",
-            label_tts_engine: "Text-to-Speech System:",
-            label_voice: "Voice:",
-            label_multilingual: "Show only multilingual voices",
-            label_tts_tuning: "Choose pitch, speed, and volume",
-            label_split_on_newline: "Split reading on new lines",
-            label_word_wrap: "Word wrap in editor",
-            label_move_cursor: "Move cursor during reading",
-            label_check_updates: "Check updates on startup",
-            label_audio_skip: "MP3 skip interval:",
-            label_audio_split: "Split audiobook into:",
-            label_audio_split_text: "Split marker text:",
-            label_audio_split_requires_newline: "Require the marker at line start",
-            lang_it: "Italian",
-            lang_en: "English",
-            open_new_tab: "Open files in new tab",
-            open_new_window: "Open files in new window",
-            engine_edge: "Microsoft Voices",
-            engine_sapi5: "SAPI5",
-            split_none: "No split",
-            split_by_text: "Based on text",
-            split_parts: "parts",
-            ok: "OK",
-            cancel: "Cancel",
-            voices_empty: "No voices available",
-        },
+    OptionsLabels {
+        title: i18n::tr(language, "options.title"),
+        label_language: i18n::tr(language, "options.label.language"),
+        label_open: i18n::tr(language, "options.label.open"),
+        label_tts_engine: i18n::tr(language, "options.label.tts_engine"),
+        label_voice: i18n::tr(language, "options.label.voice"),
+        label_multilingual: i18n::tr(language, "options.label.multilingual"),
+        label_tts_tuning: i18n::tr(language, "options.label.tts_tuning"),
+        label_split_on_newline: i18n::tr(language, "options.label.split_on_newline"),
+        label_word_wrap: i18n::tr(language, "options.label.word_wrap"),
+        label_wrap_width: i18n::tr(language, "options.label.wrap_width"),
+        label_quote_prefix: i18n::tr(language, "options.label.quote_prefix"),
+        label_move_cursor: i18n::tr(language, "options.label.move_cursor"),
+        label_check_updates: i18n::tr(language, "options.label.check_updates"),
+        label_audio_skip: i18n::tr(language, "options.label.audio_skip"),
+        label_audio_split: i18n::tr(language, "options.label.audio_split"),
+        label_audio_split_text: i18n::tr(language, "options.label.audio_split_text"),
+        label_audio_split_requires_newline: i18n::tr(
+            language,
+            "options.label.audio_split_requires_newline",
+        ),
+        lang_it: i18n::tr(language, "options.lang.it"),
+        lang_en: i18n::tr(language, "options.lang.en"),
+        lang_es: i18n::tr(language, "options.lang.es"),
+        lang_pt: i18n::tr(language, "options.lang.pt"),
+        open_new_tab: i18n::tr(language, "options.open.new_tab"),
+        open_new_window: i18n::tr(language, "options.open.new_window"),
+        engine_edge: i18n::tr(language, "options.engine.edge"),
+        engine_sapi5: i18n::tr(language, "options.engine.sapi5"),
+        split_none: i18n::tr(language, "options.split.none"),
+        split_by_text: i18n::tr(language, "options.split.by_text"),
+        split_parts: i18n::tr(language, "options.split.parts"),
+        ok: i18n::tr(language, "options.ok"),
+        cancel: i18n::tr(language, "options.cancel"),
+        voices_empty: i18n::tr(language, "options.voices.empty"),
     }
 }
 
@@ -214,7 +200,7 @@ pub unsafe fn open(parent: HWND) {
 
     let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
     let labels = options_labels(language);
-    let title = to_wide(labels.title);
+    let title = to_wide(&labels.title);
 
     let dialog = CreateWindowExW(
         WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME,
@@ -224,7 +210,7 @@ pub unsafe fn open(parent: HWND) {
         CW_USEDEFAULT,
         CW_USEDEFAULT,
         520,
-        560, // Increased height
+        590, // Increased height
         parent,
         None,
         hinstance,
@@ -319,7 +305,7 @@ unsafe extern "system" fn options_wndproc(
             let label_lang = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.label_language).as_ptr()),
+                PCWSTR(to_wide(&labels.label_language).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
                 y,
@@ -349,7 +335,7 @@ unsafe extern "system" fn options_wndproc(
             let label_open = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.label_open).as_ptr()),
+                PCWSTR(to_wide(&labels.label_open).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
                 y,
@@ -379,7 +365,7 @@ unsafe extern "system" fn options_wndproc(
             let label_tts_engine = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.label_tts_engine).as_ptr()),
+                PCWSTR(to_wide(&labels.label_tts_engine).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
                 y,
@@ -409,7 +395,7 @@ unsafe extern "system" fn options_wndproc(
             let label_voice = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.label_voice).as_ptr()),
+                PCWSTR(to_wide(&labels.label_voice).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
                 y,
@@ -439,7 +425,7 @@ unsafe extern "system" fn options_wndproc(
             let checkbox_multilingual = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.label_multilingual).as_ptr()),
+                PCWSTR(to_wide(&labels.label_multilingual).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
                 170,
                 y,
@@ -455,7 +441,7 @@ unsafe extern "system" fn options_wndproc(
             let button_tts_tuning = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.label_tts_tuning).as_ptr()),
+                PCWSTR(to_wide(&labels.label_tts_tuning).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 170,
                 y,
@@ -471,7 +457,7 @@ unsafe extern "system" fn options_wndproc(
             let label_audio_skip = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.label_audio_skip).as_ptr()),
+                PCWSTR(to_wide(&labels.label_audio_skip).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
                 y,
@@ -501,7 +487,7 @@ unsafe extern "system" fn options_wndproc(
             let label_audio_split = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.label_audio_split).as_ptr()),
+                PCWSTR(to_wide(&labels.label_audio_split).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
                 y,
@@ -531,7 +517,7 @@ unsafe extern "system" fn options_wndproc(
             let label_audio_split_text = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
-                PCWSTR(to_wide(labels.label_audio_split_text).as_ptr()),
+                PCWSTR(to_wide(&labels.label_audio_split_text).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
                 y,
@@ -561,7 +547,7 @@ unsafe extern "system" fn options_wndproc(
             let checkbox_audio_split_requires_newline = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.label_audio_split_requires_newline).as_ptr()),
+                PCWSTR(to_wide(&labels.label_audio_split_requires_newline).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
                 170,
                 y,
@@ -577,7 +563,7 @@ unsafe extern "system" fn options_wndproc(
             let checkbox_split_on_newline = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.label_split_on_newline).as_ptr()),
+                PCWSTR(to_wide(&labels.label_split_on_newline).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
                 170,
                 y,
@@ -593,7 +579,7 @@ unsafe extern "system" fn options_wndproc(
             let checkbox_word_wrap = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.label_word_wrap).as_ptr()),
+                PCWSTR(to_wide(&labels.label_word_wrap).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
                 170,
                 y,
@@ -604,12 +590,72 @@ unsafe extern "system" fn options_wndproc(
                 HINSTANCE(0),
                 None,
             );
-            y += 24;
+            y += 26;
+
+            let label_wrap_width = CreateWindowExW(
+                Default::default(),
+                WC_STATIC,
+                PCWSTR(to_wide(&labels.label_wrap_width).as_ptr()),
+                WS_CHILD | WS_VISIBLE,
+                20,
+                y,
+                140,
+                20,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
+            let edit_wrap_width = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                w!("EDIT"),
+                PCWSTR::null(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(ES_AUTOHSCROLL as u32),
+                170,
+                y - 2,
+                80,
+                22,
+                hwnd,
+                HMENU(OPTIONS_ID_WRAP_WIDTH as isize),
+                HINSTANCE(0),
+                None,
+            );
+            y += 30;
+
+            let label_quote_prefix = CreateWindowExW(
+                Default::default(),
+                WC_STATIC,
+                PCWSTR(to_wide(&labels.label_quote_prefix).as_ptr()),
+                WS_CHILD | WS_VISIBLE,
+                20,
+                y,
+                140,
+                20,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
+            let edit_quote_prefix = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                w!("EDIT"),
+                PCWSTR::null(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(ES_AUTOHSCROLL as u32),
+                170,
+                y - 2,
+                120,
+                22,
+                hwnd,
+                HMENU(OPTIONS_ID_QUOTE_PREFIX as isize),
+                HINSTANCE(0),
+                None,
+            );
+            y += 30;
 
             let checkbox_move_cursor = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.label_move_cursor).as_ptr()),
+                PCWSTR(to_wide(&labels.label_move_cursor).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
                 170,
                 y,
@@ -625,7 +671,7 @@ unsafe extern "system" fn options_wndproc(
             let checkbox_check_updates = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.label_check_updates).as_ptr()),
+                PCWSTR(to_wide(&labels.label_check_updates).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
                 170,
                 y,
@@ -641,7 +687,7 @@ unsafe extern "system" fn options_wndproc(
             let ok_button = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.ok).as_ptr()),
+                PCWSTR(to_wide(&labels.ok).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
                 280,
                 y,
@@ -655,7 +701,7 @@ unsafe extern "system" fn options_wndproc(
             let cancel_button = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
-                PCWSTR(to_wide(labels.cancel).as_ptr()),
+                PCWSTR(to_wide(&labels.cancel).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 380,
                 y,
@@ -687,6 +733,10 @@ unsafe extern "system" fn options_wndproc(
                 button_tts_tuning,
                 checkbox_split_on_newline,
                 checkbox_word_wrap,
+                label_wrap_width,
+                edit_wrap_width,
+                label_quote_prefix,
+                edit_quote_prefix,
                 checkbox_move_cursor,
                 checkbox_check_updates,
                 ok_button,
@@ -713,6 +763,10 @@ unsafe extern "system" fn options_wndproc(
                 button_tts_tuning,
                 checkbox_split_on_newline,
                 checkbox_word_wrap,
+                label_wrap_width,
+                edit_wrap_width,
+                label_quote_prefix,
+                edit_quote_prefix,
                 checkbox_move_cursor,
                 checkbox_check_updates,
                 ok_button,
@@ -879,6 +933,10 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
         _button_tts_tuning,
         checkbox_split_on_newline,
         checkbox_word_wrap,
+        _label_wrap_width,
+        edit_wrap_width,
+        _label_quote_prefix,
+        edit_quote_prefix,
         checkbox_move_cursor,
         checkbox_check_updates,
     ) = match with_options_state(hwnd, |state| {
@@ -897,6 +955,10 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
             state.button_tts_tuning,
             state.checkbox_split_on_newline,
             state.checkbox_word_wrap,
+            state.label_wrap_width,
+            state.edit_wrap_width,
+            state.label_quote_prefix,
+            state.edit_quote_prefix,
             state.checkbox_move_cursor,
             state.checkbox_check_updates,
         )
@@ -913,17 +975,31 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
         combo_lang,
         CB_ADDSTRING,
         WPARAM(0),
-        LPARAM(to_wide(labels.lang_it).as_ptr() as isize),
+        LPARAM(to_wide(&labels.lang_it).as_ptr() as isize),
     );
     let _ = SendMessageW(
         combo_lang,
         CB_ADDSTRING,
         WPARAM(0),
-        LPARAM(to_wide(labels.lang_en).as_ptr() as isize),
+        LPARAM(to_wide(&labels.lang_en).as_ptr() as isize),
+    );
+    let _ = SendMessageW(
+        combo_lang,
+        CB_ADDSTRING,
+        WPARAM(0),
+        LPARAM(to_wide(&labels.lang_es).as_ptr() as isize),
+    );
+    let _ = SendMessageW(
+        combo_lang,
+        CB_ADDSTRING,
+        WPARAM(0),
+        LPARAM(to_wide(&labels.lang_pt).as_ptr() as isize),
     );
     let lang_index = match settings.language {
         Language::Italian => 0,
         Language::English => 1,
+        Language::Spanish => 2,
+        Language::Portuguese => 3,
     };
     let _ = SendMessageW(combo_lang, CB_SETCURSEL, WPARAM(lang_index), LPARAM(0));
 
@@ -932,13 +1008,13 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
         combo_open,
         CB_ADDSTRING,
         WPARAM(0),
-        LPARAM(to_wide(labels.open_new_tab).as_ptr() as isize),
+        LPARAM(to_wide(&labels.open_new_tab).as_ptr() as isize),
     );
     let _ = SendMessageW(
         combo_open,
         CB_ADDSTRING,
         WPARAM(0),
-        LPARAM(to_wide(labels.open_new_window).as_ptr() as isize),
+        LPARAM(to_wide(&labels.open_new_window).as_ptr() as isize),
     );
     let open_index = match settings.open_behavior {
         OpenBehavior::NewTab => 0,
@@ -951,13 +1027,13 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
         combo_tts_engine,
         CB_ADDSTRING,
         WPARAM(0),
-        LPARAM(to_wide(labels.engine_edge).as_ptr() as isize),
+        LPARAM(to_wide(&labels.engine_edge).as_ptr() as isize),
     );
     let _ = SendMessageW(
         combo_tts_engine,
         CB_ADDSTRING,
         WPARAM(0),
-        LPARAM(to_wide(labels.engine_sapi5).as_ptr() as isize),
+        LPARAM(to_wide(&labels.engine_sapi5).as_ptr() as isize),
     );
     let engine_index = match settings.tts_engine {
         TtsEngine::Edge => 0,
@@ -1009,6 +1085,12 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
             0
         }),
         LPARAM(0),
+    );
+    let wrap_text = settings.wrap_width.to_string();
+    let _ = SetWindowTextW(edit_wrap_width, PCWSTR(to_wide(&wrap_text).as_ptr()));
+    let _ = SetWindowTextW(
+        edit_quote_prefix,
+        PCWSTR(to_wide(&settings.quote_prefix).as_ptr()),
     );
     let _ = SendMessageW(
         checkbox_move_cursor,
@@ -1067,8 +1149,8 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
 
     let _ = SendMessageW(combo_audio_split, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
     let split_options = [
-        (0, labels.split_none.to_string()),
-        (AUDIOBOOK_SPLIT_BY_TEXT, labels.split_by_text.to_string()),
+        (0, labels.split_none.clone()),
+        (AUDIOBOOK_SPLIT_BY_TEXT, labels.split_by_text.clone()),
         (2, format!("2 {}", labels.split_parts)),
         (4, format!("4 {}", labels.split_parts)),
         (6, format!("6 {}", labels.split_parts)),
@@ -1118,7 +1200,7 @@ unsafe fn populate_voice_combo(
 ) {
     let _ = SendMessageW(combo_voice, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
     if voices.is_empty() {
-        let label = labels.voices_empty;
+        let label = &labels.voices_empty;
         // We could also check if it's loading, but SAPI loads fast.
         // For Edge, it might be loading.
         // We can check if "loading" logic is needed, but "voices_empty" is safe default.
@@ -1183,6 +1265,8 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
         _button_tts_tuning,
         checkbox_split_on_newline,
         checkbox_word_wrap,
+        edit_wrap_width,
+        edit_quote_prefix,
         checkbox_move_cursor,
         checkbox_check_updates,
     ) = match with_options_state(hwnd, |state| {
@@ -1200,6 +1284,8 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
             state.button_tts_tuning,
             state.checkbox_split_on_newline,
             state.checkbox_word_wrap,
+            state.edit_wrap_width,
+            state.edit_quote_prefix,
             state.checkbox_move_cursor,
             state.checkbox_check_updates,
         )
@@ -1221,10 +1307,11 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     .unwrap_or((settings.tts_engine, settings.tts_voice.clone(), false));
 
     let lang_sel = SendMessageW(combo_lang, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
-    settings.language = if lang_sel == 1 {
-        Language::English
-    } else {
-        Language::Italian
+    settings.language = match lang_sel {
+        1 => Language::English,
+        2 => Language::Spanish,
+        3 => Language::Portuguese,
+        _ => Language::Italian,
     };
 
     let open_sel = SendMessageW(combo_open, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
@@ -1258,6 +1345,25 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     settings.word_wrap = SendMessageW(checkbox_word_wrap, BM_GETCHECK, WPARAM(0), LPARAM(0)).0
         as u32
         == BST_CHECKED.0;
+
+    let width_len = GetWindowTextLengthW(edit_wrap_width);
+    if width_len >= 0 {
+        let mut buf = vec![0u16; (width_len + 1) as usize];
+        let read = GetWindowTextW(edit_wrap_width, &mut buf);
+        let text = String::from_utf16_lossy(&buf[..read as usize]);
+        if let Ok(parsed) = text.trim().parse::<u32>() {
+            if parsed > 0 {
+                settings.wrap_width = parsed;
+            }
+        }
+    }
+    let prefix_len = GetWindowTextLengthW(edit_quote_prefix);
+    if prefix_len >= 0 {
+        let mut buf = vec![0u16; (prefix_len + 1) as usize];
+        let read = GetWindowTextW(edit_quote_prefix, &mut buf);
+        let text = String::from_utf16_lossy(&buf[..read as usize]);
+        settings.quote_prefix = text;
+    }
     settings.move_cursor_during_reading =
         SendMessageW(checkbox_move_cursor, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32
             == BST_CHECKED.0;
@@ -1492,7 +1598,7 @@ fn focus_language_combo_once(hwnd: HWND) {
             if label.0 != 0 {
                 let labels = options_labels(language);
                 let _ = SetWindowTextW(label, PCWSTR(to_wide(" ").as_ptr()));
-                let _ = SetWindowTextW(label, PCWSTR(to_wide(labels.label_language).as_ptr()));
+                let _ = SetWindowTextW(label, PCWSTR(to_wide(&labels.label_language).as_ptr()));
             }
             SetForegroundWindow(hwnd);
             if ok_button.0 != 0 {

@@ -1,4 +1,19 @@
 # Changelog
+Versione 0.5.3 – 2026-01-02
+Nuove funzionalita
+• Aggiunto Trova nei file.
+• Aggiunti nuovi strumenti di testo: Normalizza spazi bianchi, Riformatta righe e Pulisci testo Markdown.
+• Aggiunte Statistiche testo (Alt+Y).
+• Aggiunti nuovi comandi lista nel menu Modifica:
+• Ordina righe (Alt+Shift+O)
+• Rimuovi duplicati (Alt+Shift+K)
+• Inverti righe (Alt+Shift+Z)
+• Aggiunti Commenta / Decommenta righe (Ctrl+Q / Ctrl+Shift+Q).
+Localizzazione
+• Aggiunta la lingua spagnola.
+• Aggiunta la lingua portoghese.
+Miglioramenti
+• Quando un file EPUB e' aperto, Salva passa automaticamente a Salva con nome ed esporta il contenuto come .txt per evitare corruzione dell'EPUB.
 
 ## 0.5.2 - 2026-01-01
 - Aggiunto il changelog.

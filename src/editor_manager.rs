@@ -1,16 +1,17 @@
 #![allow(clippy::if_same_then_else, clippy::collapsible_else_if)]
-use crate::accessibility::{from_wide, to_wide, to_wide_normalized};
+use crate::accessibility::{EM_REPLACESEL, EM_SCROLLCARET, from_wide, to_wide, to_wide_normalized};
 use crate::file_handler::*;
 use crate::settings::{
     FileFormat, TextEncoding, confirm_save_message, confirm_title, untitled_base, untitled_title,
 };
 use crate::{log_debug, with_state};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::HFONT;
 use windows::Win32::UI::Controls::RichEdit::{
-    CFM_COLOR, CFM_SIZE, CHARFORMAT2W, CHARRANGE, EM_EXSETSEL, EM_SETCHARFORMAT, EM_SETEVENTMASK,
-    ENM_CHANGE, MSFTEDIT_CLASS, SCF_ALL,
+    CFM_COLOR, CFM_SIZE, CHARFORMAT2W, CHARRANGE, EM_EXGETSEL, EM_EXSETSEL, EM_SETCHARFORMAT,
+    EM_SETEVENTMASK, ENM_CHANGE, MSFTEDIT_CLASS, SCF_ALL,
 };
 use windows::Win32::UI::Controls::{
     EM_GETMODIFY, EM_SETMODIFY, EM_SETREADONLY, TCIF_TEXT, TCITEMW, TCM_ADJUSTRECT,
@@ -26,6 +27,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{PCWSTR, PWSTR};
 
 const EM_LIMITTEXT: u32 = 0x00C5;
+const EM_BEGINUNDOACTION: u32 = 0x0459;
+const EM_ENDUNDOACTION: u32 = 0x045A;
 const VOICE_PANEL_PADDING: i32 = 6;
 const VOICE_PANEL_ROW_HEIGHT: i32 = 22;
 const VOICE_PANEL_SPACING: i32 = 6;
@@ -172,6 +175,1136 @@ fn apply_text_appearance(hwnd_edit: HWND, text_color: u32, text_size: i32) {
     }
 }
 
+pub unsafe fn strip_markdown_active_edit(hwnd: HWND) {
+    let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
+        return;
+    };
+    let text = get_edit_text(hwnd_edit);
+    if text.is_empty() {
+        return;
+    }
+    let cleaned = strip_markdown_text(&text);
+    if cleaned == text {
+        return;
+    }
+    set_edit_text(hwnd_edit, &cleaned);
+    mark_dirty_from_edit(hwnd, hwnd_edit);
+    SetFocus(hwnd_edit);
+}
+
+pub unsafe fn normalize_whitespace_active_edit(hwnd: HWND) {
+    let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
+        return;
+    };
+    let text = get_edit_text(hwnd_edit);
+    if text.is_empty() {
+        return;
+    }
+
+    let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut selection = CHARRANGE { cpMin: 0, cpMax: 0 };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXGETSEL,
+        WPARAM(0),
+        LPARAM(&mut selection as *mut _ as isize),
+    );
+
+    let has_selection = selection.cpMin != selection.cpMax;
+    let (start_byte, end_byte) = if has_selection {
+        (
+            utf16_index_to_byte(&text, selection.cpMin),
+            utf16_index_to_byte(&text, selection.cpMax),
+        )
+    } else {
+        (0, text.len())
+    };
+
+    let (affected_start, affected_end) = if has_selection {
+        let mut effective_end = end_byte;
+        if end_byte > start_byte && end_byte > 0 && text.as_bytes()[end_byte - 1] == b'\n' {
+            effective_end = end_byte.saturating_sub(1);
+        }
+        let line_start = text[..start_byte].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = text[effective_end..]
+            .find('\n')
+            .map(|i| effective_end + i + 1)
+            .unwrap_or(text.len());
+        (line_start, line_end)
+    } else {
+        (0, text.len())
+    };
+
+    let affected = &text[affected_start..affected_end];
+    let normalized = normalize_whitespace_block(affected, line_ending);
+    if normalized == affected {
+        return;
+    }
+
+    let mut replace_range = CHARRANGE {
+        cpMin: byte_index_to_utf16(&text, affected_start),
+        cpMax: byte_index_to_utf16(&text, affected_end),
+    };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXSETSEL,
+        WPARAM(0),
+        LPARAM(&mut replace_range as *mut _ as isize),
+    );
+    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    let replace_wide = to_wide(&normalized);
+    SendMessageW(
+        hwnd_edit,
+        EM_REPLACESEL,
+        WPARAM(1),
+        LPARAM(replace_wide.as_ptr() as isize),
+    );
+    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    mark_dirty_from_edit(hwnd, hwnd_edit);
+    SetFocus(hwnd_edit);
+}
+
+pub unsafe fn hard_line_break_active_edit(hwnd: HWND) {
+    let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
+        return;
+    };
+    let text = get_edit_text(hwnd_edit);
+    if text.is_empty() {
+        return;
+    }
+    let wrap_width = with_state(hwnd, |state| state.settings.wrap_width).unwrap_or(80);
+    let wrap_width = wrap_width.max(1) as usize;
+    let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
+
+    let mut selection = CHARRANGE { cpMin: 0, cpMax: 0 };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXGETSEL,
+        WPARAM(0),
+        LPARAM(&mut selection as *mut _ as isize),
+    );
+
+    let (range_start, range_end, has_trailing_newline) = if selection.cpMin != selection.cpMax {
+        let start = utf16_index_to_byte(&text, selection.cpMin);
+        let end = utf16_index_to_byte(&text, selection.cpMax);
+        let selected = &text[start..end];
+        (start, end, selected.ends_with('\n'))
+    } else {
+        let caret = utf16_index_to_byte(&text, selection.cpMin);
+        let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
+            return;
+        };
+        (start, end, trailing)
+    };
+
+    let target = &text[range_start..range_end];
+    let reformatted = reflow_block_text(target, wrap_width, line_ending, has_trailing_newline);
+    if reformatted == target {
+        return;
+    }
+
+    let mut replace_range = CHARRANGE {
+        cpMin: byte_index_to_utf16(&text, range_start),
+        cpMax: byte_index_to_utf16(&text, range_end),
+    };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXSETSEL,
+        WPARAM(0),
+        LPARAM(&mut replace_range as *mut _ as isize),
+    );
+    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    let replace_wide = to_wide(&reformatted);
+    SendMessageW(
+        hwnd_edit,
+        EM_REPLACESEL,
+        WPARAM(1),
+        LPARAM(replace_wide.as_ptr() as isize),
+    );
+    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    mark_dirty_from_edit(hwnd, hwnd_edit);
+    SetFocus(hwnd_edit);
+}
+
+pub unsafe fn order_items_active_edit(hwnd: HWND) {
+    let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
+        return;
+    };
+    let text = get_edit_text(hwnd_edit);
+    if text.is_empty() {
+        return;
+    }
+
+    let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut selection = CHARRANGE { cpMin: 0, cpMax: 0 };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXGETSEL,
+        WPARAM(0),
+        LPARAM(&mut selection as *mut _ as isize),
+    );
+
+    let (affected_start, affected_end, has_trailing_newline) = if selection.cpMin != selection.cpMax
+    {
+        let start_byte = utf16_index_to_byte(&text, selection.cpMin);
+        let end_byte = utf16_index_to_byte(&text, selection.cpMax);
+        let mut effective_end = end_byte;
+        if end_byte > start_byte && end_byte > 0 && text.as_bytes()[end_byte - 1] == b'\n' {
+            effective_end = end_byte.saturating_sub(1);
+        }
+        let line_start = text[..start_byte].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = text[effective_end..]
+            .find('\n')
+            .map(|i| effective_end + i + 1)
+            .unwrap_or(text.len());
+        (
+            line_start,
+            line_end,
+            text[line_start..line_end].ends_with('\n'),
+        )
+    } else {
+        let caret = utf16_index_to_byte(&text, selection.cpMin);
+        let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
+            return;
+        };
+        (start, end, trailing)
+    };
+
+    let affected = &text[affected_start..affected_end];
+    let ordered = order_lines_block(affected, line_ending, has_trailing_newline);
+    if ordered == affected {
+        return;
+    }
+
+    let mut replace_range = CHARRANGE {
+        cpMin: byte_index_to_utf16(&text, affected_start),
+        cpMax: byte_index_to_utf16(&text, affected_end),
+    };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXSETSEL,
+        WPARAM(0),
+        LPARAM(&mut replace_range as *mut _ as isize),
+    );
+    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    let replace_wide = to_wide(&ordered);
+    SendMessageW(
+        hwnd_edit,
+        EM_REPLACESEL,
+        WPARAM(1),
+        LPARAM(replace_wide.as_ptr() as isize),
+    );
+    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    mark_dirty_from_edit(hwnd, hwnd_edit);
+    SetFocus(hwnd_edit);
+}
+
+pub unsafe fn keep_unique_items_active_edit(hwnd: HWND) {
+    let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
+        return;
+    };
+    let text = get_edit_text(hwnd_edit);
+    if text.is_empty() {
+        return;
+    }
+
+    let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut selection = CHARRANGE { cpMin: 0, cpMax: 0 };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXGETSEL,
+        WPARAM(0),
+        LPARAM(&mut selection as *mut _ as isize),
+    );
+
+    let (affected_start, affected_end, has_trailing_newline) = if selection.cpMin != selection.cpMax
+    {
+        let start_byte = utf16_index_to_byte(&text, selection.cpMin);
+        let end_byte = utf16_index_to_byte(&text, selection.cpMax);
+        let mut effective_end = end_byte;
+        if end_byte > start_byte && end_byte > 0 && text.as_bytes()[end_byte - 1] == b'\n' {
+            effective_end = end_byte.saturating_sub(1);
+        }
+        let line_start = text[..start_byte].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = text[effective_end..]
+            .find('\n')
+            .map(|i| effective_end + i + 1)
+            .unwrap_or(text.len());
+        (
+            line_start,
+            line_end,
+            text[line_start..line_end].ends_with('\n'),
+        )
+    } else {
+        let caret = utf16_index_to_byte(&text, selection.cpMin);
+        let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
+            return;
+        };
+        (start, end, trailing)
+    };
+
+    let affected = &text[affected_start..affected_end];
+    let cleaned = keep_unique_lines_block(affected, line_ending, has_trailing_newline);
+    if cleaned == affected {
+        return;
+    }
+
+    let mut replace_range = CHARRANGE {
+        cpMin: byte_index_to_utf16(&text, affected_start),
+        cpMax: byte_index_to_utf16(&text, affected_end),
+    };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXSETSEL,
+        WPARAM(0),
+        LPARAM(&mut replace_range as *mut _ as isize),
+    );
+    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    let replace_wide = to_wide(&cleaned);
+    SendMessageW(
+        hwnd_edit,
+        EM_REPLACESEL,
+        WPARAM(1),
+        LPARAM(replace_wide.as_ptr() as isize),
+    );
+    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    mark_dirty_from_edit(hwnd, hwnd_edit);
+    SetFocus(hwnd_edit);
+}
+
+pub unsafe fn reverse_items_active_edit(hwnd: HWND) {
+    let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
+        return;
+    };
+    let text = get_edit_text(hwnd_edit);
+    if text.is_empty() {
+        return;
+    }
+
+    let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut selection = CHARRANGE { cpMin: 0, cpMax: 0 };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXGETSEL,
+        WPARAM(0),
+        LPARAM(&mut selection as *mut _ as isize),
+    );
+
+    let (affected_start, affected_end, has_trailing_newline) = if selection.cpMin != selection.cpMax
+    {
+        let start_byte = utf16_index_to_byte(&text, selection.cpMin);
+        let end_byte = utf16_index_to_byte(&text, selection.cpMax);
+        let mut effective_end = end_byte;
+        if end_byte > start_byte && end_byte > 0 && text.as_bytes()[end_byte - 1] == b'\n' {
+            effective_end = end_byte.saturating_sub(1);
+        }
+        let line_start = text[..start_byte].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = text[effective_end..]
+            .find('\n')
+            .map(|i| effective_end + i + 1)
+            .unwrap_or(text.len());
+        (
+            line_start,
+            line_end,
+            text[line_start..line_end].ends_with('\n'),
+        )
+    } else {
+        let caret = utf16_index_to_byte(&text, selection.cpMin);
+        let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
+            return;
+        };
+        (start, end, trailing)
+    };
+
+    let affected = &text[affected_start..affected_end];
+    let reversed = reverse_lines_block(affected, line_ending, has_trailing_newline);
+    if reversed == affected {
+        return;
+    }
+
+    let mut replace_range = CHARRANGE {
+        cpMin: byte_index_to_utf16(&text, affected_start),
+        cpMax: byte_index_to_utf16(&text, affected_end),
+    };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXSETSEL,
+        WPARAM(0),
+        LPARAM(&mut replace_range as *mut _ as isize),
+    );
+    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    let replace_wide = to_wide(&reversed);
+    SendMessageW(
+        hwnd_edit,
+        EM_REPLACESEL,
+        WPARAM(1),
+        LPARAM(replace_wide.as_ptr() as isize),
+    );
+    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    mark_dirty_from_edit(hwnd, hwnd_edit);
+    SetFocus(hwnd_edit);
+}
+
+pub unsafe fn quote_lines_active_edit(hwnd: HWND) {
+    let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
+        return;
+    };
+    let text = get_edit_text(hwnd_edit);
+    if text.is_empty() {
+        return;
+    }
+
+    let quote_prefix = with_state(hwnd, |state| state.settings.quote_prefix.clone())
+        .unwrap_or_else(|| "> ".to_string());
+    if quote_prefix.is_empty() {
+        return;
+    }
+
+    let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut selection = CHARRANGE { cpMin: 0, cpMax: 0 };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXGETSEL,
+        WPARAM(0),
+        LPARAM(&mut selection as *mut _ as isize),
+    );
+
+    let (affected_start, affected_end, has_trailing_newline) = if selection.cpMin != selection.cpMax
+    {
+        let start_byte = utf16_index_to_byte(&text, selection.cpMin);
+        let end_byte = utf16_index_to_byte(&text, selection.cpMax);
+        let mut effective_end = end_byte;
+        if end_byte > start_byte && end_byte > 0 && text.as_bytes()[end_byte - 1] == b'\n' {
+            effective_end = end_byte.saturating_sub(1);
+        }
+        let line_start = text[..start_byte].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = text[effective_end..]
+            .find('\n')
+            .map(|i| effective_end + i + 1)
+            .unwrap_or(text.len());
+        (
+            line_start,
+            line_end,
+            text[line_start..line_end].ends_with('\n'),
+        )
+    } else {
+        let caret = utf16_index_to_byte(&text, selection.cpMin);
+        let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
+            return;
+        };
+        (start, end, trailing)
+    };
+
+    let affected = &text[affected_start..affected_end];
+    let quoted = quote_lines_block(affected, line_ending, has_trailing_newline, &quote_prefix);
+    if quoted == affected {
+        return;
+    }
+
+    let mut replace_range = CHARRANGE {
+        cpMin: byte_index_to_utf16(&text, affected_start),
+        cpMax: byte_index_to_utf16(&text, affected_end),
+    };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXSETSEL,
+        WPARAM(0),
+        LPARAM(&mut replace_range as *mut _ as isize),
+    );
+    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    let replace_wide = to_wide(&quoted);
+    SendMessageW(
+        hwnd_edit,
+        EM_REPLACESEL,
+        WPARAM(1),
+        LPARAM(replace_wide.as_ptr() as isize),
+    );
+    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    mark_dirty_from_edit(hwnd, hwnd_edit);
+    SetFocus(hwnd_edit);
+}
+
+pub unsafe fn unquote_lines_active_edit(hwnd: HWND) {
+    let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
+        return;
+    };
+    let text = get_edit_text(hwnd_edit);
+    if text.is_empty() {
+        return;
+    }
+
+    let quote_prefix = with_state(hwnd, |state| state.settings.quote_prefix.clone())
+        .unwrap_or_else(|| "> ".to_string());
+    if quote_prefix.is_empty() {
+        return;
+    }
+
+    let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut selection = CHARRANGE { cpMin: 0, cpMax: 0 };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXGETSEL,
+        WPARAM(0),
+        LPARAM(&mut selection as *mut _ as isize),
+    );
+
+    let (affected_start, affected_end, has_trailing_newline) = if selection.cpMin != selection.cpMax
+    {
+        let start_byte = utf16_index_to_byte(&text, selection.cpMin);
+        let end_byte = utf16_index_to_byte(&text, selection.cpMax);
+        let mut effective_end = end_byte;
+        if end_byte > start_byte && end_byte > 0 && text.as_bytes()[end_byte - 1] == b'\n' {
+            effective_end = end_byte.saturating_sub(1);
+        }
+        let line_start = text[..start_byte].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = text[effective_end..]
+            .find('\n')
+            .map(|i| effective_end + i + 1)
+            .unwrap_or(text.len());
+        (
+            line_start,
+            line_end,
+            text[line_start..line_end].ends_with('\n'),
+        )
+    } else {
+        let caret = utf16_index_to_byte(&text, selection.cpMin);
+        let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
+            return;
+        };
+        (start, end, trailing)
+    };
+
+    let affected = &text[affected_start..affected_end];
+    let unquoted = unquote_lines_block(affected, line_ending, has_trailing_newline, &quote_prefix);
+    if unquoted == affected {
+        return;
+    }
+
+    let mut replace_range = CHARRANGE {
+        cpMin: byte_index_to_utf16(&text, affected_start),
+        cpMax: byte_index_to_utf16(&text, affected_end),
+    };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXSETSEL,
+        WPARAM(0),
+        LPARAM(&mut replace_range as *mut _ as isize),
+    );
+    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    let replace_wide = to_wide(&unquoted);
+    SendMessageW(
+        hwnd_edit,
+        EM_REPLACESEL,
+        WPARAM(1),
+        LPARAM(replace_wide.as_ptr() as isize),
+    );
+    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    mark_dirty_from_edit(hwnd, hwnd_edit);
+    SetFocus(hwnd_edit);
+}
+
+pub unsafe fn join_lines_active_edit(hwnd: HWND) {
+    let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
+        return;
+    };
+    let text = get_edit_text(hwnd_edit);
+    if text.is_empty() {
+        return;
+    }
+
+    let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut selection = CHARRANGE { cpMin: 0, cpMax: 0 };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXGETSEL,
+        WPARAM(0),
+        LPARAM(&mut selection as *mut _ as isize),
+    );
+
+    let (affected_start, affected_end, has_trailing_newline) = if selection.cpMin != selection.cpMax
+    {
+        let start_byte = utf16_index_to_byte(&text, selection.cpMin);
+        let end_byte = utf16_index_to_byte(&text, selection.cpMax);
+        let mut effective_end = end_byte;
+        if end_byte > start_byte && end_byte > 0 && text.as_bytes()[end_byte - 1] == b'\n' {
+            effective_end = end_byte.saturating_sub(1);
+        }
+        let line_start = text[..start_byte].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = text[effective_end..]
+            .find('\n')
+            .map(|i| effective_end + i + 1)
+            .unwrap_or(text.len());
+        (
+            line_start,
+            line_end,
+            text[line_start..line_end].ends_with('\n'),
+        )
+    } else {
+        let caret = utf16_index_to_byte(&text, selection.cpMin);
+        let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
+            return;
+        };
+        (start, end, trailing)
+    };
+
+    let affected = &text[affected_start..affected_end];
+    let joined = join_lines_block(affected, line_ending, has_trailing_newline);
+    if joined == affected {
+        return;
+    }
+
+    let mut replace_range = CHARRANGE {
+        cpMin: byte_index_to_utf16(&text, affected_start),
+        cpMax: byte_index_to_utf16(&text, affected_end),
+    };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXSETSEL,
+        WPARAM(0),
+        LPARAM(&mut replace_range as *mut _ as isize),
+    );
+    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    let replace_wide = to_wide(&joined);
+    SendMessageW(
+        hwnd_edit,
+        EM_REPLACESEL,
+        WPARAM(1),
+        LPARAM(replace_wide.as_ptr() as isize),
+    );
+    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    mark_dirty_from_edit(hwnd, hwnd_edit);
+    SetFocus(hwnd_edit);
+}
+
+pub unsafe fn text_stats_active_edit(hwnd: HWND) {
+    let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
+        return;
+    };
+    let text = get_edit_text(hwnd_edit);
+    let language = with_state(hwnd, |state| state.settings.language).unwrap_or_default();
+    if text.is_empty() {
+        let message = build_text_stats_message(language, 0, 0, 0, 0);
+        crate::show_info(hwnd, language, &message);
+        return;
+    }
+
+    let mut selection = CHARRANGE { cpMin: 0, cpMax: 0 };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXGETSEL,
+        WPARAM(0),
+        LPARAM(&mut selection as *mut _ as isize),
+    );
+
+    let target = if selection.cpMin != selection.cpMax {
+        let start_byte = utf16_index_to_byte(&text, selection.cpMin);
+        let end_byte = utf16_index_to_byte(&text, selection.cpMax);
+        &text[start_byte..end_byte]
+    } else {
+        &text[..]
+    };
+
+    let chars_with_spaces = target.chars().count();
+    let chars_without_spaces = target.chars().filter(|c| !c.is_whitespace()).count();
+    let words = target.split_whitespace().count();
+    let lines = if target.is_empty() {
+        0
+    } else {
+        target.as_bytes().iter().filter(|b| **b == b'\n').count() + 1
+    };
+    let message = build_text_stats_message(
+        language,
+        chars_with_spaces,
+        chars_without_spaces,
+        words,
+        lines,
+    );
+    crate::show_info(hwnd, language, &message);
+    SetFocus(hwnd_edit);
+}
+
+fn normalize_whitespace_block(text: &str, line_ending: &str) -> String {
+    let mut out_lines = Vec::new();
+    let mut blank_run = 0usize;
+    for raw_line in text.split('\n') {
+        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            blank_run += 1;
+            if blank_run <= 2 {
+                out_lines.push(String::new());
+            }
+        } else {
+            blank_run = 0;
+            out_lines.push(trimmed.to_string());
+        }
+    }
+    out_lines.join(line_ending)
+}
+
+fn order_lines_block(text: &str, line_ending: &str, has_trailing_newline: bool) -> String {
+    let (content, trailing_newline) = split_trailing_newline(text, has_trailing_newline);
+    let mut lines: Vec<String> = content
+        .split('\n')
+        .map(|raw_line| raw_line.strip_suffix('\r').unwrap_or(raw_line).to_string())
+        .collect();
+
+    let mut nonblank_indices = Vec::new();
+    let mut nonblank_lines = Vec::new();
+    for (idx, line) in lines.iter().enumerate() {
+        if !line.trim().is_empty() {
+            nonblank_indices.push(idx);
+            nonblank_lines.push((line.clone(), idx));
+        }
+    }
+
+    if nonblank_lines.len() > 1 {
+        nonblank_lines.sort_by_key(|(line, idx)| (line.to_ascii_lowercase(), *idx));
+    }
+
+    for (slot, (line, _)) in nonblank_indices.into_iter().zip(nonblank_lines.into_iter()) {
+        lines[slot] = line;
+    }
+
+    let mut out = lines.join(line_ending);
+    if trailing_newline {
+        out.push_str(line_ending);
+    }
+    out
+}
+
+fn keep_unique_lines_block(text: &str, line_ending: &str, has_trailing_newline: bool) -> String {
+    let (content, trailing_newline) = split_trailing_newline(text, has_trailing_newline);
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out_lines: Vec<String> = Vec::new();
+
+    for raw_line in content.split('\n') {
+        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+        if line.trim().is_empty() {
+            out_lines.push(line.to_string());
+            continue;
+        }
+        let key = line.to_ascii_lowercase();
+        if seen.insert(key) {
+            out_lines.push(line.to_string());
+        }
+    }
+
+    let mut out = out_lines.join(line_ending);
+    if trailing_newline {
+        out.push_str(line_ending);
+    }
+    out
+}
+
+fn reverse_lines_block(text: &str, line_ending: &str, has_trailing_newline: bool) -> String {
+    let (content, trailing_newline) = split_trailing_newline(text, has_trailing_newline);
+    let mut lines: Vec<String> = content
+        .split('\n')
+        .map(|raw_line| raw_line.strip_suffix('\r').unwrap_or(raw_line).to_string())
+        .collect();
+
+    let mut nonblank_indices = Vec::new();
+    let mut nonblank_lines = Vec::new();
+    for (idx, line) in lines.iter().enumerate() {
+        if !line.trim().is_empty() {
+            nonblank_indices.push(idx);
+            nonblank_lines.push(line.clone());
+        }
+    }
+
+    if nonblank_lines.len() > 1 {
+        nonblank_lines.reverse();
+    }
+
+    for (slot, line) in nonblank_indices.into_iter().zip(nonblank_lines.into_iter()) {
+        lines[slot] = line;
+    }
+
+    let mut out = lines.join(line_ending);
+    if trailing_newline {
+        out.push_str(line_ending);
+    }
+    out
+}
+
+fn quote_lines_block(
+    text: &str,
+    line_ending: &str,
+    has_trailing_newline: bool,
+    quote_prefix: &str,
+) -> String {
+    let (content, trailing_newline) = split_trailing_newline(text, has_trailing_newline);
+    let mut out_lines: Vec<String> = Vec::new();
+
+    for raw_line in content.split('\n') {
+        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+        if line.trim().is_empty() {
+            out_lines.push(line.to_string());
+        } else {
+            let mut quoted = String::with_capacity(quote_prefix.len() + line.len());
+            quoted.push_str(quote_prefix);
+            quoted.push_str(line);
+            out_lines.push(quoted);
+        }
+    }
+
+    let mut out = out_lines.join(line_ending);
+    if trailing_newline {
+        out.push_str(line_ending);
+    }
+    out
+}
+
+fn unquote_lines_block(
+    text: &str,
+    line_ending: &str,
+    has_trailing_newline: bool,
+    quote_prefix: &str,
+) -> String {
+    let (content, trailing_newline) = split_trailing_newline(text, has_trailing_newline);
+    let mut out_lines: Vec<String> = Vec::new();
+
+    for raw_line in content.split('\n') {
+        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+        if line.trim().is_empty() {
+            out_lines.push(line.to_string());
+        } else if let Some(rest) = line.strip_prefix(quote_prefix) {
+            out_lines.push(rest.to_string());
+        } else {
+            out_lines.push(line.to_string());
+        }
+    }
+
+    let mut out = out_lines.join(line_ending);
+    if trailing_newline {
+        out.push_str(line_ending);
+    }
+    out
+}
+
+fn join_lines_block(text: &str, line_ending: &str, has_trailing_newline: bool) -> String {
+    let (content, trailing_newline) = split_trailing_newline(text, has_trailing_newline);
+    let mut out = String::new();
+    let mut has_content = false;
+
+    for raw_line in content.split('\n') {
+        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+        if line.trim().is_empty() {
+            continue;
+        }
+        if !has_content {
+            out.push_str(line);
+            has_content = true;
+            continue;
+        }
+
+        let prev_ends_ws = out.chars().last().is_some_and(|c| c.is_whitespace());
+        let next_starts_ws = line.chars().next().is_some_and(|c| c.is_whitespace());
+        if !prev_ends_ws && !next_starts_ws {
+            let prev_is_word = out
+                .chars()
+                .last()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_');
+            let next_is_word = line
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_');
+            if prev_is_word && next_is_word {
+                out.push(' ');
+            }
+        }
+        out.push_str(line);
+    }
+
+    if trailing_newline {
+        out.push_str(line_ending);
+    }
+    out
+}
+
+fn build_text_stats_message(
+    language: crate::settings::Language,
+    chars_with_spaces: usize,
+    chars_without_spaces: usize,
+    words: usize,
+    lines: usize,
+) -> String {
+    let with_spaces = crate::i18n::tr_f(
+        language,
+        "text_stats.characters_with_spaces",
+        &[("count", &chars_with_spaces.to_string())],
+    );
+    let without_spaces = crate::i18n::tr_f(
+        language,
+        "text_stats.characters_without_spaces",
+        &[("count", &chars_without_spaces.to_string())],
+    );
+    let words = crate::i18n::tr_f(
+        language,
+        "text_stats.words",
+        &[("count", &words.to_string())],
+    );
+    let lines = crate::i18n::tr_f(
+        language,
+        "text_stats.lines",
+        &[("count", &lines.to_string())],
+    );
+    format!("{with_spaces}.\n{without_spaces}.\n{words}.\n{lines}.")
+}
+
+fn reflow_block_text(
+    text: &str,
+    wrap_width: usize,
+    line_ending: &str,
+    has_trailing_newline: bool,
+) -> String {
+    let (content, trailing_newline) = split_trailing_newline(text, has_trailing_newline);
+    let mut out_lines: Vec<String> = Vec::new();
+    let mut current_words: Vec<&str> = Vec::new();
+
+    for raw_line in content.split('\n') {
+        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+        if line.trim().is_empty() {
+            if !current_words.is_empty() {
+                out_lines.extend(wrap_words(current_words.drain(..), wrap_width));
+            }
+            out_lines.push(String::new());
+        } else {
+            current_words.extend(line.split_whitespace());
+        }
+    }
+
+    if !current_words.is_empty() {
+        out_lines.extend(wrap_words(current_words.drain(..), wrap_width));
+    }
+
+    let mut out = out_lines.join(line_ending);
+    if trailing_newline {
+        out.push_str(line_ending);
+    }
+    out
+}
+
+fn split_trailing_newline(text: &str, prefer_trailing: bool) -> (&str, bool) {
+    if prefer_trailing && text.ends_with("\r\n") {
+        return (&text[..text.len().saturating_sub(2)], true);
+    }
+    if prefer_trailing && text.ends_with('\n') {
+        return (&text[..text.len().saturating_sub(1)], true);
+    }
+    (text, false)
+}
+
+fn wrap_words<'a, I>(words: I, wrap_width: usize) -> Vec<String>
+where
+    I: Iterator<Item = &'a str>,
+{
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    let mut current_len = 0usize;
+
+    for word in words {
+        let word_len = word.chars().count();
+        if current_len == 0 {
+            current.push_str(word);
+            current_len = word_len;
+            continue;
+        }
+        if current_len + 1 + word_len <= wrap_width {
+            current.push(' ');
+            current.push_str(word);
+            current_len += 1 + word_len;
+        } else {
+            lines.push(current);
+            current = word.to_string();
+            current_len = word_len;
+        }
+    }
+
+    if current_len > 0 {
+        lines.push(current);
+    }
+    lines
+}
+
+fn paragraph_range_bytes(text: &str, caret: usize) -> Option<(usize, usize, bool)> {
+    if text.is_empty() {
+        return None;
+    }
+    let mut lines: Vec<(usize, usize, usize, bool)> = Vec::new();
+    let mut start = 0usize;
+    for (idx, byte) in text.as_bytes().iter().enumerate() {
+        if *byte == b'\n' {
+            let end = idx;
+            let line = &text[start..end];
+            let line = line.strip_suffix('\r').unwrap_or(line);
+            let is_blank = line.trim().is_empty();
+            lines.push((start, end, idx + 1, is_blank));
+            start = idx + 1;
+        }
+    }
+    if start <= text.len() {
+        let end = text.len();
+        let line = &text[start..end];
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        let is_blank = line.trim().is_empty();
+        lines.push((start, end, end, is_blank));
+    }
+
+    let mut line_idx = lines.len().saturating_sub(1);
+    for (idx, line) in lines.iter().enumerate() {
+        if caret < line.2 {
+            line_idx = idx;
+            break;
+        }
+    }
+    if lines[line_idx].3 {
+        return None;
+    }
+    let mut start_idx = line_idx;
+    while start_idx > 0 && !lines[start_idx - 1].3 {
+        start_idx = start_idx.saturating_sub(1);
+    }
+    let mut end_idx = line_idx;
+    while end_idx + 1 < lines.len() && !lines[end_idx + 1].3 {
+        end_idx += 1;
+    }
+    let range_start = lines[start_idx].0;
+    let range_end = lines[end_idx].2;
+    let has_trailing_newline = lines[end_idx].2 > lines[end_idx].1;
+    Some((range_start, range_end, has_trailing_newline))
+}
+
+fn utf16_index_to_byte(text: &str, target: i32) -> usize {
+    if target <= 0 {
+        return 0;
+    }
+    let target = target as usize;
+    let mut utf16_count = 0usize;
+    for (byte_idx, ch) in text.char_indices() {
+        let units = ch.len_utf16();
+        let next = utf16_count + units;
+        if target <= next {
+            if target == next {
+                return byte_idx + ch.len_utf8();
+            }
+            return byte_idx;
+        }
+        utf16_count = next;
+    }
+    text.len()
+}
+
+fn byte_index_to_utf16(text: &str, byte_idx: usize) -> i32 {
+    let mut utf16_count = 0usize;
+    for (idx, ch) in text.char_indices() {
+        if idx >= byte_idx {
+            break;
+        }
+        utf16_count += ch.len_utf16();
+    }
+    utf16_count as i32
+}
+
+fn strip_markdown_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for line in text.split_inclusive('\n') {
+        let (content, line_end) = if let Some(pos) = line.find('\n') {
+            (&line[..pos], &line[pos..])
+        } else {
+            (line, "")
+        };
+        let mut trimmed = content.trim_start();
+        if trimmed.starts_with("```") {
+            trimmed = trimmed.trim_start_matches('`').trim_start();
+        }
+        if trimmed.starts_with('#') {
+            trimmed = trimmed.trim_start_matches('#').trim_start();
+        }
+        if trimmed.starts_with('>') {
+            trimmed = trimmed.trim_start_matches('>').trim_start();
+        }
+        if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("+ ") {
+            trimmed = trimmed[2..].trim_start();
+        } else if let Some(rest) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()) {
+            let rest = rest.trim_start();
+            if let Some(rest) = rest.strip_prefix('.') {
+                trimmed = rest.trim_start();
+            }
+        }
+        let mut cleaned = strip_markdown_inline(trimmed);
+        cleaned.push_str(line_end);
+        out.push_str(&cleaned);
+    }
+    out
+}
+
+fn strip_markdown_inline(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(&ch) = chars.peek() {
+        let _ = chars.next();
+        if ch == '`' {
+            continue;
+        }
+        if ch == '*' || ch == '_' {
+            if let Some(next) = chars.peek() {
+                if *next == ch {
+                    let _ = chars.next();
+                    continue;
+                }
+            }
+        }
+        if ch == '~' {
+            if let Some(next) = chars.peek() {
+                if *next == '~' {
+                    let _ = chars.next();
+                    continue;
+                }
+            }
+        }
+        if ch == '!' && chars.peek() == Some(&'[') {
+            let _ = chars.next();
+            let alt = collect_bracket_text(&mut chars, ']');
+            if chars.peek() == Some(&'(') {
+                let _ = chars.next();
+                let _ = collect_bracket_text(&mut chars, ')');
+            }
+            out.push_str(&alt);
+            continue;
+        }
+        if ch == '[' {
+            let label = collect_bracket_text(&mut chars, ']');
+            if chars.peek() == Some(&'(') {
+                let _ = chars.next();
+                let _ = collect_bracket_text(&mut chars, ')');
+                out.push_str(&label);
+                continue;
+            }
+            out.push('[');
+            out.push_str(&label);
+            continue;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+fn collect_bracket_text<I: Iterator<Item = char>>(
+    chars: &mut std::iter::Peekable<I>,
+    end: char,
+) -> String {
+    let mut out = String::new();
+    for ch in chars.by_ref() {
+        if ch == end {
+            break;
+        }
+        out.push(ch);
+    }
+    out
+}
+
 // --- Document Management ---
 
 pub unsafe fn new_document(hwnd: HWND) {
@@ -302,6 +1435,27 @@ pub unsafe fn open_document(hwnd: HWND, path: &Path) {
     crate::push_recent_file(hwnd, path);
 }
 
+pub unsafe fn open_document_at_position(hwnd: HWND, path: &Path, start: i32, len: i32) {
+    open_document(hwnd, path);
+    let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
+        return;
+    };
+    let start = start.max(0);
+    let end = (start + len.max(0)).max(start);
+    let mut cr = CHARRANGE {
+        cpMin: start,
+        cpMax: end,
+    };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXSETSEL,
+        WPARAM(0),
+        LPARAM(&mut cr as *mut _ as isize),
+    );
+    SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
+    SetFocus(hwnd_edit);
+}
+
 pub unsafe fn select_tab(hwnd: HWND, index: usize) {
     let result = with_state(hwnd, |state| {
         if index >= state.docs.len() {
@@ -393,7 +1547,7 @@ pub unsafe fn update_window_title(hwnd: HWND) {
         if let Some(doc) = state.docs.get(state.current) {
             let suffix = if doc.dirty { "*" } else { "" };
             let untitled = untitled_base(state.settings.language);
-            let display_title = if doc.title.starts_with(untitled) {
+            let display_title = if doc.title.starts_with(&untitled) {
                 &doc.title
             } else {
                 &doc.title
@@ -684,11 +1838,21 @@ pub unsafe fn save_document_at(hwnd: HWND, index: usize, force_dialog: bool) -> 
         }
         let language = state.settings.language;
         let text = get_edit_text(state.docs[index].hwnd_edit);
-        let suggested_name = crate::suggested_filename_from_text(&text)
+        let is_epub_doc = matches!(state.docs[index].format, FileFormat::Epub);
+        let mut suggested_name = crate::suggested_filename_from_text(&text)
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| state.docs[index].title.clone());
+        if is_epub_doc {
+            let mut name_path = PathBuf::from(&suggested_name);
+            name_path.set_extension("txt");
+            suggested_name = name_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("document.txt")
+                .to_string();
+        }
 
-        let path = if !force_dialog {
+        let path = if !force_dialog && !is_epub_doc {
             state.docs[index].path.clone()
         } else {
             None
@@ -700,6 +1864,10 @@ pub unsafe fn save_document_at(hwnd: HWND, index: usize, force_dialog: bool) -> 
                 None => return None,
             },
         };
+        let mut path = path;
+        if is_epub_doc {
+            path.set_extension("txt");
+        }
 
         let is_docx = is_docx_path(&path);
         let is_pdf = is_pdf_path(&path);
@@ -930,7 +2098,7 @@ pub unsafe fn confirm_save_if_dirty_entry(hwnd: HWND, index: usize, title: &str)
     let result = MessageBoxW(
         hwnd,
         PCWSTR(to_wide(&msg).as_ptr()),
-        PCWSTR(to_wide(title_w).as_ptr()),
+        PCWSTR(to_wide(&title_w).as_ptr()),
         MB_YESNOCANCEL | MB_ICONWARNING,
     );
 

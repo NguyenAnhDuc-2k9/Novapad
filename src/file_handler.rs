@@ -1,3 +1,4 @@
+use crate::i18n;
 use crate::settings::{Language, TextEncoding};
 use calamine::{Data as CalamineData, Reader, open_workbook_auto};
 use cfb::CompoundFile;
@@ -61,7 +62,7 @@ pub fn decode_text(bytes: &[u8], language: Language) -> Result<(String, TextEnco
     if bytes.len() >= 2 {
         if bytes[0] == 0xFF && bytes[1] == 0xFE {
             if !(bytes.len() - 2).is_multiple_of(2) {
-                return Err(error_invalid_utf16le_message(language).to_string());
+                return Err(error_invalid_utf16le_message(language));
             }
             let mut utf16 = Vec::with_capacity((bytes.len() - 2) / 2);
             let mut i = 2;
@@ -73,7 +74,7 @@ pub fn decode_text(bytes: &[u8], language: Language) -> Result<(String, TextEnco
         }
         if bytes[0] == 0xFE && bytes[1] == 0xFF {
             if !(bytes.len() - 2).is_multiple_of(2) {
-                return Err(error_invalid_utf16be_message(language).to_string());
+                return Err(error_invalid_utf16be_message(language));
             }
             let mut utf16 = Vec::with_capacity((bytes.len() - 2) / 2);
             let mut i = 2;
@@ -123,9 +124,12 @@ pub fn encode_text(text: &str, encoding: TextEncoding) -> Vec<u8> {
 
 pub fn read_epub_text(path: &Path, language: Language) -> Result<String, String> {
     use epub::doc::EpubDoc;
-    let mut doc = EpubDoc::new(path).map_err(|e| match language {
-        Language::Italian => format!("Errore lettura EPUB: {}", e),
-        Language::English => format!("EPUB read error: {}", e),
+    let mut doc = EpubDoc::new(path).map_err(|e| {
+        i18n::tr_f(
+            language,
+            "file_handler.epub_read_error",
+            &[("err", &e.to_string())],
+        )
     })?;
     let mut full_text = String::new();
 
@@ -156,12 +160,7 @@ pub fn read_epub_text(path: &Path, language: Language) -> Result<String, String>
     }
 
     if full_text.trim().is_empty() {
-        return Err(match language {
-            Language::Italian => "Il file EPUB sembra non contenere testo estraibile.".to_string(),
-            Language::English => {
-                "The EPUB file appears to contain no extractable text.".to_string()
-            }
-        });
+        return Err(i18n::tr(language, "file_handler.epub_no_text"));
     }
 
     Ok(full_text)
@@ -194,26 +193,27 @@ fn strip_html_tags(html: &str) -> String {
 // --- DOC Parsing ---
 
 pub fn read_doc_text(path: &Path, language: Language) -> Result<String, String> {
-    let file = std::fs::File::open(path).map_err(|e| match language {
-        Language::Italian => format!("Errore apertura file DOC: {}", e),
-        Language::English => format!("DOC file open error: {}", e),
+    let file = std::fs::File::open(path).map_err(|e| {
+        i18n::tr_f(
+            language,
+            "file_handler.doc_open_error",
+            &[("err", &e.to_string())],
+        )
     })?;
     match CompoundFile::open(&file) {
         Ok(mut comp) => {
             let buffer = {
                 let mut stream = comp
                     .open_stream("WordDocument")
-                    .map_err(|_| match language {
-                        Language::Italian => "Stream WordDocument non trovato.".to_string(),
-                        Language::English => "WordDocument stream not found.".to_string(),
-                    })?;
+                    .map_err(|_| i18n::tr(language, "file_handler.doc_stream_missing"))?;
                 let mut buffer = Vec::new();
-                stream
-                    .read_to_end(&mut buffer)
-                    .map_err(|e| match language {
-                        Language::Italian => format!("Errore lettura stream: {}", e),
-                        Language::English => format!("Stream read error: {}", e),
-                    })?;
+                stream.read_to_end(&mut buffer).map_err(|e| {
+                    i18n::tr_f(
+                        language,
+                        "file_handler.doc_stream_read_error",
+                        &[("err", &e.to_string())],
+                    )
+                })?;
                 buffer
             };
 
@@ -242,9 +242,12 @@ pub fn read_doc_text(path: &Path, language: Language) -> Result<String, String> 
             Ok(clean_doc_text(text_utf16))
         }
         Err(_) => {
-            let bytes = std::fs::read(path).map_err(|e| match language {
-                Language::Italian => format!("Errore lettura file: {}", e),
-                Language::English => format!("File read error: {}", e),
+            let bytes = std::fs::read(path).map_err(|e| {
+                i18n::tr_f(
+                    language,
+                    "file_handler.file_read_error",
+                    &[("err", &e.to_string())],
+                )
             })?;
             if looks_like_rtf(&bytes) {
                 return Ok(extract_rtf_text(&bytes));
@@ -263,15 +266,7 @@ pub fn read_doc_text(path: &Path, language: Language) -> Result<String, String> 
             if !text_utf16.is_empty() {
                 return Ok(clean_doc_text(text_utf16));
             }
-            Err(match language {
-                Language::Italian => {
-                    "Impossibile leggere il file. Formato sconosciuto o magic number invalido."
-                        .to_string()
-                }
-                Language::English => {
-                    "Unable to read the file. Unknown format or invalid magic number.".to_string()
-                }
-            })
+            Err(i18n::tr(language, "file_handler.file_read_unknown"))
         }
     }
 }
@@ -810,9 +805,12 @@ pub fn extract_rtf_text(bytes: &[u8]) -> String {
 // --- Spreadsheet Parsing ---
 
 pub fn read_spreadsheet_text(path: &Path, language: Language) -> Result<String, String> {
-    let mut workbook = open_workbook_auto(path).map_err(|err| match language {
-        Language::Italian => format!("Errore apertura Excel: {}", err),
-        Language::English => format!("Excel open error: {}", err),
+    let mut workbook = open_workbook_auto(path).map_err(|err| {
+        i18n::tr_f(
+            language,
+            "file_handler.excel_open_error",
+            &[("err", &err.to_string())],
+        )
     })?;
     let mut out = String::new();
     if let Some(Ok(range)) = workbook.worksheet_range_at(0) {
@@ -837,10 +835,7 @@ pub fn read_spreadsheet_text(path: &Path, language: Language) -> Result<String, 
             out.push('\n');
         }
     } else {
-        return Err(match language {
-            Language::Italian => "Nessun foglio trovato o errore lettura foglio.".to_string(),
-            Language::English => "No worksheet found or worksheet read error.".to_string(),
-        });
+        return Err(i18n::tr(language, "file_handler.excel_no_sheet"));
     }
     Ok(out)
 }
@@ -848,13 +843,19 @@ pub fn read_spreadsheet_text(path: &Path, language: Language) -> Result<String, 
 // --- DOCX Parsing & Writing ---
 
 pub fn read_docx_text(path: &Path, language: Language) -> Result<String, String> {
-    let bytes = std::fs::read(path).map_err(|err| match language {
-        Language::Italian => format!("Errore apertura file: {}", err),
-        Language::English => format!("File open error: {}", err),
+    let bytes = std::fs::read(path).map_err(|err| {
+        i18n::tr_f(
+            language,
+            "file_handler.file_open_error",
+            &[("err", &err.to_string())],
+        )
     })?;
-    let docx = read_docx(&bytes).map_err(|err| match language {
-        Language::Italian => format!("Errore lettura DOCX: {}", err),
-        Language::English => format!("DOCX read error: {}", err),
+    let docx = read_docx(&bytes).map_err(|err| {
+        i18n::tr_f(
+            language,
+            "file_handler.docx_read_error",
+            &[("err", &err.to_string())],
+        )
     })?;
     Ok(extract_docx_text(&docx))
 }
@@ -951,9 +952,12 @@ fn extract_table_cell_text(cell: &docx_rs::TableCell) -> String {
 }
 
 pub fn write_docx_text(path: &Path, text: &str, language: Language) -> Result<(), String> {
-    let file = std::fs::File::create(path).map_err(|err| match language {
-        Language::Italian => format!("Errore salvataggio file: {}", err),
-        Language::English => format!("File save error: {}", err),
+    let file = std::fs::File::create(path).map_err(|err| {
+        i18n::tr_f(
+            language,
+            "file_handler.file_save_error",
+            &[("err", &err.to_string())],
+        )
     })?;
     let mut docx = Docx::new();
     for line in text.split('\n') {
@@ -965,9 +969,12 @@ pub fn write_docx_text(path: &Path, text: &str, language: Language) -> Result<()
         };
         docx = docx.add_paragraph(paragraph);
     }
-    docx.build().pack(file).map_err(|err| match language {
-        Language::Italian => format!("Errore salvataggio DOCX: {}", err),
-        Language::English => format!("DOCX save error: {}", err),
+    docx.build().pack(file).map_err(|err| {
+        i18n::tr_f(
+            language,
+            "file_handler.docx_save_error",
+            &[("err", &err.to_string())],
+        )
     })?;
     Ok(())
 }
@@ -975,9 +982,12 @@ pub fn write_docx_text(path: &Path, text: &str, language: Language) -> Result<()
 // --- PDF Parsing & Writing ---
 
 pub fn read_pdf_text(path: &Path, language: Language) -> Result<String, String> {
-    let text = extract_text(path).map_err(|err| match language {
-        Language::Italian => format!("Errore lettura PDF: {}", err),
-        Language::English => format!("PDF read error: {}", err),
+    let text = extract_text(path).map_err(|err| {
+        i18n::tr_f(
+            language,
+            "file_handler.pdf_read_error",
+            &[("err", &err.to_string())],
+        )
     })?;
     Ok(normalize_pdf_paragraphs(&text))
 }
@@ -1118,16 +1128,22 @@ pub fn write_pdf_text(
     let (doc, page1, layer1) = PdfDocument::new(title, page_width, page_height, "Layer 1");
     let font = doc
         .add_builtin_font(BuiltinFont::Helvetica)
-        .map_err(|err| match language {
-            Language::Italian => format!("Errore font PDF: {}", err),
-            Language::English => format!("PDF font error: {}", err),
+        .map_err(|err| {
+            i18n::tr_f(
+                language,
+                "file_handler.pdf_font_error",
+                &[("err", &err.to_string())],
+            )
         })?;
-    let font_bold =
-        doc.add_builtin_font(BuiltinFont::HelveticaBold)
-            .map_err(|err| match language {
-                Language::Italian => format!("Errore font PDF: {}", err),
-                Language::English => format!("PDF font error: {}", err),
-            })?;
+    let font_bold = doc
+        .add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(|err| {
+            i18n::tr_f(
+                language,
+                "file_handler.pdf_font_error",
+                &[("err", &err.to_string())],
+            )
+        })?;
     let lines = layout_pdf_lines(
         text,
         max_chars,
@@ -1169,7 +1185,14 @@ pub fn write_pdf_text(
             Mm(header_y),
             &font_bold,
         );
-        let page_label = format!("Pagina {} di {}", page_index + 1, pages.len());
+        let page_label = i18n::tr_f(
+            language,
+            "file_handler.pdf_page_label",
+            &[
+                ("page", &(page_index + 1).to_string()),
+                ("total", &pages.len().to_string()),
+            ],
+        );
         layer.use_text(page_label, 9.0, Mm(margin), Mm(margin - 6.0), &font);
         let mut y = content_top;
         for line in page_lines {
@@ -1187,15 +1210,20 @@ pub fn write_pdf_text(
             y -= line_height;
         }
     }
-    let file = std::fs::File::create(path).map_err(|err| match language {
-        Language::Italian => format!("Errore salvataggio file: {}", err),
-        Language::English => format!("File save error: {}", err),
+    let file = std::fs::File::create(path).map_err(|err| {
+        i18n::tr_f(
+            language,
+            "file_handler.file_save_error",
+            &[("err", &err.to_string())],
+        )
     })?;
-    doc.save(&mut BufWriter::new(file))
-        .map_err(|err| match language {
-            Language::Italian => format!("Errore salvataggio PDF: {}", err),
-            Language::English => format!("PDF save error: {}", err),
-        })?;
+    doc.save(&mut BufWriter::new(file)).map_err(|err| {
+        i18n::tr_f(
+            language,
+            "file_handler.pdf_save_error",
+            &[("err", &err.to_string())],
+        )
+    })?;
     Ok(())
 }
 
@@ -1330,16 +1358,10 @@ fn wrap_list_item(content: &str, first_max: usize, next_max: usize) -> Vec<Strin
 }
 
 // Error message helpers (copied from main.rs)
-fn error_invalid_utf16le_message(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Il file UTF-16LE ha una lunghezza non valida.",
-        Language::English => "The UTF-16LE file has an invalid length.",
-    }
+fn error_invalid_utf16le_message(language: Language) -> String {
+    i18n::tr(language, "file_handler.utf16le_invalid_length")
 }
 
-fn error_invalid_utf16be_message(language: Language) -> &'static str {
-    match language {
-        Language::Italian => "Il file UTF-16BE ha una lunghezza non valida.",
-        Language::English => "The UTF-16BE file has an invalid length.",
-    }
+fn error_invalid_utf16be_message(language: Language) -> String {
+    i18n::tr(language, "file_handler.utf16be_invalid_length")
 }

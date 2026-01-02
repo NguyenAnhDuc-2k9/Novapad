@@ -29,8 +29,19 @@ Copy: Copy selected text to clipboard (Ctrl+C).
 Paste: Paste clipboard content into document (Ctrl+V).
 Select All: Select all text (Ctrl+A).
 Find: Search text in the document (Ctrl+F).
+Find in Files: Search text across multiple files (Ctrl+Shift+F).
 Find Next: Find next occurrence (F3).
 Replace: Find and replace text (Ctrl+H).
+Normalize Whitespace: Trim line edges and reduce blank runs (Ctrl+Shift+Enter).
+Join Lines: Join lines in the paragraph or selection (Ctrl+Shift+J).
+Hard Line Break: Reflow the paragraph or selection (Ctrl+Shift+H).
+Strip Markdown Tags: Remove Markdown tags (Ctrl+Shift+M).
+Order Items: Sort the paragraph or selection lines (Alt+Shift+O).
+Keep Unique Items: Remove duplicate lines in the paragraph or selection (Alt+Shift+K).
+Reverse Items: Reverse the lines in the paragraph or selection (Alt+Shift+Z).
+Quote Lines: Add a prefix to lines in the paragraph or selection (Ctrl+Q).
+Unquote Lines: Remove the prefix from lines in the paragraph or selection (Ctrl+Shift+Q).
+Text Statistics: Shows characters, words, and lines for selection or document (Alt+Y).
 
 View:
 Show voices in editor: Show voice system, voice list, and multilingual filter.

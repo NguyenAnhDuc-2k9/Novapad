@@ -14,6 +14,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::PCWSTR;
 
 use crate::accessibility::to_wide;
+use crate::i18n;
 use crate::log_debug;
 use crate::settings::{Language, load_settings};
 use crate::with_state;
@@ -123,20 +124,14 @@ fn is_newer_version(latest: &str, current: &str) -> bool {
 }
 
 fn prompt_update(hwnd: HWND, language: Language, current: &str, latest: &str) -> bool {
-    let text = match language {
-        Language::Italian => format!(
-            "Aggiornamento disponibile.\nVersione installata: {current}\nNuova versione: {latest}\n\nVuoi scaricare e aggiornare ora?"
-        ),
-        Language::English => format!(
-            "Update available.\nInstalled version: {current}\nNew version: {latest}\n\nDo you want to download and update now?"
-        ),
-    };
-    let title = match language {
-        Language::Italian => "Aggiornamento",
-        Language::English => "Update",
-    };
+    let text = i18n::tr_f(
+        language,
+        "updater.prompt",
+        &[("current", current), ("latest", latest)],
+    );
+    let title = i18n::tr(language, "updater.title");
     let text_w = to_wide(&text);
-    let title_w = to_wide(title);
+    let title_w = to_wide(&title);
     let result = unsafe {
         MessageBoxW(
             hwnd,
@@ -318,20 +313,10 @@ fn replace_executable(current: &Path, new: &Path) -> Result<(), io::Error> {
 }
 
 fn show_permission_error(language: Language) {
-    let text = match language {
-        Language::Italian => {
-            "Aggiornamento non riuscito. Permessi insufficienti.\nEsegui il programma come amministratore e riprova."
-        }
-        Language::English => {
-            "Update failed. Permission denied.\nRun the program as administrator and try again."
-        }
-    };
-    let title = match language {
-        Language::Italian => "Aggiornamento",
-        Language::English => "Update",
-    };
-    let text_w = to_wide(text);
-    let title_w = to_wide(title);
+    let text = i18n::tr(language, "updater.permission_error");
+    let title = i18n::tr(language, "updater.title");
+    let text_w = to_wide(&text);
+    let title_w = to_wide(&title);
     unsafe {
         MessageBoxW(
             HWND(0),
@@ -355,44 +340,16 @@ enum UpdateInfo {
 }
 
 fn show_update_error(language: Language, error: UpdateError) {
-    let (title, text) = match error {
-        UpdateError::Network => match language {
-            Language::Italian => (
-                "Aggiornamento",
-                "Impossibile controllare gli aggiornamenti.\nVerifica la connessione e riprova.",
-            ),
-            Language::English => (
-                "Update",
-                "Unable to check for updates.\nCheck your connection and try again.",
-            ),
-        },
-        UpdateError::NoPortableAsset => match language {
-            Language::Italian => (
-                "Aggiornamento",
-                "Nessun file portable trovato nella release.",
-            ),
-            Language::English => ("Update", "No portable file found in the release."),
-        },
-        UpdateError::Download => match language {
-            Language::Italian => (
-                "Aggiornamento",
-                "Download non riuscito.\nRiprova piu' tardi.",
-            ),
-            Language::English => ("Update", "Download failed.\nPlease try again later."),
-        },
-        UpdateError::Replace => match language {
-            Language::Italian => (
-                "Aggiornamento",
-                "Impossibile sostituire il file.\nRiprova piu' tardi.",
-            ),
-            Language::English => (
-                "Update",
-                "Unable to replace the file.\nPlease try again later.",
-            ),
-        },
+    let text_key = match error {
+        UpdateError::Network => "updater.error.network",
+        UpdateError::NoPortableAsset => "updater.error.no_portable",
+        UpdateError::Download => "updater.error.download",
+        UpdateError::Replace => "updater.error.replace",
     };
-    let text_w = to_wide(text);
-    let title_w = to_wide(title);
+    let text = i18n::tr(language, text_key);
+    let title = i18n::tr(language, "updater.title");
+    let text_w = to_wide(&text);
+    let title_w = to_wide(&title);
     unsafe {
         MessageBoxW(
             HWND(0),
@@ -404,18 +361,14 @@ fn show_update_error(language: Language, error: UpdateError) {
 }
 
 fn show_update_info(language: Language, info: UpdateInfo) {
-    let (title, text) = match info {
-        UpdateInfo::NoUpdate => match language {
-            Language::Italian => ("Aggiornamento", "Nessun aggiornamento disponibile."),
-            Language::English => ("Update", "No updates available."),
-        },
-        UpdateInfo::Completed => match language {
-            Language::Italian => ("Aggiornamento", "Aggiornamento completato."),
-            Language::English => ("Update", "Update completed."),
-        },
+    let text_key = match info {
+        UpdateInfo::NoUpdate => "updater.info.no_update",
+        UpdateInfo::Completed => "updater.info.completed",
     };
-    let text_w = to_wide(text);
-    let title_w = to_wide(title);
+    let text = i18n::tr(language, text_key);
+    let title = i18n::tr(language, "updater.title");
+    let text_w = to_wide(&text);
+    let title_w = to_wide(&title);
     unsafe {
         MessageBoxW(
             HWND(0),

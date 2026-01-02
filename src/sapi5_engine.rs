@@ -4,6 +4,7 @@
     clippy::too_many_arguments
 )]
 use crate::accessibility::to_wide;
+use crate::i18n;
 use crate::settings::{Language, VoiceInfo};
 use crate::tts_engine::TtsCommand;
 use std::collections::HashSet;
@@ -423,21 +424,11 @@ pub fn speak_sapi_to_file(
 }
 
 fn mf_not_available_message(language: Language) -> String {
-    match language {
-        Language::Italian => {
-            "Media Foundation non disponibile (Windows N/KN). Installa Media Feature Pack. Salvato in WAV.".to_string()
-        }
-        Language::English => {
-            "Media Foundation not available (Windows N/KN). Install Media Feature Pack. Saved as WAV.".to_string()
-        }
-    }
+    i18n::tr(language, "sapi5.mf_not_available")
 }
 
 fn mf_error_message(language: Language, err: &str) -> String {
-    match language {
-        Language::Italian => format!("Errore MP3 Media Foundation: {}. Salvato in WAV.", err),
-        Language::English => format!("Media Foundation MP3 error: {}. Saved as WAV.", err),
-    }
+    i18n::tr_f(language, "sapi5.mf_error", &[("err", err)])
 }
 
 fn map_sapi_rate(rate_percent: i32) -> i32 {
