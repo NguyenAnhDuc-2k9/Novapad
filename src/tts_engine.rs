@@ -465,7 +465,7 @@ pub async fn download_audio_chunk(
     tts_volume: i32,
     language: Language,
 ) -> Result<Vec<u8>, String> {
-    let max_retries = 5;
+    let max_retries = 40;
     let mut last_error = String::new();
 
     for attempt in 1..=max_retries {
@@ -493,14 +493,8 @@ pub async fn download_audio_chunk(
         }
     }
     Err(match language {
-        Language::Italian => format!(
-            "Falliti {} tentativi. Ultimo errore: {}",
-            max_retries, last_error
-        ),
-        Language::English => format!(
-            "Failed {} attempts. Last error: {}",
-            max_retries, last_error
-        ),
+        Language::Italian => format!("Errore download chunk: {}", last_error),
+        Language::English => format!("Chunk download error: {}", last_error),
     })
 }
 
