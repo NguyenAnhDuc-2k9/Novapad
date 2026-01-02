@@ -1,4 +1,9 @@
 # Changelog
+Version 0.5.4 – 2026-01-03
+Improvements
+• Fixed Normalize Whitespace (Ctrl+Shift+Enter).
+• Added HTML/HTM support (open as text).
+
 Version 0.5.3 – 2026-01-02
 New features
 • Added Find in Files.

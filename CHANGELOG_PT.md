@@ -1,4 +1,9 @@
 # Changelog
+Versao 0.5.4 – 2026-01-03
+Melhorias
+• Correcao da funcao Normalizar espacos em branco (Ctrl+Shift+Enter).
+• Suporte a HTML/HTM (abrir como texto).
+
 Versao 0.5.3 – 2026-01-02
 Novos recursos
 • Adicionado Buscar em arquivos.

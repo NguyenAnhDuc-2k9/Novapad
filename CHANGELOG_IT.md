@@ -1,4 +1,9 @@
 # Changelog
+Versione 0.5.4 – 2026-01-03
+Miglioramenti
+• Fix alla funzione Normalizza spazi bianchi (Ctrl+Shift+Invio).
+• Aggiunto supporto HTML/HTM (apertura come testo).
+
 Versione 0.5.3 – 2026-01-02
 Nuove funzionalita
 • Aggiunto Trova nei file.

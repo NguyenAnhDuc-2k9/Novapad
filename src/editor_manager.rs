@@ -29,6 +29,13 @@ use windows::core::{PCWSTR, PWSTR};
 const EM_LIMITTEXT: u32 = 0x00C5;
 const EM_BEGINUNDOACTION: u32 = 0x0459;
 const EM_ENDUNDOACTION: u32 = 0x045A;
+const EM_STOPGROUPTYPING: u32 = 0x0477;
+const EM_SETTEXTEX: u32 = 0x0461;
+const EM_GETTEXTLENGTHEX: u32 = 0x045F;
+const ST_KEEPUNDO: u32 = 0x0001;
+const ST_SELECTION: u32 = 0x0002;
+const GTL_NUMCHARS: u32 = 0x0008;
+const CP_UNICODE: u32 = 1200;
 const VOICE_PANEL_PADDING: i32 = 6;
 const VOICE_PANEL_ROW_HEIGHT: i32 = 22;
 const VOICE_PANEL_SPACING: i32 = 6;
@@ -60,6 +67,15 @@ pub struct Document {
     pub hwnd_edit: HWND,
     pub dirty: bool,
     pub format: FileFormat,
+}
+
+#[derive(Clone)]
+pub struct NormalizeUndo {
+    pub hwnd_edit: HWND,
+    pub text: String,
+    pub sel_start: i32,
+    pub sel_end: i32,
+    pub was_dirty: bool,
 }
 
 impl Default for Document {
@@ -175,6 +191,84 @@ fn apply_text_appearance(hwnd_edit: HWND, text_color: u32, text_size: i32) {
     }
 }
 
+#[repr(C)]
+struct SetTextEx {
+    flags: u32,
+    codepage: u32,
+}
+
+#[repr(C)]
+struct GetTextLengthEx {
+    flags: u32,
+    codepage: u32,
+}
+
+fn begin_single_undo_action(hwnd_edit: HWND) {
+    unsafe {
+        SendMessageW(hwnd_edit, EM_STOPGROUPTYPING, WPARAM(0), LPARAM(0));
+        SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    }
+}
+
+fn end_single_undo_action(hwnd_edit: HWND) {
+    unsafe {
+        SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    }
+}
+
+pub unsafe fn try_normalize_undo(hwnd: HWND) -> bool {
+    let mut undo = None;
+    let _ = with_state(hwnd, |state| {
+        undo = state.normalize_undo.clone();
+        state.normalize_undo = None;
+    });
+    let Some(undo) = undo else {
+        return false;
+    };
+    if undo.hwnd_edit.0 == 0 {
+        return false;
+    }
+    set_edit_text(undo.hwnd_edit, &undo.text);
+    let mut cr = CHARRANGE {
+        cpMin: undo.sel_start,
+        cpMax: undo.sel_end,
+    };
+    SendMessageW(
+        undo.hwnd_edit,
+        EM_EXSETSEL,
+        WPARAM(0),
+        LPARAM(&mut cr as *mut _ as isize),
+    );
+    let _ = with_state(hwnd, |state| {
+        for (idx, doc) in state.docs.iter_mut().enumerate() {
+            if doc.hwnd_edit == undo.hwnd_edit {
+                doc.dirty = undo.was_dirty;
+                update_tab_title(state.hwnd_tab, idx, &doc.title, doc.dirty);
+                if state.current == idx {
+                    update_window_title(hwnd);
+                }
+                break;
+            }
+        }
+    });
+    SetFocus(undo.hwnd_edit);
+    true
+}
+
+pub unsafe fn handle_normalize_edit_change(hwnd: HWND, hwnd_edit: HWND) {
+    let _ = with_state(hwnd, |state| {
+        if state.normalize_skip_change {
+            state.normalize_skip_change = false;
+            return;
+        }
+        if let Some(pending) = &state.normalize_undo {
+            if pending.hwnd_edit == hwnd_edit {
+                state.normalize_undo = None;
+            }
+        }
+    });
+}
+
 pub unsafe fn strip_markdown_active_edit(hwnd: HWND) {
     let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
         return;
@@ -187,7 +281,26 @@ pub unsafe fn strip_markdown_active_edit(hwnd: HWND) {
     if cleaned == text {
         return;
     }
-    set_edit_text(hwnd_edit, &cleaned);
+    let mut replace_range = CHARRANGE {
+        cpMin: 0,
+        cpMax: byte_index_to_utf16(&text, text.len()),
+    };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXSETSEL,
+        WPARAM(0),
+        LPARAM(&mut replace_range as *mut _ as isize),
+    );
+    // Single-undo guarantee.
+    begin_single_undo_action(hwnd_edit);
+    let replace_wide = to_wide(&cleaned);
+    SendMessageW(
+        hwnd_edit,
+        EM_REPLACESEL,
+        WPARAM(1),
+        LPARAM(replace_wide.as_ptr() as isize),
+    );
+    end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
 }
@@ -210,27 +323,59 @@ pub unsafe fn normalize_whitespace_active_edit(hwnd: HWND) {
         LPARAM(&mut selection as *mut _ as isize),
     );
 
-    let has_selection = selection.cpMin != selection.cpMax;
+    let mut length_info = GetTextLengthEx {
+        flags: GTL_NUMCHARS,
+        codepage: CP_UNICODE,
+    };
+    let total_chars = SendMessageW(
+        hwnd_edit,
+        EM_GETTEXTLENGTHEX,
+        WPARAM(&mut length_info as *mut _ as usize),
+        LPARAM(0),
+    )
+    .0 as i32;
+    let mut sel_start = selection.cpMin;
+    let mut sel_end = selection.cpMax;
+    if sel_start < 0 {
+        sel_start = 0;
+    }
+    if sel_end < 0 {
+        sel_end = total_chars;
+    }
+    if sel_end > total_chars {
+        sel_end = total_chars;
+    }
+    let near_end = sel_end >= total_chars.saturating_sub(1);
+    if near_end {
+        sel_end = total_chars;
+    }
+
+    let has_selection = sel_start != sel_end;
+    let whole_doc_selected = has_selection && sel_start == 0 && near_end;
     let (start_byte, end_byte) = if has_selection {
         (
-            utf16_index_to_byte(&text, selection.cpMin),
-            utf16_index_to_byte(&text, selection.cpMax),
+            utf16_index_to_byte(&text, sel_start),
+            utf16_index_to_byte(&text, sel_end),
         )
     } else {
         (0, text.len())
     };
 
     let (affected_start, affected_end) = if has_selection {
-        let mut effective_end = end_byte;
-        if end_byte > start_byte && end_byte > 0 && text.as_bytes()[end_byte - 1] == b'\n' {
-            effective_end = end_byte.saturating_sub(1);
+        if whole_doc_selected {
+            (0, text.len())
+        } else {
+            let mut effective_end = end_byte;
+            if end_byte > start_byte && end_byte > 0 && text.as_bytes()[end_byte - 1] == b'\n' {
+                effective_end = end_byte.saturating_sub(1);
+            }
+            let line_start = text[..start_byte].rfind('\n').map(|i| i + 1).unwrap_or(0);
+            let line_end = text[effective_end..]
+                .find('\n')
+                .map(|i| effective_end + i + 1)
+                .unwrap_or(text.len());
+            (line_start.min(start_byte), line_end.max(end_byte))
         }
-        let line_start = text[..start_byte].rfind('\n').map(|i| i + 1).unwrap_or(0);
-        let line_end = text[effective_end..]
-            .find('\n')
-            .map(|i| effective_end + i + 1)
-            .unwrap_or(text.len());
-        (line_start, line_end)
     } else {
         (0, text.len())
     };
@@ -240,10 +385,26 @@ pub unsafe fn normalize_whitespace_active_edit(hwnd: HWND) {
     if normalized == affected {
         return;
     }
+    let was_dirty = with_state(hwnd, |state| {
+        state
+            .docs
+            .iter()
+            .find(|doc| doc.hwnd_edit == hwnd_edit)
+            .map(|doc| doc.dirty)
+            .unwrap_or(false)
+    })
+    .unwrap_or(false);
 
-    let mut replace_range = CHARRANGE {
-        cpMin: byte_index_to_utf16(&text, affected_start),
-        cpMax: byte_index_to_utf16(&text, affected_end),
+    let mut replace_range = if whole_doc_selected {
+        CHARRANGE {
+            cpMin: 0,
+            cpMax: -1,
+        }
+    } else {
+        CHARRANGE {
+            cpMin: byte_index_to_utf16(&text, affected_start),
+            cpMax: byte_index_to_utf16(&text, affected_end),
+        }
     };
     SendMessageW(
         hwnd_edit,
@@ -251,15 +412,29 @@ pub unsafe fn normalize_whitespace_active_edit(hwnd: HWND) {
         WPARAM(0),
         LPARAM(&mut replace_range as *mut _ as isize),
     );
-    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    // Single-undo guarantee.
+    SendMessageW(hwnd_edit, EM_STOPGROUPTYPING, WPARAM(0), LPARAM(0));
+    let _ = with_state(hwnd, |state| {
+        state.normalize_undo = Some(NormalizeUndo {
+            hwnd_edit,
+            text: text.clone(),
+            sel_start,
+            sel_end,
+            was_dirty,
+        });
+        state.normalize_skip_change = true;
+    });
+    let mut set_text = SetTextEx {
+        flags: ST_KEEPUNDO | ST_SELECTION,
+        codepage: CP_UNICODE,
+    };
     let replace_wide = to_wide(&normalized);
     SendMessageW(
         hwnd_edit,
-        EM_REPLACESEL,
-        WPARAM(1),
+        EM_SETTEXTEX,
+        WPARAM(&mut set_text as *mut _ as usize),
         LPARAM(replace_wide.as_ptr() as isize),
     );
-    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
 }
@@ -313,7 +488,8 @@ pub unsafe fn hard_line_break_active_edit(hwnd: HWND) {
         WPARAM(0),
         LPARAM(&mut replace_range as *mut _ as isize),
     );
-    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    // Single-undo guarantee.
+    begin_single_undo_action(hwnd_edit);
     let replace_wide = to_wide(&reformatted);
     SendMessageW(
         hwnd_edit,
@@ -321,7 +497,7 @@ pub unsafe fn hard_line_break_active_edit(hwnd: HWND) {
         WPARAM(1),
         LPARAM(replace_wide.as_ptr() as isize),
     );
-    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
 }
@@ -386,7 +562,8 @@ pub unsafe fn order_items_active_edit(hwnd: HWND) {
         WPARAM(0),
         LPARAM(&mut replace_range as *mut _ as isize),
     );
-    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    // Single-undo guarantee.
+    begin_single_undo_action(hwnd_edit);
     let replace_wide = to_wide(&ordered);
     SendMessageW(
         hwnd_edit,
@@ -394,7 +571,7 @@ pub unsafe fn order_items_active_edit(hwnd: HWND) {
         WPARAM(1),
         LPARAM(replace_wide.as_ptr() as isize),
     );
-    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
 }
@@ -459,7 +636,8 @@ pub unsafe fn keep_unique_items_active_edit(hwnd: HWND) {
         WPARAM(0),
         LPARAM(&mut replace_range as *mut _ as isize),
     );
-    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    // Single-undo guarantee.
+    begin_single_undo_action(hwnd_edit);
     let replace_wide = to_wide(&cleaned);
     SendMessageW(
         hwnd_edit,
@@ -467,7 +645,7 @@ pub unsafe fn keep_unique_items_active_edit(hwnd: HWND) {
         WPARAM(1),
         LPARAM(replace_wide.as_ptr() as isize),
     );
-    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
 }
@@ -532,7 +710,8 @@ pub unsafe fn reverse_items_active_edit(hwnd: HWND) {
         WPARAM(0),
         LPARAM(&mut replace_range as *mut _ as isize),
     );
-    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    // Single-undo guarantee.
+    begin_single_undo_action(hwnd_edit);
     let replace_wide = to_wide(&reversed);
     SendMessageW(
         hwnd_edit,
@@ -540,7 +719,7 @@ pub unsafe fn reverse_items_active_edit(hwnd: HWND) {
         WPARAM(1),
         LPARAM(replace_wide.as_ptr() as isize),
     );
-    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
 }
@@ -611,7 +790,8 @@ pub unsafe fn quote_lines_active_edit(hwnd: HWND) {
         WPARAM(0),
         LPARAM(&mut replace_range as *mut _ as isize),
     );
-    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    // Single-undo guarantee.
+    begin_single_undo_action(hwnd_edit);
     let replace_wide = to_wide(&quoted);
     SendMessageW(
         hwnd_edit,
@@ -619,7 +799,7 @@ pub unsafe fn quote_lines_active_edit(hwnd: HWND) {
         WPARAM(1),
         LPARAM(replace_wide.as_ptr() as isize),
     );
-    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
 }
@@ -690,7 +870,8 @@ pub unsafe fn unquote_lines_active_edit(hwnd: HWND) {
         WPARAM(0),
         LPARAM(&mut replace_range as *mut _ as isize),
     );
-    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    // Single-undo guarantee.
+    begin_single_undo_action(hwnd_edit);
     let replace_wide = to_wide(&unquoted);
     SendMessageW(
         hwnd_edit,
@@ -698,7 +879,7 @@ pub unsafe fn unquote_lines_active_edit(hwnd: HWND) {
         WPARAM(1),
         LPARAM(replace_wide.as_ptr() as isize),
     );
-    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
 }
@@ -763,7 +944,8 @@ pub unsafe fn join_lines_active_edit(hwnd: HWND) {
         WPARAM(0),
         LPARAM(&mut replace_range as *mut _ as isize),
     );
-    SendMessageW(hwnd_edit, EM_BEGINUNDOACTION, WPARAM(0), LPARAM(0));
+    // Single-undo guarantee.
+    begin_single_undo_action(hwnd_edit);
     let replace_wide = to_wide(&joined);
     SendMessageW(
         hwnd_edit,
@@ -771,7 +953,7 @@ pub unsafe fn join_lines_active_edit(hwnd: HWND) {
         WPARAM(1),
         LPARAM(replace_wide.as_ptr() as isize),
     );
-    SendMessageW(hwnd_edit, EM_ENDUNDOACTION, WPARAM(0), LPARAM(0));
+    end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
 }
@@ -1358,6 +1540,14 @@ pub unsafe fn open_document(hwnd: HWND, path: &Path) {
                 return;
             }
         }
+    } else if is_html_path(path) {
+        match read_html_text(path, language) {
+            Ok((text, _encoding)) => (text, FileFormat::Html),
+            Err(message) => {
+                crate::show_error(hwnd, language, &message);
+                return;
+            }
+        }
     } else if is_mp3_path(path) {
         (String::new(), FileFormat::Audiobook)
     } else if is_doc_path(path) {
@@ -1839,10 +2029,11 @@ pub unsafe fn save_document_at(hwnd: HWND, index: usize, force_dialog: bool) -> 
         let language = state.settings.language;
         let text = get_edit_text(state.docs[index].hwnd_edit);
         let is_epub_doc = matches!(state.docs[index].format, FileFormat::Epub);
+        let is_html_doc = matches!(state.docs[index].format, FileFormat::Html);
         let mut suggested_name = crate::suggested_filename_from_text(&text)
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| state.docs[index].title.clone());
-        if is_epub_doc {
+        if is_epub_doc || is_html_doc {
             let mut name_path = PathBuf::from(&suggested_name);
             name_path.set_extension("txt");
             suggested_name = name_path
@@ -1852,7 +2043,7 @@ pub unsafe fn save_document_at(hwnd: HWND, index: usize, force_dialog: bool) -> 
                 .to_string();
         }
 
-        let path = if !force_dialog && !is_epub_doc {
+        let path = if !force_dialog && !is_epub_doc && !is_html_doc {
             state.docs[index].path.clone()
         } else {
             None
@@ -1865,7 +2056,7 @@ pub unsafe fn save_document_at(hwnd: HWND, index: usize, force_dialog: bool) -> 
             },
         };
         let mut path = path;
-        if is_epub_doc {
+        if is_epub_doc || is_html_doc {
             path.set_extension("txt");
         }
 
@@ -1895,6 +2086,7 @@ pub unsafe fn save_document_at(hwnd: HWND, index: usize, force_dialog: bool) -> 
                 | FileFormat::Pdf
                 | FileFormat::Spreadsheet
                 | FileFormat::Epub
+                | FileFormat::Html
                 | FileFormat::Audiobook => TextEncoding::Utf8,
             };
             let bytes = encode_text(&text, encoding);

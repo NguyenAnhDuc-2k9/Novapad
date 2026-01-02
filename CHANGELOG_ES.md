@@ -1,4 +1,9 @@
 # Changelog
+Version 0.5.4 – 2026-01-03
+Mejoras
+• Correccion de Normalizar espacios en blanco (Ctrl+Shift+Enter).
+• Soporte HTML/HTM (abrir como texto).
+
 Version 0.5.3 – 2026-01-02
 Nuevas funciones
 • Se agrego Buscar en archivos.

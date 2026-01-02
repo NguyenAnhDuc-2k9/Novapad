@@ -218,6 +218,8 @@ pub(crate) struct AppState {
     voice_combo_favorites: HWND,
     voice_context_voice: Option<FavoriteVoice>,
     find_in_files_cache: Option<FindInFilesCache>,
+    normalize_undo: Option<NormalizeUndo>,
+    normalize_skip_change: bool,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -328,6 +330,20 @@ fn main() -> windows::core::Result<()> {
                 if (GetKeyState(VK_CONTROL.0 as i32) & (0x8000u16 as i16)) != 0 {
                     next_tab_with_prompt(hwnd);
                     continue;
+                }
+            }
+            if msg.message == WM_KEYDOWN && msg.wParam.0 as u32 == 'Z' as u32 {
+                let ctrl_down = (GetKeyState(VK_CONTROL.0 as i32) & (0x8000u16 as i16)) != 0;
+                let shift_down = (GetKeyState(VK_SHIFT.0 as i32) & (0x8000u16 as i16)) != 0;
+                if ctrl_down && !shift_down {
+                    if let Some(hwnd_edit) = get_active_edit(hwnd) {
+                        if GetFocus() == hwnd_edit {
+                            if !editor_manager::try_normalize_undo(hwnd) {
+                                SendMessageW(hwnd_edit, WM_UNDO, WPARAM(0), LPARAM(0));
+                            }
+                            continue;
+                        }
+                    }
                 }
             }
             if msg.message == WM_KEYDOWN && msg.wParam.0 as u32 == u32::from(VK_F1.0) {
@@ -695,6 +711,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 voice_combo_favorites: combo_favorites,
                 voice_context_voice: None,
                 find_in_files_cache: None,
+                normalize_undo: None,
+                normalize_skip_change: false,
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
 
@@ -959,6 +977,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let cmd_id = (wparam.0 & 0xffff) as usize;
             let notification = (wparam.0 >> 16) as u16;
             if u32::from(notification) == EN_CHANGE {
+                editor_manager::handle_normalize_edit_change(hwnd, HWND(lparam.0));
                 mark_dirty_from_edit(hwnd, HWND(lparam.0));
                 return LRESULT(0);
             }
@@ -1052,7 +1071,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }
                 IDM_EDIT_UNDO => {
                     log_debug("Menu: Undo");
-                    editor_manager::send_to_active_edit(hwnd, WM_UNDO);
+                    if !editor_manager::try_normalize_undo(hwnd) {
+                        editor_manager::send_to_active_edit(hwnd, WM_UNDO);
+                    }
                     LRESULT(0)
                 }
                 IDM_EDIT_CUT => {
@@ -3159,6 +3180,9 @@ unsafe fn save_file_dialog(hwnd: HWND, suggested_name: Option<&str>) -> Option<P
                 }
                 5 => {
                     path.set_extension("rtf");
+                }
+                7 => {
+                    path.set_extension("html");
                 }
                 _ => {}
             }

@@ -35,8 +35,9 @@ use windows::core::{PCWSTR, PWSTR, w};
 
 use crate::accessibility::{from_wide, normalize_to_crlf, to_wide};
 use crate::file_handler::{
-    decode_text, is_doc_path, is_docx_path, is_epub_path, is_mp3_path, is_pdf_path,
-    is_spreadsheet_path, read_doc_text, read_docx_text, read_epub_text, read_spreadsheet_text,
+    decode_text, is_doc_path, is_docx_path, is_epub_path, is_html_path, is_mp3_path, is_pdf_path,
+    is_spreadsheet_path, read_doc_text, read_docx_text, read_epub_text, read_html_text,
+    read_spreadsheet_text,
 };
 use crate::i18n;
 use crate::settings::Language;
@@ -940,6 +941,9 @@ fn read_text_for_search(path: &Path, language: Language) -> Option<String> {
     }
     if is_epub_path(path) {
         return read_epub_text(path, language).ok();
+    }
+    if is_html_path(path) {
+        return read_html_text(path, language).ok().map(|(text, _)| text);
     }
     if is_spreadsheet_path(path) {
         return read_spreadsheet_text(path, language).ok();

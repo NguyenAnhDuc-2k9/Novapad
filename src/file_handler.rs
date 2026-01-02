@@ -49,6 +49,13 @@ pub fn is_epub_path(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+pub fn is_html_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("html") || s.eq_ignore_ascii_case("htm"))
+        .unwrap_or(false)
+}
+
 pub fn is_mp3_path(path: &Path) -> bool {
     path.extension()
         .and_then(|s| s.to_str())
@@ -146,7 +153,7 @@ pub fn read_epub_text(path: &Path, language: Language) -> Result<String, String>
             let text = String::from_utf8(content.clone())
                 .unwrap_or_else(|_| String::from_utf8_lossy(&content).to_string());
 
-            let cleaned = strip_html_tags(&text);
+            let cleaned = html_to_text(&text);
             for line in cleaned.lines() {
                 let trimmed = line.trim();
                 if trimmed.is_empty() || (trimmed.starts_with("part") && trimmed.len() <= 12) {
@@ -166,22 +173,67 @@ pub fn read_epub_text(path: &Path, language: Language) -> Result<String, String>
     Ok(full_text)
 }
 
-fn strip_html_tags(html: &str) -> String {
+pub fn read_html_text(path: &Path, language: Language) -> Result<(String, TextEncoding), String> {
+    let bytes = std::fs::read(path)
+        .map_err(|err| crate::settings::error_open_file_message(language, err))?;
+    let (text, encoding) = decode_text(&bytes, language)?;
+    let cleaned = html_to_text(&text);
+    Ok((cleaned, encoding))
+}
+
+fn html_to_text(html: &str) -> String {
     let mut out = String::new();
     let mut inside = false;
+    let mut tag = String::new();
+    let mut last_newline = false;
+
     for ch in html.chars() {
+        if inside {
+            if ch == '>' {
+                inside = false;
+                let tag_name = tag
+                    .trim()
+                    .trim_start_matches('/')
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                if matches!(
+                    tag_name.as_str(),
+                    "br" | "p"
+                        | "div"
+                        | "li"
+                        | "tr"
+                        | "hr"
+                        | "ul"
+                        | "ol"
+                        | "table"
+                        | "h1"
+                        | "h2"
+                        | "h3"
+                        | "h4"
+                        | "h5"
+                        | "h6"
+                ) {
+                    if !last_newline && !out.is_empty() {
+                        out.push('\n');
+                        last_newline = true;
+                    }
+                }
+                tag.clear();
+            } else {
+                tag.push(ch);
+            }
+            continue;
+        }
         if ch == '<' {
             inside = true;
             continue;
         }
-        if ch == '>' {
-            inside = false;
-            continue;
-        }
-        if !inside {
-            out.push(ch);
-        }
+        out.push(ch);
+        last_newline = ch == '\n';
     }
+
     out.replace("&nbsp;", " ")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
