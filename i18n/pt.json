@@ -256,7 +256,7 @@
   "file_handler.pdf_save_error": "Erro ao salvar PDF: {err}",
   "file_handler.utf16le_invalid_length": "O arquivo UTF-16LE tem um comprimento invalido.",
   "file_handler.utf16be_invalid_length": "O arquivo UTF-16BE tem um comprimento invalido.",
-  "updater.prompt": "Atualizacao disponivel.\\nVersao instalada: {current}\\nNova versao: {latest}\\n\\nDeseja baixar e atualizar agora?",
+  "updater.prompt": "Atualizacao disponivel.\nVersao instalada: {current}\nNova versao: {latest}\n\nDeseja baixar e atualizar agora?",
   "updater.title": "Atualizacao",
   "updater.permission_error": "Falha na atualizacao. Permissao negada.\\nExecute o programa como administrador e tente novamente.",
   "updater.error.network": "Nao foi possivel verificar atualizacoes.\\nVerifique sua conexao e tente novamente.",

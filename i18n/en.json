@@ -256,7 +256,7 @@
   "file_handler.pdf_save_error": "PDF save error: {err}",
   "file_handler.utf16le_invalid_length": "The UTF-16LE file has an invalid length.",
   "file_handler.utf16be_invalid_length": "The UTF-16BE file has an invalid length.",
-  "updater.prompt": "Update available.\\nInstalled version: {current}\\nNew version: {latest}\\n\\nDo you want to download and update now?",
+  "updater.prompt": "Update available.\nInstalled version: {current}\nNew version: {latest}\n\nDo you want to download and update now?",
   "updater.title": "Update",
   "updater.permission_error": "Update failed. Permission denied.\\nRun the program as administrator and try again.",
   "updater.error.network": "Unable to check for updates.\\nCheck your connection and try again.",
