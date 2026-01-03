@@ -210,23 +210,23 @@ pub fn load_settings() -> AppSettings {
     };
     let appdata_path = settings_store_path_appdata();
     let current_path = settings_store_path_current_dir();
+    let appdata_exists = appdata_path.as_ref().is_some_and(|path| path.exists());
+    let current_exists = current_path.as_ref().is_some_and(|path| path.exists());
 
     if PORTABLE_MODE {
-        if let Some(path) = current_path.as_ref().filter(|path| path.exists()) {
-            if let Ok(data) = std::fs::read_to_string(path) {
+        if appdata_exists {
+            return std::fs::read_to_string(appdata_path.as_ref().unwrap())
+                .ok()
+                .and_then(|data| serde_json::from_str(&data).ok())
+                .unwrap_or_else(|| default_settings.clone());
+        }
+        if current_exists {
+            if let Ok(data) = std::fs::read_to_string(current_path.as_ref().unwrap()) {
                 if let Ok(mut settings) = serde_json::from_str::<AppSettings>(&data) {
                     settings.settings_in_current_dir = true;
                     return settings;
                 }
             }
-        }
-        if let Some(path) = appdata_path.as_ref().filter(|path| path.exists()) {
-            let mut settings = std::fs::read_to_string(path)
-                .ok()
-                .and_then(|data| serde_json::from_str(&data).ok())
-                .unwrap_or_else(|| default_settings.clone());
-            settings.settings_in_current_dir = true;
-            return settings;
         }
         let mut settings = default_settings;
         settings.settings_in_current_dir = true;
@@ -240,8 +240,8 @@ pub fn load_settings() -> AppSettings {
             .unwrap_or_else(|| default_settings.clone());
 
         if settings.settings_in_current_dir {
-            if let Some(current) = current_path.as_ref().filter(|path| path.exists()) {
-                if let Ok(data) = std::fs::read_to_string(current) {
+            if current_exists {
+                if let Ok(data) = std::fs::read_to_string(current_path.as_ref().unwrap()) {
                     if let Ok(portable) = serde_json::from_str(&data) {
                         return portable;
                     }
@@ -265,7 +265,8 @@ pub fn load_settings() -> AppSettings {
 pub fn save_settings(settings: AppSettings) {
     let appdata_path = settings_store_path_appdata();
     let current_path = settings_store_path_current_dir();
-    let prefer_current_dir = settings.settings_in_current_dir || PORTABLE_MODE;
+    let appdata_exists = appdata_path.as_ref().is_some_and(|path| path.exists());
+    let prefer_current_dir = settings.settings_in_current_dir || (PORTABLE_MODE && !appdata_exists);
     let path = if prefer_current_dir {
         current_path.clone()
     } else {
