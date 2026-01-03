@@ -274,11 +274,11 @@ fn wait_for_process_exit(pid: u32) {
 }
 
 fn replace_executable(current: &Path, new: &Path) -> Result<(), io::Error> {
+    let backup = backup_executable_path(current)?;
     let mut last_err: Option<io::Error> = None;
     for _ in 0..60 {
-        match std::fs::rename(new, current) {
-            Ok(()) => return Ok(()),
-            Err(err) => {
+        if let Err(err) = std::fs::remove_file(&backup) {
+            if err.kind() != io::ErrorKind::NotFound {
                 if err.kind() == io::ErrorKind::PermissionDenied {
                     return Err(err);
                 }
@@ -287,17 +287,26 @@ fn replace_executable(current: &Path, new: &Path) -> Result<(), io::Error> {
                 }
             }
         }
-        if let Err(err) = std::fs::remove_file(current) {
-            if err.kind() == io::ErrorKind::PermissionDenied {
-                return Err(err);
-            }
-            if last_err.is_none() {
-                last_err = Some(err);
+        match std::fs::rename(current, &backup) {
+            Ok(()) => {}
+            Err(err) => {
+                if err.kind() == io::ErrorKind::PermissionDenied {
+                    return Err(err);
+                }
+                if last_err.is_none() {
+                    last_err = Some(err);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                continue;
             }
         }
         match std::fs::rename(new, current) {
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                let _ = std::fs::remove_file(&backup);
+                return Ok(());
+            }
             Err(err) => {
+                let _ = std::fs::rename(&backup, current);
                 if err.kind() == io::ErrorKind::PermissionDenied {
                     return Err(err);
                 }
@@ -310,6 +319,14 @@ fn replace_executable(current: &Path, new: &Path) -> Result<(), io::Error> {
     }
     Err(last_err
         .unwrap_or_else(|| io::Error::new(io::ErrorKind::Other, "Failed to replace executable")))
+}
+
+fn backup_executable_path(current: &Path) -> Result<PathBuf, io::Error> {
+    let file_name = current
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Invalid executable name"))?;
+    Ok(current.with_file_name(format!("{file_name}.old")))
 }
 
 fn show_permission_error(language: Language) {
