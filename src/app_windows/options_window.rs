@@ -1558,9 +1558,14 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     settings.check_updates_on_startup =
         SendMessageW(checkbox_check_updates, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32
             == BST_CHECKED.0;
-    settings.settings_in_current_dir =
-        SendMessageW(checkbox_settings_current_dir, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32
-            == BST_CHECKED.0;
+    settings.settings_in_current_dir = SendMessageW(
+        checkbox_settings_current_dir,
+        BM_GETCHECK,
+        WPARAM(0),
+        LPARAM(0),
+    )
+    .0 as u32
+        == BST_CHECKED.0;
     settings.prompt_auto_scroll = SendMessageW(
         checkbox_prompt_autoscroll,
         BM_GETCHECK,

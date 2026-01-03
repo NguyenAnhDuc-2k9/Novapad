@@ -7,17 +7,17 @@ use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{COLOR_WINDOW, HBRUSH, HFONT};
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Controls::Dialogs::FR_MATCHCASE;
+use windows::Win32::UI::Controls::RichEdit::{CHARRANGE, EM_EXSETSEL, EM_FINDTEXTEXW, FINDTEXTEXW};
 use windows::Win32::UI::Controls::{
     NM_RETURN, NMHDR, NMTVKEYDOWN, PBM_SETPOS, PBM_SETRANGE, PROGRESS_CLASSW, TVN_KEYDOWN,
     WC_BUTTON, WC_EDIT, WC_STATIC,
 };
-use windows::Win32::UI::Controls::Dialogs::FR_MATCHCASE;
 use windows::Win32::UI::Controls::{
     TVGN_CARET, TVI_ROOT, TVIF_PARAM, TVIF_TEXT, TVINSERTSTRUCTW, TVINSERTSTRUCTW_0,
     TVITEMEXW_CHILDREN, TVITEMW, TVM_DELETEITEM, TVM_GETITEMW, TVM_GETNEXTITEM, TVM_INSERTITEMW,
     TVM_SELECTITEM, TVS_HASBUTTONS, TVS_HASLINES, TVS_LINESATROOT, TVS_SHOWSELALWAYS,
 };
-use windows::Win32::UI::Controls::RichEdit::{CHARRANGE, EM_EXSETSEL, EM_FINDTEXTEXW, FINDTEXTEXW};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN,
 };
@@ -1174,8 +1174,7 @@ unsafe fn select_term_at(hwnd_edit: HWND, term: &str, start: i32, len: i32) {
         WPARAM(FR_MATCHCASE.0 as usize),
         LPARAM(&mut ft as *mut _ as isize),
     )
-    .0
-        != -1;
+    .0 != -1;
 
     if found {
         let mut sel = ft.chrgText;

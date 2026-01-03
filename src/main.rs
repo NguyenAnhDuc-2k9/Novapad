@@ -2819,8 +2819,8 @@ fn spawn_new_window_with_path(path: &Path) -> bool {
 }
 
 unsafe fn open_path_with_behavior(hwnd: HWND, path: &Path) {
-    let behavior = with_state(hwnd, |state| state.settings.open_behavior)
-        .unwrap_or(OpenBehavior::NewTab);
+    let behavior =
+        with_state(hwnd, |state| state.settings.open_behavior).unwrap_or(OpenBehavior::NewTab);
     if behavior == OpenBehavior::NewWindow {
         if spawn_new_window_with_path(path) {
             return;
