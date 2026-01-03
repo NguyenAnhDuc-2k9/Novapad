@@ -1,11 +1,57 @@
-Ho implementato la funzione ?Pulisci testo Markdown? in Modifica con scorciatoia Ctrl+Shift+M.
-Cosa fa:
-- Rimuove markup Markdown base (titoli, quote, liste, **bold**, *italic*, ~~strike~~, `code`).
-- Converte i link [testo](url) in testo semplice.
-- Per immagini ![alt](url) mantiene solo il testo alt.
-- Aggiorna il testo dell?editor e marca il documento come modificato.
+Implement an accessible interactive “Prompt” window in Novapad (Win32) using ConPTY (Windows Pseudoconsole), designed for screen readers (NVDA).
 
-File modificati:
-- src\menu.rs (nuova voce nel menu)
-- src\main.rs (handler e acceleratore)
-- src\editor_manager.rs (funzioni di pulizia)
+Core requirement:
+- Must work with true interactive TTY programs (e.g., Codex CLI).
+- Do NOT use plain stdin/stdout pipes; use ConPTY.
+
+Menu integration:
+- Add a new command “Prompt” in the Tools (Strumenti) menu.
+- Bind it to Ctrl+Shift+P to open or focus the Prompt window.
+
+UI (accessibility-first):
+- Create a new window/panel “Prompt”.
+- Provide TWO main controls in this order:
+  1) INPUT: single-line edit control where the user types commands.
+  2) OUTPUT: read-only multiline text control showing the session transcript.
+- Tab order MUST be: Input -> Output -> (optional buttons).
+- Do not steal focus when new output arrives.
+- OUTPUT must be fully selectable/copyable and readable with arrow keys by NVDA.
+
+Keyboard behavior / hotkeys:
+- Enter in INPUT: send the input text to the PTY with CRLF, then clear INPUT.
+- Alt+I: focus INPUT.
+- Alt+O: focus OUTPUT.
+- Ctrl+C (when Prompt window is active): send an interrupt (CTRL_C_EVENT) to the child process.
+- Ctrl+L: clear OUTPUT (with a simple safety confirmation or one-step restore).
+
+PTY / process hosting:
+- Use Win32 ConPTY (CreatePseudoConsole / HPCON).
+- Start cmd.exe by default.
+- Add a setting to choose the hosted program (cmd.exe / powershell.exe / codex).
+- Read PTY output on a worker thread and append it to OUTPUT.
+- Write user input to the PTY input pipe.
+
+Minimal output filtering (required):
+- Treat carriage return characters (\r) as “overwrite current line” instead of appending a new line.
+- Strip common ANSI CSI escape sequences (e.g. \x1B[ ... m, K, G, J) to avoid spinner/progress artifacts.
+- Keep filtering minimal; no full terminal emulation required.
+
+Output handling:
+- Provide an Auto-scroll toggle (default ON):
+  - ON: keep view at bottom unless user is reviewing text.
+  - OFF: never auto-scroll.
+- Filtering must NOT break plain text output.
+
+Resize:
+- On Prompt window resize, update ConPTY size accordingly.
+
+Settings (persisted):
+- Hosted program command
+- Auto-scroll (default ON)
+- Strip ANSI (default ON)
+
+Deliverables:
+- New ConPTY/PTY module.
+- Prompt window implementation with minimal output filtering.
+- Short manual test checklist (cmd.exe + codex interactive).
+- Run cargo test and cargo clippy --all and fix issues.

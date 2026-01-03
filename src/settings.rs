@@ -119,6 +119,11 @@ pub struct AppSettings {
     pub show_voice_panel: bool,
     pub show_favorite_panel: bool,
     pub check_updates_on_startup: bool,
+    pub prompt_program: String,
+    pub prompt_auto_scroll: bool,
+    pub prompt_strip_ansi: bool,
+    pub prompt_beep_on_idle: bool,
+    pub prompt_prevent_sleep: bool,
 }
 
 impl Default for AppSettings {
@@ -151,6 +156,11 @@ impl Default for AppSettings {
             show_voice_panel: false,
             show_favorite_panel: false,
             check_updates_on_startup: true,
+            prompt_program: "cmd.exe".to_string(),
+            prompt_auto_scroll: true,
+            prompt_strip_ansi: true,
+            prompt_beep_on_idle: true,
+            prompt_prevent_sleep: true,
         }
     }
 }

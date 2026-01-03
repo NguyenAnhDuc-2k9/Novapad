@@ -11,6 +11,7 @@
 
 mod accessibility;
 use accessibility::*;
+mod conpty;
 mod settings;
 use editor_manager::Document;
 use settings::*;
@@ -191,6 +192,7 @@ pub(crate) struct AppState {
     dictionary_window: HWND,
     dictionary_entry_dialog: HWND,
     tts_tuning_dialog: HWND,
+    prompt_window: HWND,
     find_msg: u32,
     find_text: Vec<u16>,
     replace_text: Vec<u16>,
@@ -498,6 +500,13 @@ fn main() -> windows::core::Result<()> {
                         return;
                     }
                 }
+
+                if state.prompt_window.0 != 0 {
+                    if app_windows::prompt_window::handle_navigation(state.prompt_window, &msg) {
+                        handled = true;
+                        return;
+                    }
+                }
             });
             if handled {
                 continue;
@@ -684,6 +693,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 dictionary_window: HWND(0),
                 dictionary_entry_dialog: HWND(0),
                 tts_tuning_dialog: HWND(0),
+                prompt_window: HWND(0),
                 find_msg,
                 find_text: vec![0u16; 256],
                 replace_text: vec![0u16; 256],
@@ -1213,6 +1223,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 IDM_TOOLS_IMPORT_YOUTUBE => {
                     log_debug("Menu: Import YouTube transcript");
                     app_windows::youtube_transcript_window::import_youtube_transcript(hwnd);
+                    LRESULT(0)
+                }
+                IDM_TOOLS_PROMPT => {
+                    log_debug("Menu: Prompt");
+                    app_windows::prompt_window::open(hwnd);
                     LRESULT(0)
                 }
                 IDM_HELP_GUIDE => {
@@ -2559,6 +2574,11 @@ unsafe fn create_accelerators() -> HACCEL {
             fVirt: virt,
             key: 'Y' as u16,
             cmd: IDM_TOOLS_IMPORT_YOUTUBE as u16,
+        },
+        ACCEL {
+            fVirt: virt_shift,
+            key: 'P' as u16,
+            cmd: IDM_TOOLS_PROMPT as u16,
         },
         ACCEL {
             fVirt: virt,

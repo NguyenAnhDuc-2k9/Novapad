@@ -6,5 +6,6 @@ pub mod find_in_files_window;
 pub mod help_window;
 pub mod marker_select_window;
 pub mod options_window;
+pub mod prompt_window;
 pub mod tts_tuning_window;
 pub mod youtube_transcript_window;

@@ -49,6 +49,9 @@ const OPTIONS_ID_AUDIO_SPLIT_REQUIRE_NEWLINE: usize = 6016;
 const OPTIONS_ID_WRAP_WIDTH: usize = 6017;
 const OPTIONS_ID_QUOTE_PREFIX: usize = 6018;
 const OPTIONS_ID_CHECK_UPDATES: usize = 6015;
+const OPTIONS_ID_PROMPT_PROGRAM: usize = 6019;
+const OPTIONS_ID_PROMPT_AUTOSCROLL: usize = 6020;
+const OPTIONS_ID_PROMPT_STRIP_ANSI: usize = 6021;
 const OPTIONS_ID_OK: usize = 6005;
 const OPTIONS_ID_CANCEL: usize = 6006;
 const OPTIONS_FOCUS_LANG_MSG: u32 = WM_APP + 30;
@@ -101,6 +104,10 @@ struct OptionsDialogState {
     edit_quote_prefix: HWND,
     checkbox_move_cursor: HWND,
     checkbox_check_updates: HWND,
+    label_prompt_program: HWND,
+    combo_prompt_program: HWND,
+    checkbox_prompt_autoscroll: HWND,
+    checkbox_prompt_strip_ansi: HWND,
     ok_button: HWND,
 }
 
@@ -118,6 +125,9 @@ struct OptionsLabels {
     label_quote_prefix: String,
     label_move_cursor: String,
     label_check_updates: String,
+    label_prompt_program: String,
+    label_prompt_autoscroll: String,
+    label_prompt_strip_ansi: String,
     label_audio_skip: String,
     label_audio_split: String,
     label_audio_split_text: String,
@@ -133,6 +143,9 @@ struct OptionsLabels {
     split_none: String,
     split_by_text: String,
     split_parts: String,
+    prompt_cmd: String,
+    prompt_powershell: String,
+    prompt_codex: String,
     ok: String,
     cancel: String,
     voices_empty: String,
@@ -153,6 +166,9 @@ fn options_labels(language: Language) -> OptionsLabels {
         label_quote_prefix: i18n::tr(language, "options.label.quote_prefix"),
         label_move_cursor: i18n::tr(language, "options.label.move_cursor"),
         label_check_updates: i18n::tr(language, "options.label.check_updates"),
+        label_prompt_program: i18n::tr(language, "options.label.prompt_program"),
+        label_prompt_autoscroll: i18n::tr(language, "options.label.prompt_autoscroll"),
+        label_prompt_strip_ansi: i18n::tr(language, "options.label.prompt_strip_ansi"),
         label_audio_skip: i18n::tr(language, "options.label.audio_skip"),
         label_audio_split: i18n::tr(language, "options.label.audio_split"),
         label_audio_split_text: i18n::tr(language, "options.label.audio_split_text"),
@@ -171,6 +187,9 @@ fn options_labels(language: Language) -> OptionsLabels {
         split_none: i18n::tr(language, "options.split.none"),
         split_by_text: i18n::tr(language, "options.split.by_text"),
         split_parts: i18n::tr(language, "options.split.parts"),
+        prompt_cmd: i18n::tr(language, "options.prompt.cmd"),
+        prompt_powershell: i18n::tr(language, "options.prompt.powershell"),
+        prompt_codex: i18n::tr(language, "options.prompt.codex"),
         ok: i18n::tr(language, "options.ok"),
         cancel: i18n::tr(language, "options.cancel"),
         voices_empty: i18n::tr(language, "options.voices.empty"),
@@ -210,7 +229,7 @@ pub unsafe fn open(parent: HWND) {
         CW_USEDEFAULT,
         CW_USEDEFAULT,
         520,
-        590, // Increased height
+        680,
         parent,
         None,
         hinstance,
@@ -682,6 +701,68 @@ unsafe extern "system" fn options_wndproc(
                 HINSTANCE(0),
                 None,
             );
+            y += 28;
+
+            let label_prompt_program = CreateWindowExW(
+                Default::default(),
+                WC_STATIC,
+                PCWSTR(to_wide(&labels.label_prompt_program).as_ptr()),
+                WS_CHILD | WS_VISIBLE,
+                20,
+                y,
+                140,
+                20,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
+            let combo_prompt_program = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                WC_COMBOBOXW,
+                PCWSTR::null(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
+                170,
+                y - 2,
+                300,
+                120,
+                hwnd,
+                HMENU(OPTIONS_ID_PROMPT_PROGRAM as isize),
+                HINSTANCE(0),
+                None,
+            );
+            y += 34;
+
+            let checkbox_prompt_autoscroll = CreateWindowExW(
+                Default::default(),
+                WC_BUTTON,
+                PCWSTR(to_wide(&labels.label_prompt_autoscroll).as_ptr()),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
+                170,
+                y,
+                300,
+                20,
+                hwnd,
+                HMENU(OPTIONS_ID_PROMPT_AUTOSCROLL as isize),
+                HINSTANCE(0),
+                None,
+            );
+            y += 24;
+
+            let checkbox_prompt_strip_ansi = CreateWindowExW(
+                Default::default(),
+                WC_BUTTON,
+                PCWSTR(to_wide(&labels.label_prompt_strip_ansi).as_ptr()),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
+                170,
+                y,
+                300,
+                20,
+                hwnd,
+                HMENU(OPTIONS_ID_PROMPT_STRIP_ANSI as isize),
+                HINSTANCE(0),
+                None,
+            );
             y += 40;
 
             let ok_button = CreateWindowExW(
@@ -739,6 +820,10 @@ unsafe extern "system" fn options_wndproc(
                 edit_quote_prefix,
                 checkbox_move_cursor,
                 checkbox_check_updates,
+                label_prompt_program,
+                combo_prompt_program,
+                checkbox_prompt_autoscroll,
+                checkbox_prompt_strip_ansi,
                 ok_button,
                 cancel_button,
             ] {
@@ -769,6 +854,10 @@ unsafe extern "system" fn options_wndproc(
                 edit_quote_prefix,
                 checkbox_move_cursor,
                 checkbox_check_updates,
+                label_prompt_program,
+                combo_prompt_program,
+                checkbox_prompt_autoscroll,
+                checkbox_prompt_strip_ansi,
                 ok_button,
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(dialog_state) as isize);
@@ -939,6 +1028,10 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
         edit_quote_prefix,
         checkbox_move_cursor,
         checkbox_check_updates,
+        _label_prompt_program,
+        combo_prompt_program,
+        checkbox_prompt_autoscroll,
+        checkbox_prompt_strip_ansi,
     ) = match with_options_state(hwnd, |state| {
         (
             state.parent,
@@ -961,6 +1054,10 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
             state.edit_quote_prefix,
             state.checkbox_move_cursor,
             state.checkbox_check_updates,
+            state.label_prompt_program,
+            state.combo_prompt_program,
+            state.checkbox_prompt_autoscroll,
+            state.checkbox_prompt_strip_ansi,
         )
     }) {
         Some(values) => values,
@@ -1110,6 +1207,55 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
         } else {
             0
         }),
+        LPARAM(0),
+    );
+    let _ = SendMessageW(
+        checkbox_prompt_autoscroll,
+        BM_SETCHECK,
+        WPARAM(if settings.prompt_auto_scroll {
+            BST_CHECKED.0 as usize
+        } else {
+            0
+        }),
+        LPARAM(0),
+    );
+    let _ = SendMessageW(
+        checkbox_prompt_strip_ansi,
+        BM_SETCHECK,
+        WPARAM(if settings.prompt_strip_ansi {
+            BST_CHECKED.0 as usize
+        } else {
+            0
+        }),
+        LPARAM(0),
+    );
+
+    let _ = SendMessageW(combo_prompt_program, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
+    let prompt_options = [
+        labels.prompt_cmd.clone(),
+        labels.prompt_powershell.clone(),
+        labels.prompt_codex.clone(),
+    ];
+    for label in prompt_options.iter() {
+        let _ = SendMessageW(
+            combo_prompt_program,
+            CB_ADDSTRING,
+            WPARAM(0),
+            LPARAM(to_wide(label).as_ptr() as isize),
+        );
+    }
+    let program = settings.prompt_program.to_ascii_lowercase();
+    let program_idx = if program.contains("powershell") {
+        1
+    } else if program.contains("codex") {
+        2
+    } else {
+        0
+    };
+    let _ = SendMessageW(
+        combo_prompt_program,
+        CB_SETCURSEL,
+        WPARAM(program_idx),
         LPARAM(0),
     );
 
@@ -1269,6 +1415,9 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
         edit_quote_prefix,
         checkbox_move_cursor,
         checkbox_check_updates,
+        combo_prompt_program,
+        checkbox_prompt_autoscroll,
+        checkbox_prompt_strip_ansi,
     ) = match with_options_state(hwnd, |state| {
         (
             state.parent,
@@ -1288,6 +1437,9 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
             state.edit_quote_prefix,
             state.checkbox_move_cursor,
             state.checkbox_check_updates,
+            state.combo_prompt_program,
+            state.checkbox_prompt_autoscroll,
+            state.checkbox_prompt_strip_ansi,
         )
     }) {
         Some(values) => values,
@@ -1370,6 +1522,29 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     settings.check_updates_on_startup =
         SendMessageW(checkbox_check_updates, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32
             == BST_CHECKED.0;
+    settings.prompt_auto_scroll = SendMessageW(
+        checkbox_prompt_autoscroll,
+        BM_GETCHECK,
+        WPARAM(0),
+        LPARAM(0),
+    )
+    .0 as u32
+        == BST_CHECKED.0;
+    settings.prompt_strip_ansi = SendMessageW(
+        checkbox_prompt_strip_ansi,
+        BM_GETCHECK,
+        WPARAM(0),
+        LPARAM(0),
+    )
+    .0 as u32
+        == BST_CHECKED.0;
+
+    let prompt_sel = SendMessageW(combo_prompt_program, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
+    settings.prompt_program = match prompt_sel {
+        1 => "powershell.exe".to_string(),
+        2 => "codex".to_string(),
+        _ => "cmd.exe".to_string(),
+    };
 
     let voices = with_state(parent, |state| match settings.tts_engine {
         TtsEngine::Edge => state.edge_voices.clone(),

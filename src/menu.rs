@@ -64,6 +64,7 @@ pub const IDM_FILE_RECENT_BASE: usize = 4000;
 pub const IDM_TOOLS_OPTIONS: usize = 5001;
 pub const IDM_TOOLS_DICTIONARY: usize = 5002;
 pub const IDM_TOOLS_IMPORT_YOUTUBE: usize = 5003;
+pub const IDM_TOOLS_PROMPT: usize = 5004;
 pub const IDM_HELP_GUIDE: usize = 7001;
 pub const IDM_HELP_ABOUT: usize = 7002;
 pub const IDM_HELP_CHECK_UPDATES: usize = 7003;
@@ -80,6 +81,7 @@ pub struct MenuLabels {
     pub menu_options: String,
     pub menu_dictionary: String,
     pub menu_import_youtube: String,
+    pub menu_prompt: String,
     pub view_text_color: String,
     pub view_text_size: String,
     pub view_text_color_black: String,
@@ -149,6 +151,7 @@ pub fn menu_labels(language: Language) -> MenuLabels {
         menu_options: i18n::tr(language, "menu.options"),
         menu_dictionary: i18n::tr(language, "menu.dictionary"),
         menu_import_youtube: i18n::tr(language, "menu.import_youtube"),
+        menu_prompt: i18n::tr(language, "menu.prompt"),
         view_text_color: i18n::tr(language, "view.text_color"),
         view_text_size: i18n::tr(language, "view.text_size"),
         view_text_color_black: i18n::tr(language, "view.text_color.black"),
@@ -483,6 +486,7 @@ pub unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
     );
     let _ = append_menu_string(hmenu, MF_POPUP, insert_menu.0 as usize, &labels.menu_insert);
 
+    let _ = append_menu_string(tools_menu, MF_STRING, IDM_TOOLS_PROMPT, &labels.menu_prompt);
     let _ = append_menu_string(
         tools_menu,
         MF_STRING,
