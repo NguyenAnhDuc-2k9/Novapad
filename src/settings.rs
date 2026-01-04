@@ -49,6 +49,8 @@ pub enum FileFormat {
     Spreadsheet,
     Epub,
     Html,
+    Ppt,
+    Pptx,
     Audiobook,
 }
 

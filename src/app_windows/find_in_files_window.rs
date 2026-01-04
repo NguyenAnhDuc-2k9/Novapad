@@ -7,16 +7,15 @@ use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{COLOR_WINDOW, HBRUSH, HFONT};
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Controls::Dialogs::FR_MATCHCASE;
+use windows::Win32::UI::Controls::Dialogs::{FR_DOWN, FR_MATCHCASE};
 use windows::Win32::UI::Controls::RichEdit::{CHARRANGE, EM_EXSETSEL, EM_FINDTEXTEXW, FINDTEXTEXW};
 use windows::Win32::UI::Controls::{
-    NM_RETURN, NMHDR, NMTVKEYDOWN, PBM_SETPOS, PBM_SETRANGE, PROGRESS_CLASSW, TVN_KEYDOWN,
-    WC_BUTTON, WC_EDIT, WC_STATIC,
-};
-use windows::Win32::UI::Controls::{
-    TVGN_CARET, TVI_ROOT, TVIF_PARAM, TVIF_TEXT, TVINSERTSTRUCTW, TVINSERTSTRUCTW_0,
-    TVITEMEXW_CHILDREN, TVITEMW, TVM_DELETEITEM, TVM_GETITEMW, TVM_GETNEXTITEM, TVM_INSERTITEMW,
-    TVM_SELECTITEM, TVS_HASBUTTONS, TVS_HASLINES, TVS_LINESATROOT, TVS_SHOWSELALWAYS,
+    NM_RETURN, NMHDR, NMTREEVIEWW, NMTVKEYDOWN, PBM_SETPOS, PBM_SETRANGE, PROGRESS_CLASSW,
+    TVE_EXPAND, TVGN_CARET, TVGN_CHILD, TVI_ROOT, TVIF_CHILDREN, TVIF_PARAM, TVIF_TEXT,
+    TVINSERTSTRUCTW, TVINSERTSTRUCTW_0, TVITEMEXW_CHILDREN, TVITEMW, TVM_DELETEITEM, TVM_GETITEMW,
+    TVM_GETNEXTITEM, TVM_INSERTITEMW, TVM_SELECTITEM, TVN_ITEMEXPANDINGW, TVN_KEYDOWN,
+    TVN_SELCHANGEDW, TVS_HASBUTTONS, TVS_HASLINES, TVS_LINESATROOT, TVS_SHOWSELALWAYS, WC_BUTTON,
+    WC_EDIT, WC_STATIC,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN,
@@ -30,16 +29,16 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IDC_ARROW, IsDialogMessageW, IsWindow, LoadCursorW, MSG, PostMessageW, RegisterClassW,
     SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowTextW, TranslateMessage,
     WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_NCDESTROY,
-    WM_NOTIFY, WM_SETFONT, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT,
-    WS_EX_DLGMODALFRAME, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    WM_NOTIFY, WM_SETFONT, WM_SETREDRAW, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE,
+    WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
 use crate::accessibility::{EM_SCROLLCARET, from_wide, normalize_to_crlf, to_wide};
 use crate::file_handler::{
     decode_text, is_doc_path, is_docx_path, is_epub_path, is_html_path, is_mp3_path, is_pdf_path,
-    is_spreadsheet_path, read_doc_text, read_docx_text, read_epub_text, read_html_text,
-    read_spreadsheet_text,
+    is_ppt_path, is_pptx_path, is_spreadsheet_path, read_doc_text, read_docx_text, read_epub_text,
+    read_html_text, read_ppt_text, read_spreadsheet_text,
 };
 use crate::i18n;
 use crate::settings::Language;
@@ -76,6 +75,8 @@ struct FindInFilesState {
     progress_text: HWND,
     results_tree: HWND,
     results: Vec<SearchResult>,
+    results_groups: Vec<ResultsGroup>,
+    selected_result: Option<usize>,
     language: Language,
     searching: bool,
     cancel_flag: Option<Arc<AtomicBool>>,
@@ -109,6 +110,11 @@ pub(crate) struct FindInFilesCache {
     pub term: String,
     pub folder: String,
     pub results: Vec<SearchResult>,
+}
+
+struct ResultsGroup {
+    path: PathBuf,
+    indices: Vec<usize>,
 }
 
 fn labels(language: Language) -> FindInFilesLabels {
@@ -450,6 +456,8 @@ unsafe extern "system" fn find_in_files_wndproc(
                 progress_text: progress_label,
                 results_tree,
                 results: Vec::new(),
+                results_groups: Vec::new(),
+                selected_result: None,
                 language: init.language,
                 searching: false,
                 cancel_flag: None,
@@ -536,6 +544,37 @@ unsafe extern "system" fn find_in_files_wndproc(
                             let _ = PostMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
                             return LRESULT(0);
                         }
+                    }
+                    if (*hdr).code == TVN_ITEMEXPANDINGW
+                        && (*hdr).idFrom as usize == FIND_IN_FILES_ID_RESULTS
+                    {
+                        let info = (lparam.0 as *const NMTREEVIEWW).as_ref();
+                        if let Some(info) = info
+                            && info.action == TVE_EXPAND
+                        {
+                            let _ = with_find_state(hwnd, |state| {
+                                ensure_children_loaded(state, info.itemNew.hItem);
+                            });
+                            return LRESULT(0);
+                        }
+                    }
+                    if (*hdr).code == TVN_SELCHANGEDW
+                        && (*hdr).idFrom as usize == FIND_IN_FILES_ID_RESULTS
+                    {
+                        let info = (lparam.0 as *const NMTREEVIEWW).as_ref();
+                        if let Some(info) = info {
+                            let _ = with_find_state(hwnd, |state| {
+                                let idx = tree_item_param(state.results_tree, info.itemNew.hItem);
+                                state.selected_result = idx.and_then(|value| {
+                                    if value < 0 {
+                                        None
+                                    } else {
+                                        Some(value as usize)
+                                    }
+                                });
+                            });
+                        }
+                        return LRESULT(0);
                     }
                 }
             }
@@ -696,6 +735,7 @@ fn start_search(state: &mut FindInFilesState) {
 
     state.searching = true;
     state.results.clear();
+    state.results_groups.clear();
     set_search_enabled(state, false);
     set_progress(state, 0);
     clear_results_tree(state.results_tree);
@@ -703,6 +743,7 @@ fn start_search(state: &mut FindInFilesState) {
     let hwnd = state.hwnd;
     let language = state.language;
     let term_norm = normalize_to_crlf(&term);
+    let term_has_newline = term.contains('\n') || term.contains('\r');
     let folder_path = folder_path.clone();
     let cancel = Arc::new(AtomicBool::new(false));
     state.cancel_flag = Some(cancel.clone());
@@ -711,15 +752,26 @@ fn start_search(state: &mut FindInFilesState) {
         let files = collect_search_files(&folder_path);
         let total = files.len().max(1);
         let mut results = Vec::new();
-        let term_len_utf16 = term_norm.encode_utf16().count() as i32;
-
         for (idx, path) in files.iter().enumerate() {
             if cancel.load(Ordering::Relaxed) {
                 return;
             }
             if let Some(text) = read_text_for_search(path, language) {
-                let normalized = normalize_to_crlf(&text);
-                collect_matches(&normalized, &term_norm, term_len_utf16, path, &mut results);
+                if term_has_newline {
+                    let normalized = normalize_to_crlf(&text);
+                    let term_len_utf16 = term_norm.encode_utf16().count() as i32;
+                    collect_matches(
+                        &normalized,
+                        &term_norm,
+                        term_len_utf16,
+                        true,
+                        path,
+                        &mut results,
+                    );
+                } else {
+                    let term_len_utf16 = term.encode_utf16().count() as i32;
+                    collect_matches(&text, &term, term_len_utf16, false, path, &mut results);
+                }
             }
             let percent = ((idx + 1) * 100 / total) as u32;
             let _ = unsafe {
@@ -748,7 +800,10 @@ fn start_search(state: &mut FindInFilesState) {
 }
 
 fn open_selected_result(state: &mut FindInFilesState) {
-    let Some(idx) = selected_result_index(state.results_tree) else {
+    let idx = state
+        .selected_result
+        .or_else(|| selected_result_index(state.results_tree));
+    let Some(idx) = idx else {
         return;
     };
     let Some(result) = state.results.get(idx).cloned() else {
@@ -756,15 +811,14 @@ fn open_selected_result(state: &mut FindInFilesState) {
     };
     let term = read_control_text(state.term_edit).trim().to_string();
     unsafe {
-        crate::editor_manager::open_document_at_position(
-            state.parent,
-            &result.path,
-            result.start_utf16,
-            result.len_utf16,
-        );
+        crate::editor_manager::open_document(state.parent, &result.path);
         if let Some(hwnd_edit) = crate::get_active_edit(state.parent) {
-            let term = normalize_to_crlf(&term);
-            select_term_at(hwnd_edit, &term, result.start_utf16, result.len_utf16);
+            if !select_snippet_exact(hwnd_edit, &result.snippet) {
+                let term = normalize_to_crlf(&term);
+                if result.snippet.trim().is_empty() {
+                    select_term_at(hwnd_edit, &term, result.start_utf16, result.len_utf16);
+                }
+            }
         }
         let _ = PostMessageW(state.parent, WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
     }
@@ -802,12 +856,20 @@ fn clear_results_tree(tree: HWND) {
     }
 }
 
+fn set_results_redraw(tree: HWND, enabled: bool) {
+    unsafe {
+        let _ = SendMessageW(tree, WM_SETREDRAW, WPARAM(enabled as usize), LPARAM(0));
+    }
+}
+
 fn populate_results_tree(state: &mut FindInFilesState) {
+    set_results_redraw(state.results_tree, false);
     clear_results_tree(state.results_tree);
     if state.results.is_empty() {
         unsafe {
             let _ = SetFocus(state.results_tree);
         }
+        set_results_redraw(state.results_tree, true);
         return;
     }
 
@@ -815,25 +877,24 @@ fn populate_results_tree(state: &mut FindInFilesState) {
     for (idx, result) in state.results.iter().enumerate() {
         grouped.entry(result.path.clone()).or_default().push(idx);
     }
+    state.results_groups = grouped
+        .into_iter()
+        .map(|(path, indices)| ResultsGroup { path, indices })
+        .collect();
 
     let mut first_parent: Option<windows::Win32::UI::Controls::HTREEITEM> = None;
-    for (path, indices) in grouped {
-        let parent_text = format!("{} ({})", path.display(), indices.len());
-        let parent_item = insert_tree_item(state.results_tree, TVI_ROOT, &parent_text, -1);
+    for (group_idx, group) in state.results_groups.iter().enumerate() {
+        let parent_text = format!("{} ({})", group.path.display(), group.indices.len());
+        let parent_param = -1 - (group_idx as isize);
+        let parent_item = insert_tree_item(
+            state.results_tree,
+            TVI_ROOT,
+            &parent_text,
+            parent_param,
+            true,
+        );
         if first_parent.is_none() {
             first_parent = Some(parent_item);
-        }
-
-        for idx in indices {
-            let result = &state.results[idx];
-            let line_prefix = i18n::tr_f(
-                state.language,
-                "find_in_files.line_prefix",
-                &[("line", &result.line.to_string())],
-            );
-            let label = format!("{line_prefix} {}", result.snippet);
-            let child = insert_tree_item(state.results_tree, parent_item, &label, idx as isize);
-            let _ = child;
         }
     }
 
@@ -848,6 +909,7 @@ fn populate_results_tree(state: &mut FindInFilesState) {
             let _ = SetFocus(state.results_tree);
         }
     }
+    set_results_redraw(state.results_tree, true);
 }
 
 fn insert_tree_item(
@@ -855,10 +917,15 @@ fn insert_tree_item(
     parent: windows::Win32::UI::Controls::HTREEITEM,
     text: &str,
     param: isize,
+    has_children: bool,
 ) -> windows::Win32::UI::Controls::HTREEITEM {
     let mut wide = to_wide(text);
     let item = TVITEMW {
-        mask: TVIF_TEXT | TVIF_PARAM,
+        mask: if has_children {
+            TVIF_TEXT | TVIF_PARAM | TVIF_CHILDREN
+        } else {
+            TVIF_TEXT | TVIF_PARAM
+        },
         hItem: windows::Win32::UI::Controls::HTREEITEM(0),
         state: Default::default(),
         stateMask: Default::default(),
@@ -866,7 +933,11 @@ fn insert_tree_item(
         cchTextMax: (wide.len().saturating_sub(1)) as i32,
         iImage: 0,
         iSelectedImage: 0,
-        cChildren: TVITEMEXW_CHILDREN(0),
+        cChildren: if has_children {
+            TVITEMEXW_CHILDREN(1)
+        } else {
+            TVITEMEXW_CHILDREN(0)
+        },
         lParam: LPARAM(param),
     };
     let insert = TVINSERTSTRUCTW {
@@ -883,6 +954,88 @@ fn insert_tree_item(
         )
     };
     windows::Win32::UI::Controls::HTREEITEM(res.0)
+}
+
+fn ensure_children_loaded(
+    state: &mut FindInFilesState,
+    parent: windows::Win32::UI::Controls::HTREEITEM,
+) {
+    let has_child = unsafe {
+        SendMessageW(
+            state.results_tree,
+            TVM_GETNEXTITEM,
+            WPARAM(TVGN_CHILD as usize),
+            LPARAM(parent.0 as isize),
+        )
+    };
+    if has_child.0 != 0 {
+        return;
+    }
+    let mut item = TVITEMW {
+        mask: TVIF_PARAM,
+        hItem: parent,
+        ..Default::default()
+    };
+    let ok = unsafe {
+        SendMessageW(
+            state.results_tree,
+            TVM_GETITEMW,
+            WPARAM(0),
+            LPARAM(&mut item as *mut _ as isize),
+        )
+    };
+    if ok.0 == 0 {
+        return;
+    }
+    let group_idx = decode_group_index(item.lParam.0);
+    let Some(group_idx) = group_idx else {
+        return;
+    };
+    let Some(group) = state.results_groups.get(group_idx) else {
+        return;
+    };
+    for idx in &group.indices {
+        let result = &state.results[*idx];
+        let line_prefix = i18n::tr_f(
+            state.language,
+            "find_in_files.line_prefix",
+            &[("line", &result.line.to_string())],
+        );
+        let label = format!("{line_prefix} {}", result.snippet);
+        let child = insert_tree_item(state.results_tree, parent, &label, *idx as isize, false);
+        let _ = child;
+    }
+}
+
+fn decode_group_index(param: isize) -> Option<usize> {
+    if param >= 0 {
+        None
+    } else {
+        Some((-param - 1) as usize)
+    }
+}
+
+fn tree_item_param(tree: HWND, item: windows::Win32::UI::Controls::HTREEITEM) -> Option<isize> {
+    if item.0 == 0 {
+        return None;
+    }
+    let mut tv_item = TVITEMW {
+        mask: TVIF_PARAM,
+        hItem: item,
+        ..Default::default()
+    };
+    let ok = unsafe {
+        SendMessageW(
+            tree,
+            TVM_GETITEMW,
+            WPARAM(0),
+            LPARAM(&mut tv_item as *mut _ as isize),
+        )
+    };
+    if ok.0 == 0 {
+        return None;
+    }
+    Some(tv_item.lParam.0)
 }
 
 fn selected_result_index(tree: HWND) -> Option<usize> {
@@ -957,6 +1110,9 @@ fn read_text_for_search(path: &Path, language: Language) -> Option<String> {
     if is_spreadsheet_path(path) {
         return read_spreadsheet_text(path, language).ok();
     }
+    if is_pptx_path(path) || is_ppt_path(path) {
+        return read_ppt_text(path, language).ok();
+    }
     let bytes = std::fs::read(path).ok()?;
     let (text, _) = decode_text(&bytes, language).ok()?;
     Some(text)
@@ -966,6 +1122,7 @@ fn collect_matches(
     text: &str,
     term: &str,
     term_len_utf16: i32,
+    normalized_offsets: bool,
     path: &Path,
     out: &mut Vec<SearchResult>,
 ) {
@@ -975,7 +1132,11 @@ fn collect_matches(
     let mut start = 0usize;
     while let Some(found) = text[start..].find(term) {
         let byte_index = start + found;
-        let utf16_index = byte_index_to_utf16(text, byte_index);
+        let utf16_index = if normalized_offsets {
+            byte_index_to_utf16(text, byte_index)
+        } else {
+            byte_index_to_utf16_crlf(text, byte_index)
+        };
         let line = count_line_number(text, byte_index);
         let (line_start, line_end) = line_bounds(text, byte_index);
         let line_text = text[line_start..line_end].trim_matches(['\r', '\n']);
@@ -1171,36 +1332,97 @@ unsafe fn select_term_at(hwnd_edit: HWND, term: &str, start: i32, len: i32) {
     let found = SendMessageW(
         hwnd_edit,
         EM_FINDTEXTEXW,
-        WPARAM(FR_MATCHCASE.0 as usize),
+        WPARAM((FR_MATCHCASE | FR_DOWN).0 as usize),
         LPARAM(&mut ft as *mut _ as isize),
     )
     .0 != -1;
 
     if found {
-        let mut sel = ft.chrgText;
-        std::mem::swap(&mut sel.cpMin, &mut sel.cpMax);
-        SendMessageW(
-            hwnd_edit,
-            EM_EXSETSEL,
-            WPARAM(0),
-            LPARAM(&mut sel as *mut _ as isize),
-        );
+        let start = ft.chrgText.cpMin.min(ft.chrgText.cpMax);
+        set_caret_position(hwnd_edit, start);
     } else {
         let start = start.max(0);
         let end = (start + len.max(0)).max(start);
-        let mut cr = CHARRANGE {
-            cpMin: start,
-            cpMax: end,
-        };
+        let _ = end;
+        set_caret_position(hwnd_edit, start);
+    }
+}
+
+fn byte_index_to_utf16_crlf(text: &str, byte_idx: usize) -> i32 {
+    let mut extra = 0usize;
+    let mut prev_cr = false;
+    for b in text[..byte_idx].bytes() {
+        if b == b'\r' {
+            prev_cr = true;
+        } else if b == b'\n' {
+            if !prev_cr {
+                extra += 1;
+            }
+            prev_cr = false;
+        } else {
+            prev_cr = false;
+        }
+    }
+    byte_index_to_utf16(text, byte_idx) + extra as i32
+}
+
+fn strip_snippet_markers(snippet: &str) -> String {
+    let mut out = snippet.trim().to_string();
+    if let Some(rest) = out.strip_prefix("...") {
+        out = rest.trim_start().to_string();
+    }
+    if let Some(rest) = out.strip_suffix("...") {
+        out = rest.trim_end().to_string();
+    }
+    out
+}
+
+fn select_snippet_exact(hwnd_edit: HWND, snippet: &str) -> bool {
+    let snippet = strip_snippet_markers(snippet);
+    if snippet.is_empty() {
+        return false;
+    }
+    let wide = to_wide(&snippet);
+    let mut ft = FINDTEXTEXW {
+        chrg: CHARRANGE {
+            cpMin: 0,
+            cpMax: -1,
+        },
+        lpstrText: PCWSTR(wide.as_ptr()),
+        chrgText: CHARRANGE { cpMin: 0, cpMax: 0 },
+    };
+    let result = unsafe {
+        SendMessageW(
+            hwnd_edit,
+            EM_FINDTEXTEXW,
+            WPARAM((FR_MATCHCASE | FR_DOWN).0 as usize),
+            LPARAM(&mut ft as *mut _ as isize),
+        )
+    };
+    if result.0 == -1 {
+        return false;
+    }
+    let start = ft.chrgText.cpMin.min(ft.chrgText.cpMax);
+    set_caret_position(hwnd_edit, start);
+    true
+}
+
+fn set_caret_position(hwnd_edit: HWND, pos: i32) {
+    let pos = pos.max(0);
+    let mut cr = CHARRANGE {
+        cpMin: pos,
+        cpMax: pos,
+    };
+    unsafe {
         SendMessageW(
             hwnd_edit,
             EM_EXSETSEL,
             WPARAM(0),
             LPARAM(&mut cr as *mut _ as isize),
         );
+        SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
+        SetFocus(hwnd_edit);
     }
-    SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
-    SetFocus(hwnd_edit);
 }
 
 fn browse_for_folder(owner: HWND, language: Language) -> Option<PathBuf> {

@@ -233,7 +233,7 @@
   "audiobook.title": "Criando Audiolivro",
   "audiobook.cancel": "Cancelar",
   "audiobook.cancel_confirm": "Tem certeza de que deseja cancelar a criacao do audiolivro?",
-  "dialog.open_filter": "Todos os formatos suportados (*.txt;*.pdf;*.epub;*.mp3;*.doc;*.docx;*.xls;*.xlsx;*.rtf;*.htm;*.html)\\0*.txt;*.pdf;*.epub;*.mp3;*.doc;*.docx;*.xls;*.xlsx;*.rtf;*.htm;*.html\\0TXT (*.txt)\\0*.txt\\0PDF (*.pdf)\\0*.pdf\\0EPUB (*.epub)\\0*.epub\\0MP3 (*.mp3)\\0*.mp3\\0Word (*.doc;*.docx)\\0*.doc;*.docx\\0Excel (*.xls;*.xlsx)\\0*.xls;*.xlsx\\0RTF (*.rtf)\\0*.rtf\\0HTML (*.htm;*.html)\\0*.htm;*.html\\0Todos os arquivos (*.*)\\0*.*\\0\\0",
+  "dialog.open_filter": "Todos os formatos suportados (*.txt;*.pdf;*.epub;*.mp3;*.doc;*.docx;*.xls;*.xlsx;*.rtf;*.htm;*.html;*.ppt;*.pptx)\\0*.txt;*.pdf;*.epub;*.mp3;*.doc;*.docx;*.xls;*.xlsx;*.rtf;*.htm;*.html;*.ppt;*.pptx\\0TXT (*.txt)\\0*.txt\\0PDF (*.pdf)\\0*.pdf\\0EPUB (*.epub)\\0*.epub\\0MP3 (*.mp3)\\0*.mp3\\0Word (*.doc;*.docx)\\0*.doc;*.docx\\0Excel (*.xls;*.xlsx)\\0*.xls;*.xlsx\\0RTF (*.rtf)\\0*.rtf\\0HTML (*.htm;*.html)\\0*.htm;*.html\\0PowerPoint (*.ppt;*.pptx)\\0*.ppt;*.pptx\\0Todos os arquivos (*.*)\\0*.*\\0\\0",
   "dialog.save_filter": "TXT (*.txt)\\0*.txt\\0PDF (*.pdf)\\0*.pdf\\0EPUB (*.epub)\\0*.epub\\0Word (*.doc;*.docx)\\0*.doc;*.docx\\0Excel (*.xls;*.xlsx)\\0*.xls;*.xlsx\\0RTF (*.rtf)\\0*.rtf\\0HTML (*.htm;*.html)\\0*.htm;*.html\\0Todos os arquivos (*.*)\\0*.*\\0\\0",
   "dialog.save_audio_filter": "Arquivos MP3 (*.mp3)\\0*.mp3\\0Todos os arquivos (*.*)\\0*.*\\0\\0",
   "dialog.save_audio_title": "Audiolivro",

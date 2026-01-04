@@ -14,9 +14,39 @@ description = "A modern Notepad with PDF, DOCX, XLS and EPUB support and TTS cap
 formats = ["nsis", "wix"]
 
 [[package.metadata.packager.file_associations]]
-extensions = ["txt", "doc", "docx", "epub", "pdf", "xls"]
-description = "Novapad Document"
-name = "Novapad Document"
+extensions = ["txt"]
+description = "Novapad Text Document"
+name = "Novapad Text Document"
+
+[[package.metadata.packager.file_associations]]
+extensions = ["doc", "docx"]
+description = "Novapad Word Document"
+name = "Novapad Word Document"
+
+[[package.metadata.packager.file_associations]]
+extensions = ["epub"]
+description = "Novapad EPUB Document"
+name = "Novapad EPUB Document"
+
+[[package.metadata.packager.file_associations]]
+extensions = ["pdf"]
+description = "Novapad PDF Document"
+name = "Novapad PDF Document"
+
+[[package.metadata.packager.file_associations]]
+extensions = ["xls"]
+description = "Novapad Excel Document"
+name = "Novapad Excel Document"
+
+[[package.metadata.packager.file_associations]]
+extensions = ["html", "htm"]
+description = "Novapad HTML Document"
+name = "Novapad HTML Document"
+
+[[package.metadata.packager.file_associations]]
+extensions = ["ppt", "pptx"]
+description = "Novapad PowerPoint Document"
+name = "Novapad PowerPoint Document"
 
 [[package.metadata.packager.binaries]]
 path = "novapad"
@@ -62,6 +92,7 @@ pdf-extract = "0.7"
 printpdf = "0.7"
 calamine = "0.25"
 cfb = "0.7"
+quick-xml = "0.31"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = "0.4"
@@ -77,6 +108,7 @@ url = "2.5"
 uuid = { version = "1.6", features = ["v4"] }
 epub = "2.1"
 yt-transcript-rs = "0.1.8"
+zip = "0.6"
 
 [features]
 portable = []

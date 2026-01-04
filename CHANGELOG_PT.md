@@ -1,5 +1,12 @@
 # Changelog
-Versao 0.5.5 – 2026-01-03
+Versao 0.5.6 - 2026-01-04
+Correcoes
+ Melhorado Procurar em arquivos: ao pressionar Enter abre o arquivo exatamente no trecho selecionado.
+Melhorias
+ Suporte a PPT/PPTX.
+ Para formatos nao textuais, Salvar agora propoe sempre .txt para evitar corromper a formatacao (PDF/DOC/DOCX/EPUB/HTML/PPT/PPTX).
+
+Versao 0.5.5 - 2026-01-03
 Novas funcionalidades
 • Adicionado um prompt acessivel otimizado para muita saida e leitores de tela (Ctrl+Shift+P).
 • Adicionada a opcao de guardar as definicoes na pasta atual (modo portable).

@@ -1,4 +1,11 @@
 # Changelog
+Version 0.5.6 - 2026-01-04
+Fixes
+ Improved Find in Files so pressing Enter opens the file exactly at the selected snippet.
+Improvements
+ Added PPT/PPTX support (open as text).
+ Opening non-text formats now saves as .txt to avoid formatting corruption (PDF/DOC/DOCX/EPUB/HTML/PPT/PPTX).
+
 Version 0.5.5 – 2026-01-03
 New features
 • Added an accessible prompt optimized for large output and screen readers (Ctrl+Shift+P).

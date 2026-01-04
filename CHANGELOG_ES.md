@@ -1,5 +1,12 @@
 # Changelog
-Version 0.5.5 – 2026-01-03
+Version 0.5.6 - 2026-01-04
+Correcciones
+ Mejorado Buscar en archivos: al pulsar Enter abre el archivo exactamente en el fragmento seleccionado.
+Mejoras
+ Soporte PPT/PPTX.
+ Para formatos no textuales, Guardar ahora propone siempre .txt para no romper el formato (PDF/DOC/DOCX/EPUB/HTML/PPT/PPTX).
+
+Version 0.5.5 - 2026-01-03
 Nuevas funciones
 • Aniadido un prompt accesible optimizado para mucho output y lectores de pantalla (Ctrl+Shift+P).
 • Aniadida la opcion de guardar la configuracion en la carpeta actual (modo portable).

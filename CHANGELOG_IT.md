@@ -1,6 +1,13 @@
 # Changelog
 
-Versione 0.5.5 – 2026-01-03
+Versione 0.5.6 - 2026-01-04
+Fix
+ Migliorata Trova nei file: premendo Invio apre il file esattamente alla posizione dello snippet selezionato.
+Miglioramenti
+ Aggiunto supporto PPT/PPTX.
+ Per i formati non testuali, Salva ora propone sempre .txt per evitare di rovinare la formattazione (PDF/DOC/DOCX/EPUB/HTML/PPT/PPTX).
+
+Versione 0.5.5 - 2026-01-03
 Nuove funzionalita
 • Aggiunto un prompt accessibile ottimizzato per programmi che inviano molto output agli screen reader (Ctrl+Shift+P).
 • Aggiunta l'opzione per salvare le impostazioni utente nella cartella corrente (modalita' portable).

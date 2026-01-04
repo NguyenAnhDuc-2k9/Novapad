@@ -1,5 +1,5 @@
 #![allow(clippy::if_same_then_else, clippy::collapsible_else_if)]
-use crate::accessibility::{EM_REPLACESEL, EM_SCROLLCARET, from_wide, to_wide, to_wide_normalized};
+use crate::accessibility::{EM_REPLACESEL, from_wide, to_wide, to_wide_normalized};
 use crate::file_handler::*;
 use crate::settings::{
     FileFormat, TextEncoding, confirm_save_message, confirm_title, untitled_base, untitled_title,
@@ -1532,6 +1532,22 @@ pub unsafe fn open_document(hwnd: HWND, path: &Path) {
                 return;
             }
         }
+    } else if is_pptx_path(path) {
+        match read_ppt_text(path, language) {
+            Ok(text) => (text, FileFormat::Pptx),
+            Err(message) => {
+                crate::show_error(hwnd, language, &message);
+                return;
+            }
+        }
+    } else if is_ppt_path(path) {
+        match read_ppt_text(path, language) {
+            Ok(text) => (text, FileFormat::Ppt),
+            Err(message) => {
+                crate::show_error(hwnd, language, &message);
+                return;
+            }
+        }
     } else if is_epub_path(path) {
         match read_epub_text(path, language) {
             Ok(text) => (text, FileFormat::Epub),
@@ -1623,27 +1639,6 @@ pub unsafe fn open_document(hwnd: HWND, path: &Path) {
         }
     }
     crate::push_recent_file(hwnd, path);
-}
-
-pub unsafe fn open_document_at_position(hwnd: HWND, path: &Path, start: i32, len: i32) {
-    open_document(hwnd, path);
-    let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
-        return;
-    };
-    let start = start.max(0);
-    let end = (start + len.max(0)).max(start);
-    let mut cr = CHARRANGE {
-        cpMin: start,
-        cpMax: end,
-    };
-    SendMessageW(
-        hwnd_edit,
-        EM_EXSETSEL,
-        WPARAM(0),
-        LPARAM(&mut cr as *mut _ as isize),
-    );
-    SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
-    SetFocus(hwnd_edit);
 }
 
 pub unsafe fn select_tab(hwnd: HWND, index: usize) {
@@ -2028,12 +2023,21 @@ pub unsafe fn save_document_at(hwnd: HWND, index: usize, force_dialog: bool) -> 
         }
         let language = state.settings.language;
         let text = get_edit_text(state.docs[index].hwnd_edit);
-        let is_epub_doc = matches!(state.docs[index].format, FileFormat::Epub);
-        let is_html_doc = matches!(state.docs[index].format, FileFormat::Html);
+        let is_lossy_doc = matches!(
+            state.docs[index].format,
+            FileFormat::Docx
+                | FileFormat::Doc
+                | FileFormat::Pdf
+                | FileFormat::Spreadsheet
+                | FileFormat::Epub
+                | FileFormat::Html
+                | FileFormat::Ppt
+                | FileFormat::Pptx
+        );
         let mut suggested_name = crate::suggested_filename_from_text(&text)
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| state.docs[index].title.clone());
-        if is_epub_doc || is_html_doc {
+        if is_lossy_doc {
             let mut name_path = PathBuf::from(&suggested_name);
             name_path.set_extension("txt");
             suggested_name = name_path
@@ -2043,7 +2047,7 @@ pub unsafe fn save_document_at(hwnd: HWND, index: usize, force_dialog: bool) -> 
                 .to_string();
         }
 
-        let path = if !force_dialog && !is_epub_doc && !is_html_doc {
+        let path = if !force_dialog && !is_lossy_doc {
             state.docs[index].path.clone()
         } else {
             None
@@ -2056,19 +2060,19 @@ pub unsafe fn save_document_at(hwnd: HWND, index: usize, force_dialog: bool) -> 
             },
         };
         let mut path = path;
-        if is_epub_doc || is_html_doc {
+        if is_lossy_doc {
             path.set_extension("txt");
         }
 
         let is_docx = is_docx_path(&path);
         let is_pdf = is_pdf_path(&path);
-        if is_docx {
+        if !is_lossy_doc && is_docx {
             if let Err(message) = write_docx_text(&path, &text, language) {
                 crate::show_error(hwnd, language, &message);
                 return None;
             }
             state.docs[index].format = FileFormat::Docx;
-        } else if is_pdf {
+        } else if !is_lossy_doc && is_pdf {
             let pdf_title = path
                 .file_stem()
                 .and_then(|s| s.to_str())
@@ -2087,6 +2091,8 @@ pub unsafe fn save_document_at(hwnd: HWND, index: usize, force_dialog: bool) -> 
                 | FileFormat::Spreadsheet
                 | FileFormat::Epub
                 | FileFormat::Html
+                | FileFormat::Ppt
+                | FileFormat::Pptx
                 | FileFormat::Audiobook => TextEncoding::Utf8,
             };
             let bytes = encode_text(&text, encoding);

@@ -1,5 +1,5 @@
 use crate::i18n;
-use crate::settings::{Language, TextEncoding};
+use crate::settings::{Language, TextEncoding, error_open_file_message};
 use calamine::{Data as CalamineData, Reader, open_workbook_auto};
 use cfb::CompoundFile;
 use docx_rs::{
@@ -9,8 +9,11 @@ use docx_rs::{
 use encoding_rs::{Encoding, WINDOWS_1252};
 use pdf_extract::extract_text;
 use printpdf::{BuiltinFont, Mm, PdfDocument};
+use quick_xml::Reader as XmlReader;
+use quick_xml::events::Event;
 use std::io::{BufWriter, Read};
 use std::path::Path;
+use zip::ZipArchive;
 
 // --- Path identification ---
 
@@ -32,6 +35,20 @@ pub fn is_spreadsheet_path(path: &Path) -> bool {
     path.extension()
         .and_then(|s| s.to_str())
         .map(|s| s.eq_ignore_ascii_case("xlsx") || s.eq_ignore_ascii_case("ods"))
+        .unwrap_or(false)
+}
+
+pub fn is_pptx_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("pptx"))
+        .unwrap_or(false)
+}
+
+pub fn is_ppt_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("ppt"))
         .unwrap_or(false)
 }
 
@@ -125,6 +142,315 @@ pub fn encode_text(text: &str, encoding: TextEncoding) -> Vec<u8> {
             encoded.into_owned()
         }
     }
+}
+
+pub fn read_ppt_text(path: &Path, language: Language) -> Result<String, String> {
+    if is_pptx_path(path) {
+        return read_pptx_text(path, language);
+    }
+    if is_ppt_path(path) {
+        if is_zip_container(path) {
+            return read_pptx_text(path, language);
+        }
+        return read_ppt_binary_text(path, language);
+    }
+    let bytes = std::fs::read(path).map_err(|err| error_open_file_message(language, err))?;
+    decode_text(&bytes, language).map(|(text, _)| text)
+}
+
+fn read_ppt_binary_text(path: &Path, language: Language) -> Result<String, String> {
+    let bytes = std::fs::read(path).map_err(|err| error_open_file_message(language, err))?;
+    let mut buffer = Vec::new();
+    if let Ok(file) = std::fs::File::open(path)
+        && let Ok(mut comp) = CompoundFile::open(&file)
+        && let Ok(mut stream) = comp.open_stream("PowerPoint Document")
+    {
+        let _ = stream.read_to_end(&mut buffer);
+    }
+    let source = if buffer.is_empty() { &bytes } else { &buffer };
+    let record_text = extract_ppt_record_text(source);
+    let record_text = clean_ppt_text(record_text);
+    if !record_text.trim().is_empty() {
+        return Ok(record_text);
+    }
+    let text_utf16 = extract_utf16_strings(source);
+    let text_ascii = extract_ascii_strings(source);
+    if text_utf16.len() > 80 {
+        return Ok(clean_doc_text(text_utf16));
+    }
+    if !text_ascii.is_empty() {
+        return Ok(clean_doc_text(text_ascii));
+    }
+    if !text_utf16.is_empty() {
+        return Ok(clean_doc_text(text_utf16));
+    }
+    Err(i18n::tr(language, "file_handler.file_read_unknown"))
+}
+
+fn is_zip_container(path: &Path) -> bool {
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(_) => return false,
+    };
+    let mut header = [0u8; 4];
+    if file.read_exact(&mut header).is_err() {
+        return false;
+    }
+    matches!(
+        header,
+        [0x50, 0x4B, 0x03, 0x04] | [0x50, 0x4B, 0x05, 0x06] | [0x50, 0x4B, 0x07, 0x08]
+    )
+}
+
+fn extract_ppt_record_text(data: &[u8]) -> String {
+    let mut paragraphs = Vec::new();
+    parse_ppt_records(data, &mut paragraphs);
+    paragraphs.join("\n\n")
+}
+
+fn clean_ppt_text(text: String) -> String {
+    let mut out = String::new();
+    for block in text.split("\n\n") {
+        let mut kept = Vec::new();
+        for line in block.lines() {
+            if should_keep_ppt_line(line) {
+                kept.push(line);
+            }
+        }
+        if kept.is_empty() {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push_str("\n\n");
+        }
+        out.push_str(&kept.join("\n"));
+    }
+    out
+}
+
+fn should_keep_ppt_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if trimmed == "*" || trimmed == "•" {
+        return false;
+    }
+    if lower.contains("click to edit")
+        || lower.contains("click to add")
+        || lower.contains("fare clic")
+    {
+        return false;
+    }
+    if lower.contains("master title")
+        || lower.contains("master text")
+        || lower.contains("master subtitle")
+        || lower.contains("testo master")
+        || lower.contains("titolo master")
+    {
+        return false;
+    }
+    if lower.contains("level") && lower.chars().any(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    if lower.contains("master") && lower.contains("level") {
+        return false;
+    }
+    if is_ppt_placeholder_levels(&lower) {
+        return false;
+    }
+    true
+}
+
+fn is_ppt_placeholder_levels(lower: &str) -> bool {
+    let mut has_level = false;
+    let mut has_ordinal = false;
+    for token in lower.split_whitespace() {
+        let token = token.trim_matches(|c: char| !c.is_ascii_alphabetic() && !c.is_ascii_digit());
+        if token.is_empty() {
+            continue;
+        }
+        match token {
+            "level" => has_level = true,
+            "first" | "second" | "third" | "fourth" | "fifth" => has_ordinal = true,
+            "1" | "2" | "3" | "4" | "5" => has_ordinal = true,
+            _ => return false,
+        }
+    }
+    has_level && has_ordinal
+}
+
+fn parse_ppt_records(data: &[u8], out: &mut Vec<String>) {
+    let mut pos = 0usize;
+    while pos + 8 <= data.len() {
+        let ver_inst = match read_u16_le(data, pos) {
+            Some(v) => v,
+            None => break,
+        };
+        let rec_type = match read_u16_le(data, pos + 2) {
+            Some(v) => v,
+            None => break,
+        };
+        let rec_len = match read_u32_le(data, pos + 4) {
+            Some(v) => v as usize,
+            None => break,
+        };
+        let body_start = pos + 8;
+        let body_end = body_start.saturating_add(rec_len);
+        if body_end > data.len() {
+            break;
+        }
+        match rec_type {
+            4000 => {
+                let mut utf16 = Vec::with_capacity(rec_len / 2);
+                for chunk in data[body_start..body_end].chunks_exact(2) {
+                    utf16.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+                }
+                let text = String::from_utf16_lossy(&utf16);
+                push_ppt_paragraph(out, text);
+            }
+            4008 => {
+                let (decoded, _, _) = WINDOWS_1252.decode(&data[body_start..body_end]);
+                push_ppt_paragraph(out, decoded.into_owned());
+            }
+            _ => {}
+        }
+        let ver = ver_inst & 0x000F;
+        if ver == 0x000F && rec_len > 0 {
+            parse_ppt_records(&data[body_start..body_end], out);
+        }
+        pos = body_end;
+    }
+}
+
+fn push_ppt_paragraph(out: &mut Vec<String>, text: String) {
+    let mut cleaned = text.replace('\r', "\n");
+    cleaned = cleaned.trim_end_matches('\0').to_string();
+    if cleaned.trim().is_empty() {
+        return;
+    }
+    let lines: Vec<&str> = cleaned
+        .lines()
+        .map(|line| line.trim_end())
+        .filter(|line| !line.is_empty())
+        .collect();
+    if lines.is_empty() {
+        return;
+    }
+    out.push(lines.join("\n"));
+}
+
+fn read_pptx_text(path: &Path, language: Language) -> Result<String, String> {
+    let file = std::fs::File::open(path).map_err(|err| error_open_file_message(language, err))?;
+    let mut archive = ZipArchive::new(file).map_err(|err| {
+        i18n::tr_f(
+            language,
+            "file_handler.file_read_error",
+            &[("err", &err.to_string())],
+        )
+    })?;
+    let mut slides: Vec<(u32, String)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|err| {
+            i18n::tr_f(
+                language,
+                "file_handler.file_read_error",
+                &[("err", &err.to_string())],
+            )
+        })?;
+        let name = file.name().to_string();
+        if let Some(num) = pptx_slide_number(&name) {
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes).map_err(|err| {
+                i18n::tr_f(
+                    language,
+                    "file_handler.file_read_error",
+                    &[("err", &err.to_string())],
+                )
+            })?;
+            let xml = String::from_utf8_lossy(&bytes);
+            let text = extract_pptx_slide_text(&xml);
+            slides.push((num, text));
+        }
+    }
+    slides.sort_by_key(|(num, _)| *num);
+    let mut out = String::new();
+    for (_, text) in slides {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push_str("\n\n");
+        }
+        out.push_str(trimmed);
+    }
+    Ok(out)
+}
+
+fn pptx_slide_number(name: &str) -> Option<u32> {
+    let rest = name.strip_prefix("ppt/slides/slide")?;
+    let number = rest.strip_suffix(".xml")?;
+    number.parse().ok()
+}
+
+fn extract_pptx_slide_text(xml: &str) -> String {
+    let mut reader = XmlReader::from_str(xml);
+    reader.trim_text(true);
+    let mut buf = Vec::new();
+    let mut out = String::new();
+    let mut paragraph_has_text = false;
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) => {
+                if e.name().as_ref() == b"a:p" {
+                    paragraph_has_text = false;
+                }
+            }
+            Ok(Event::End(e)) => {
+                if e.name().as_ref() == b"a:p" && paragraph_has_text {
+                    if !out.ends_with('\n') {
+                        out.push('\n');
+                    }
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let name = e.name();
+                if name.as_ref() == b"a:br" {
+                    if !out.ends_with('\n') {
+                        out.push('\n');
+                    }
+                } else if name.as_ref() == b"a:tab" {
+                    out.push('\t');
+                    paragraph_has_text = true;
+                }
+            }
+            Ok(Event::Text(e)) => {
+                if let Ok(text) = e.unescape() {
+                    if !text.is_empty() {
+                        out.push_str(&text);
+                        paragraph_has_text = true;
+                    }
+                }
+            }
+            Ok(Event::CData(e)) => {
+                let text = String::from_utf8_lossy(e.as_ref());
+                if !text.is_empty() {
+                    out.push_str(&text);
+                    paragraph_has_text = true;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    if out.ends_with('\n') {
+        out.pop();
+    }
+    out
 }
 
 // --- EPUB Parsing ---
@@ -458,6 +784,13 @@ fn read_u32_le(data: &[u8], offset: usize) -> Option<u32> {
         data[offset + 2],
         data[offset + 3],
     ]))
+}
+
+fn read_u16_le(data: &[u8], offset: usize) -> Option<u16> {
+    if offset + 2 > data.len() {
+        return None;
+    }
+    Some(u16::from_le_bytes([data[offset], data[offset + 1]]))
 }
 
 fn clean_doc_text(text: String) -> String {
