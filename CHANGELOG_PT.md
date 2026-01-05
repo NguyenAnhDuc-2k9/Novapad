@@ -9,7 +9,7 @@ Melhorias
 
 Versao 0.5.5 - 2026-01-03
 Novas funcionalidades
-• Adicionado um prompt acessivel otimizado para muita saida e leitores de tela (Ctrl+Shift+P).
+• Adicionado um terminal acessivel otimizado para muita saida e leitores de tela (Ctrl+Shift+P).
 • Adicionada a opcao de guardar as definicoes na pasta atual (modo portable).
 Correcoes
 • Melhorados os trechos de Procurar em arquivos para manter a previsualizacao alinhada com a ocorrencia.

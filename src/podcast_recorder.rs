@@ -225,7 +225,6 @@ pub struct RecorderHandle {
     temp_wav: PathBuf,
     temp_mp3: PathBuf,
     format: PodcastFormat,
-    mp3_bitrate: u32,
 }
 
 struct SharedState {
@@ -364,10 +363,17 @@ pub fn start_recording(config: RecorderConfig) -> Result<RecorderHandle, String>
     let writer_shared = shared.clone();
     let writer_stop = stop.clone();
     let writer_paused = paused.clone();
-    let writer_path = temp_wav.clone();
+    let writer_path = match config.output_format {
+        PodcastFormat::Mp3 => temp_mp3.clone(),
+        PodcastFormat::Wav => temp_wav.clone(),
+    };
+    let writer_format = config.output_format;
+    let writer_bitrate = config.mp3_bitrate;
     threads.push(thread::spawn(move || {
         let result = write_mixed_audio(
             writer_path,
+            writer_format,
+            writer_bitrate,
             writer_buffer,
             writer_shared.clone(),
             writer_stop.clone(),
@@ -394,7 +400,6 @@ pub fn start_recording(config: RecorderConfig) -> Result<RecorderHandle, String>
         temp_wav,
         temp_mp3,
         format: config.output_format,
-        mp3_bitrate: config.mp3_bitrate,
     })
 }
 
@@ -467,19 +472,7 @@ impl RecorderHandle {
         }
 
         if self.format == PodcastFormat::Mp3 {
-            if let Err(err) = mf_encoder::encode_wav_to_mp3_with_bitrate_progress(
-                &self.temp_wav,
-                &self.temp_mp3,
-                self.mp3_bitrate,
-                &mut progress,
-                cancel.as_deref(),
-            ) {
-                let _ = std::fs::remove_file(&self.temp_wav);
-                let _ = std::fs::remove_file(&self.temp_mp3);
-                self.set_error(&err);
-                return Err(err);
-            }
-            let _ = std::fs::remove_file(&self.temp_wav);
+            progress(100);
             if let Err(err) = rename_atomic(&self.temp_mp3, &self.output_path) {
                 self.set_error(&err);
                 return Err(err);
@@ -610,6 +603,23 @@ impl MixBuffer {
 
 fn write_mixed_audio(
     path: PathBuf,
+    format: PodcastFormat,
+    mp3_bitrate: u32,
+    buffer: Arc<MixBuffer>,
+    shared: Arc<SharedState>,
+    stop: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
+) -> Result<(), String> {
+    match format {
+        PodcastFormat::Mp3 => {
+            write_mixed_audio_mp3(path, mp3_bitrate, buffer, shared, stop, paused)
+        }
+        PodcastFormat::Wav => write_mixed_audio_wav(path, buffer, shared, stop, paused),
+    }
+}
+
+fn write_mixed_audio_wav(
+    path: PathBuf,
     buffer: Arc<MixBuffer>,
     shared: Arc<SharedState>,
     stop: Arc<AtomicBool>,
@@ -668,6 +678,88 @@ fn write_mixed_audio(
         drop(inner);
 
         writer.write_f32(&mixed)?;
+
+        let elapsed = last_write.elapsed();
+        if elapsed < Duration::from_millis(10) {
+            thread::sleep(Duration::from_millis(5));
+        }
+        last_write = Instant::now();
+    }
+    writer.finalize()?;
+    Ok(())
+}
+
+fn write_mixed_audio_mp3(
+    path: PathBuf,
+    mp3_bitrate: u32,
+    buffer: Arc<MixBuffer>,
+    shared: Arc<SharedState>,
+    stop: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
+) -> Result<(), String> {
+    let mut writer = mf_encoder::Mp3StreamWriter::create(
+        &path,
+        mp3_bitrate,
+        TARGET_SAMPLE_RATE,
+        TARGET_CHANNELS,
+    )?;
+    let mut last_write = Instant::now();
+    loop {
+        if stop.load(Ordering::SeqCst) {
+            break;
+        }
+        if paused.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_millis(30));
+            continue;
+        }
+
+        let mut inner = buffer.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let (need_mic, need_sys) = (shared.include_mic, shared.include_system);
+        let available_mic = inner.mic.len() / TARGET_CHANNELS as usize;
+        let available_sys = inner.system.len() / TARGET_CHANNELS as usize;
+        let can_mix = if need_mic && need_sys {
+            available_mic >= MIX_CHUNK_FRAMES && available_sys >= MIX_CHUNK_FRAMES
+        } else if need_mic {
+            available_mic >= MIX_CHUNK_FRAMES
+        } else {
+            available_sys >= MIX_CHUNK_FRAMES
+        };
+
+        if !can_mix {
+            let _ = buffer
+                .condvar
+                .wait_timeout(inner, Duration::from_millis(40));
+            continue;
+        }
+
+        let frames = MIX_CHUNK_FRAMES;
+        let mut mixed = Vec::with_capacity(frames * TARGET_CHANNELS as usize);
+        for _ in 0..frames {
+            let mut left = 0.0f32;
+            let mut right = 0.0f32;
+            if need_mic {
+                left += inner.mic.pop_front().unwrap_or(0.0);
+                right += inner.mic.pop_front().unwrap_or(0.0);
+            }
+            if need_sys {
+                left += inner.system.pop_front().unwrap_or(0.0);
+                right += inner.system.pop_front().unwrap_or(0.0);
+            }
+            if need_mic && need_sys {
+                left *= 0.5;
+                right *= 0.5;
+            }
+            mixed.push(left.clamp(-1.0, 1.0));
+            mixed.push(right.clamp(-1.0, 1.0));
+        }
+        drop(inner);
+
+        let mut pcm = Vec::with_capacity(mixed.len());
+        for sample in mixed {
+            let v = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+            pcm.push(v);
+        }
+        writer.write_i16(&pcm)?;
 
         let elapsed = last_write.elapsed();
         if elapsed < Duration::from_millis(10) {

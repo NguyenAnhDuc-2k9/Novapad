@@ -4,14 +4,205 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use windows::Win32::Media::MediaFoundation::{
-    IMFMediaType, IMFSinkWriter, IMFSourceReader, MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
-    MF_MT_AUDIO_BITS_PER_SAMPLE, MF_MT_AUDIO_BLOCK_ALIGNMENT, MF_MT_AUDIO_NUM_CHANNELS,
-    MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_MT_FIXED_SIZE_SAMPLES, MF_MT_MAJOR_TYPE, MF_MT_SAMPLE_SIZE,
-    MF_MT_SUBTYPE, MF_SOURCE_READER_FIRST_AUDIO_STREAM, MF_SOURCE_READERF_ENDOFSTREAM, MF_VERSION,
-    MFAudioFormat_MP3, MFAudioFormat_PCM, MFCreateMediaType, MFCreateSinkWriterFromURL,
+    IMFMediaBuffer, IMFMediaType, IMFSample, IMFSinkWriter, IMFSourceReader,
+    MF_MT_AUDIO_AVG_BYTES_PER_SECOND, MF_MT_AUDIO_BITS_PER_SAMPLE, MF_MT_AUDIO_BLOCK_ALIGNMENT,
+    MF_MT_AUDIO_NUM_CHANNELS, MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_MT_FIXED_SIZE_SAMPLES,
+    MF_MT_MAJOR_TYPE, MF_MT_SAMPLE_SIZE, MF_MT_SUBTYPE, MF_SOURCE_READER_FIRST_AUDIO_STREAM,
+    MF_SOURCE_READERF_ENDOFSTREAM, MF_VERSION, MFAudioFormat_MP3, MFAudioFormat_PCM,
+    MFCreateMediaType, MFCreateMemoryBuffer, MFCreateSample, MFCreateSinkWriterFromURL,
     MFCreateSourceReaderFromURL, MFMediaType_Audio, MFShutdown, MFStartup,
 };
 use windows::core::PCWSTR;
+
+struct MfGuard;
+
+impl MfGuard {
+    fn start() -> Result<Self, String> {
+        unsafe {
+            if let Err(e) = MFStartup(MF_VERSION, 0) {
+                return Err(format!(
+                    "Media Foundation not available. Install Media Feature Pack on Windows N/KN. ({})",
+                    e
+                ));
+            }
+        }
+        Ok(MfGuard)
+    }
+}
+
+impl Drop for MfGuard {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = MFShutdown();
+        }
+    }
+}
+
+pub struct Mp3StreamWriter {
+    _guard: MfGuard,
+    writer: IMFSinkWriter,
+    stream_index: u32,
+    sample_time: i64,
+    sample_rate: u32,
+    bytes_per_frame: u32,
+}
+
+impl Mp3StreamWriter {
+    pub fn create(
+        mp3_path: &Path,
+        bitrate_kbps: u32,
+        sample_rate: u32,
+        channels: u16,
+    ) -> Result<Self, String> {
+        unsafe {
+            let bitrate_kbps = match bitrate_kbps {
+                192 => 192,
+                256 => 256,
+                _ => 128,
+            };
+            crate::log_debug(&format!(
+                "MF: streaming mp3 writer. mp3={:?} bitrate_kbps={} rate={} ch={}",
+                mp3_path, bitrate_kbps, sample_rate, channels
+            ));
+            let guard = MfGuard::start()?;
+
+            let mp3_wide = to_wide(mp3_path.to_str().ok_or("Invalid mp3 path")?);
+            let writer: IMFSinkWriter =
+                MFCreateSinkWriterFromURL(PCWSTR(mp3_wide.as_ptr()), None, None)
+                    .map_err(|e| format!("MFCreateSinkWriterFromURL failed: {}", e))?;
+
+            let pcm_type: IMFMediaType = MFCreateMediaType()
+                .map_err(|e| format!("MFCreateMediaType (pcm) failed: {}", e))?;
+            pcm_type
+                .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio)
+                .map_err(|e| format!("SetGUID major type failed: {}", e))?;
+            pcm_type
+                .SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_PCM)
+                .map_err(|e| format!("SetGUID subtype PCM failed: {}", e))?;
+            let requested_bits = 16u32;
+            let requested_channels = channels as u32;
+            let block_align = requested_channels * (requested_bits / 8);
+            let avg_bytes = sample_rate * block_align;
+            pcm_type
+                .SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate)
+                .map_err(|e| format!("Set sample rate failed: {}", e))?;
+            pcm_type
+                .SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, requested_channels)
+                .map_err(|e| format!("Set channels failed: {}", e))?;
+            pcm_type
+                .SetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE, requested_bits)
+                .map_err(|e| format!("Set bits failed: {}", e))?;
+            pcm_type
+                .SetUINT32(&MF_MT_AUDIO_BLOCK_ALIGNMENT, block_align)
+                .map_err(|e| format!("Set block alignment failed: {}", e))?;
+            pcm_type
+                .SetUINT32(&MF_MT_AUDIO_AVG_BYTES_PER_SECOND, avg_bytes)
+                .map_err(|e| format!("Set avg bytes failed: {}", e))?;
+            let _ = pcm_type.SetUINT32(&MF_MT_FIXED_SIZE_SAMPLES, 1);
+            let _ = pcm_type.SetUINT32(&MF_MT_SAMPLE_SIZE, block_align);
+
+            let out_type: IMFMediaType = MFCreateMediaType()
+                .map_err(|e| format!("MFCreateMediaType (mp3) failed: {}", e))?;
+            out_type
+                .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio)
+                .map_err(|e| format!("SetGUID major type (out) failed: {}", e))?;
+            out_type
+                .SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_MP3)
+                .map_err(|e| format!("SetGUID subtype MP3 failed: {}", e))?;
+            out_type
+                .SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, requested_channels)
+                .map_err(|e| format!("Set channels (out) failed: {}", e))?;
+            out_type
+                .SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate)
+                .map_err(|e| format!("Set sample rate (out) failed: {}", e))?;
+            let mp3_avg_bytes = (bitrate_kbps * 1000) / 8;
+            out_type
+                .SetUINT32(&MF_MT_AUDIO_AVG_BYTES_PER_SECOND, mp3_avg_bytes)
+                .map_err(|e| format!("Set mp3 bitrate failed: {}", e))?;
+
+            let stream_index = writer
+                .AddStream(&out_type)
+                .map_err(|e| format!("SinkWriter AddStream failed: {}", e))?;
+            if let Err(e) = writer.SetInputMediaType(stream_index, &pcm_type, None) {
+                crate::log_debug(&format!("MF: SetInputMediaType failed: {}", e));
+                return Err(format!("SinkWriter SetInputMediaType failed: {}", e));
+            }
+            writer
+                .BeginWriting()
+                .map_err(|e| format!("SinkWriter BeginWriting failed: {}", e))?;
+
+            Ok(Mp3StreamWriter {
+                _guard: guard,
+                writer,
+                stream_index,
+                sample_time: 0,
+                sample_rate,
+                bytes_per_frame: block_align,
+            })
+        }
+    }
+
+    pub fn write_i16(&mut self, samples: &[i16]) -> Result<(), String> {
+        if samples.is_empty() {
+            return Ok(());
+        }
+        let byte_len = (samples.len() * 2) as u32;
+        let frames = byte_len / self.bytes_per_frame;
+        if frames == 0 {
+            return Ok(());
+        }
+        let duration = (frames as i64 * 10_000_000i64) / self.sample_rate as i64;
+        unsafe {
+            let buffer: IMFMediaBuffer = MFCreateMemoryBuffer(byte_len)
+                .map_err(|e| format!("MFCreateMemoryBuffer failed: {}", e))?;
+            let mut data_ptr = std::ptr::null_mut();
+            let mut max_len = 0u32;
+            buffer
+                .Lock(&mut data_ptr, Some(&mut max_len), None)
+                .map_err(|e| format!("IMFMediaBuffer::Lock failed: {}", e))?;
+            if !data_ptr.is_null() {
+                std::ptr::copy_nonoverlapping(
+                    samples.as_ptr() as *const u8,
+                    data_ptr,
+                    byte_len as usize,
+                );
+            }
+            buffer
+                .Unlock()
+                .map_err(|e| format!("IMFMediaBuffer::Unlock failed: {}", e))?;
+            buffer
+                .SetCurrentLength(byte_len)
+                .map_err(|e| format!("IMFMediaBuffer::SetCurrentLength failed: {}", e))?;
+
+            let sample: IMFSample =
+                MFCreateSample().map_err(|e| format!("MFCreateSample failed: {}", e))?;
+            sample
+                .AddBuffer(&buffer)
+                .map_err(|e| format!("IMFSample::AddBuffer failed: {}", e))?;
+            sample
+                .SetSampleTime(self.sample_time)
+                .map_err(|e| format!("IMFSample::SetSampleTime failed: {}", e))?;
+            sample
+                .SetSampleDuration(duration)
+                .map_err(|e| format!("IMFSample::SetSampleDuration failed: {}", e))?;
+
+            self.writer
+                .WriteSample(self.stream_index, &sample)
+                .map_err(|e| format!("WriteSample failed: {}", e))?;
+        }
+        self.sample_time = self.sample_time.saturating_add(duration);
+        Ok(())
+    }
+
+    pub fn finalize(self) -> Result<(), String> {
+        unsafe {
+            self.writer
+                .Finalize()
+                .map_err(|e| format!("SinkWriter Finalize failed: {}", e))?;
+        }
+        Ok(())
+    }
+}
 
 fn read_wav_data_info(path: &Path) -> Result<(u64, u32, i16), String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
@@ -77,21 +268,7 @@ where
             "MF: encode wav to mp3. wav={:?} mp3={:?} bitrate_kbps={}",
             wav_path, mp3_path, bitrate_kbps
         ));
-        if let Err(e) = MFStartup(MF_VERSION, 0) {
-            return Err(format!(
-                "Media Foundation not available. Install Media Feature Pack on Windows N/KN. ({})",
-                e
-            ));
-        }
-        struct MfGuard;
-        impl Drop for MfGuard {
-            fn drop(&mut self) {
-                unsafe {
-                    let _ = MFShutdown();
-                }
-            }
-        }
-        let _guard = MfGuard;
+        let _guard = MfGuard::start()?;
 
         let wav_wide = to_wide(wav_path.to_str().ok_or("Invalid wav path")?);
         let mp3_wide = to_wide(mp3_path.to_str().ok_or("Invalid mp3 path")?);

@@ -2,7 +2,8 @@
 use crate::accessibility::{EM_REPLACESEL, from_wide, to_wide, to_wide_normalized};
 use crate::file_handler::*;
 use crate::settings::{
-    FileFormat, TextEncoding, confirm_save_message, confirm_title, untitled_base, untitled_title,
+    FileFormat, ModifiedMarkerPosition, TextEncoding, confirm_save_message, confirm_title,
+    untitled_base, untitled_title,
 };
 use crate::{log_debug, with_state};
 use std::collections::HashSet;
@@ -958,6 +959,76 @@ pub unsafe fn join_lines_active_edit(hwnd: HWND) {
     SetFocus(hwnd_edit);
 }
 
+pub unsafe fn clean_end_of_line_hyphens_active_edit(hwnd: HWND) {
+    let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
+        return;
+    };
+    let text = get_edit_text(hwnd_edit);
+    if text.is_empty() {
+        return;
+    }
+
+    let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut selection = CHARRANGE { cpMin: 0, cpMax: 0 };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXGETSEL,
+        WPARAM(0),
+        LPARAM(&mut selection as *mut _ as isize),
+    );
+
+    let (affected_start, affected_end, has_trailing_newline) = if selection.cpMin != selection.cpMax
+    {
+        let start_byte = utf16_index_to_byte(&text, selection.cpMin);
+        let end_byte = utf16_index_to_byte(&text, selection.cpMax);
+        let mut effective_end = end_byte;
+        if end_byte > start_byte && end_byte > 0 && text.as_bytes()[end_byte - 1] == b'\n' {
+            effective_end = end_byte.saturating_sub(1);
+        }
+        let line_start = text[..start_byte].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = text[effective_end..]
+            .find('\n')
+            .map(|i| effective_end + i + 1)
+            .unwrap_or(text.len());
+        (
+            line_start,
+            line_end,
+            text[line_start..line_end].ends_with('\n'),
+        )
+    } else {
+        (0, text.len(), text.ends_with('\n'))
+    };
+
+    let affected = &text[affected_start..affected_end];
+    let cleaned = clean_end_of_line_hyphens_block(affected, line_ending, has_trailing_newline);
+    if cleaned == affected {
+        return;
+    }
+
+    let mut replace_range = CHARRANGE {
+        cpMin: byte_index_to_utf16(&text, affected_start),
+        cpMax: byte_index_to_utf16(&text, affected_end),
+    };
+    SendMessageW(
+        hwnd_edit,
+        EM_EXSETSEL,
+        WPARAM(0),
+        LPARAM(&mut replace_range as *mut _ as isize),
+    );
+    // Single-undo guarantee.
+    begin_single_undo_action(hwnd_edit);
+    let replace_wide = to_wide(&cleaned);
+    SendMessageW(
+        hwnd_edit,
+        EM_REPLACESEL,
+        WPARAM(1),
+        LPARAM(replace_wide.as_ptr() as isize),
+    );
+    end_single_undo_action(hwnd_edit);
+    mark_dirty_from_edit(hwnd, hwnd_edit);
+    SetFocus(hwnd_edit);
+}
+
 pub unsafe fn text_stats_active_edit(hwnd: HWND) {
     let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
         return;
@@ -1197,6 +1268,66 @@ fn join_lines_block(text: &str, line_ending: &str, has_trailing_newline: bool) -
             }
         }
         out.push_str(line);
+    }
+
+    if trailing_newline {
+        out.push_str(line_ending);
+    }
+    out
+}
+
+fn clean_end_of_line_hyphens_block(
+    text: &str,
+    line_ending: &str,
+    has_trailing_newline: bool,
+) -> String {
+    let (content, trailing_newline) = split_trailing_newline(text, has_trailing_newline);
+    let mut out = String::with_capacity(content.len());
+    let chars: Vec<char> = content.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '-' {
+            // Check char before '-'
+            let mut valid_before = false;
+            if i > 0 {
+                let prev = chars[i - 1];
+                if prev.is_alphanumeric() && !prev.is_whitespace() {
+                    valid_before = true;
+                }
+            }
+
+            if valid_before {
+                // Look ahead for line breaks (up to 3)
+                let mut temp_j = i + 1;
+                let mut line_breaks = 0;
+
+                while line_breaks < 3 && temp_j < chars.len() {
+                    if chars[temp_j] == '\r' {
+                        temp_j += 1;
+                        continue;
+                    }
+                    if chars[temp_j] == '\n' {
+                        line_breaks += 1;
+                        temp_j += 1;
+                        // Skip any optional \r\n that might follow (if we allow more line breaks)
+                        continue;
+                    }
+                    // If we reach here, it's not a line break char.
+                    break;
+                }
+
+                if line_breaks > 0 && temp_j < chars.len() {
+                    let next_char = chars[temp_j];
+                    if next_char.is_alphabetic() {
+                        // Join! Skip the hyphen and the line breaks.
+                        i = temp_j;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
     }
 
     if trailing_newline {
@@ -1730,18 +1861,36 @@ pub unsafe fn mark_dirty_from_edit(hwnd: HWND, hwnd_edit: HWND) {
 pub unsafe fn update_window_title(hwnd: HWND) {
     let _ = with_state(hwnd, |state| {
         if let Some(doc) = state.docs.get(state.current) {
-            let suffix = if doc.dirty { "*" } else { "" };
             let untitled = untitled_base(state.settings.language);
             let display_title = if doc.title.starts_with(&untitled) {
                 &doc.title
             } else {
                 &doc.title
             };
-            let full_title = format!("{} - Novapad{}", display_title, suffix);
+            let base_title = if display_title.trim().is_empty() {
+                "Novapad".to_string()
+            } else {
+                format!("{display_title} - Novapad")
+            };
+            let full_title = apply_modified_marker(
+                &base_title,
+                doc.dirty,
+                state.settings.modified_marker_position,
+            );
             let wide = to_wide(&full_title);
             let _ = SetWindowTextW(hwnd, PCWSTR(wide.as_ptr()));
         }
     });
+}
+
+fn apply_modified_marker(title: &str, dirty: bool, position: ModifiedMarkerPosition) -> String {
+    if !dirty {
+        return title.to_string();
+    }
+    match position {
+        ModifiedMarkerPosition::Beginning => format!("* {title}"),
+        _ => format!("{title} *"),
+    }
 }
 
 pub unsafe fn layout_children(hwnd: HWND) {
@@ -2313,4 +2462,74 @@ pub unsafe fn get_current_index(hwnd: HWND) -> usize {
 
 pub unsafe fn get_tab(hwnd: HWND) -> HWND {
     with_state(hwnd, |state| state.hwnd_tab).unwrap_or(HWND(0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clean_end_of_line_hyphens() {
+        // Simple join
+        assert_eq!(
+            clean_end_of_line_hyphens_block("inter-\nnational", "\n", false),
+            "international"
+        );
+        // Windows EOL
+        assert_eq!(
+            clean_end_of_line_hyphens_block("inter-\r\nnational", "\r\n", false),
+            "international"
+        );
+        // Page gap (2 line breaks)
+        assert_eq!(
+            clean_end_of_line_hyphens_block("inter-\n\nnational", "\n", false),
+            "international"
+        );
+        // 3 line breaks
+        assert_eq!(
+            clean_end_of_line_hyphens_block("inter-\n\n\nnational", "\n", false),
+            "international"
+        );
+        // 4 line breaks (too many, shouldn't join)
+        assert_eq!(
+            clean_end_of_line_hyphens_block("inter-\n\n\n\nnational", "\n", false),
+            "inter-\n\n\n\nnational"
+        );
+
+        // Non-join for dashes (whitespace before hyphen)
+        assert_eq!(
+            clean_end_of_line_hyphens_block("word -\nnext", "\n", false),
+            "word -\nnext"
+        );
+
+        // Non-join for hyphenated compounds (next char not alphabetic)
+        assert_eq!(
+            clean_end_of_line_hyphens_block("state-\n123", "\n", false),
+            "state-\n123"
+        );
+        assert_eq!(
+            clean_end_of_line_hyphens_block("state-\n. Next", "\n", false),
+            "state-\n. Next"
+        );
+
+        // Digit before hyphen (should join)
+        assert_eq!(
+            clean_end_of_line_hyphens_block("Section3-\npart", "\n", false),
+            "Section3part"
+        );
+
+        // Preserve paragraph structure
+        let input = "This is a test-\ncase.\n\nNew paragraph.";
+        let expected = "This is a testcase.\n\nNew paragraph.";
+        assert_eq!(
+            clean_end_of_line_hyphens_block(input, "\n", false),
+            expected
+        );
+
+        // Case sensitivity (lowercase/uppercase after join)
+        assert_eq!(
+            clean_end_of_line_hyphens_block("Inter-\nNational", "\n", false),
+            "InterNational"
+        );
+    }
 }

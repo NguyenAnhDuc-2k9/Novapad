@@ -86,6 +86,17 @@ pub enum Language {
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum ModifiedMarkerPosition {
+    #[serde(rename = "end")]
+    #[default]
+    End,
+    #[serde(rename = "beginning")]
+    Beginning,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum TtsEngine {
     #[serde(rename = "edge")]
     #[default]
@@ -110,6 +121,7 @@ pub const PODCAST_DEVICE_DEFAULT: &str = "default";
 pub struct AppSettings {
     pub open_behavior: OpenBehavior,
     pub language: Language,
+    pub modified_marker_position: ModifiedMarkerPosition,
     pub settings_in_current_dir: bool,
     pub tts_engine: TtsEngine,
     pub tts_voice: String,
@@ -148,6 +160,7 @@ pub struct AppSettings {
     pub prompt_strip_ansi: bool,
     pub prompt_beep_on_idle: bool,
     pub prompt_prevent_sleep: bool,
+    pub prompt_announce_lines: bool,
 }
 
 impl Default for AppSettings {
@@ -155,6 +168,7 @@ impl Default for AppSettings {
         AppSettings {
             open_behavior: OpenBehavior::NewTab,
             language: Language::Italian,
+            modified_marker_position: ModifiedMarkerPosition::End,
             settings_in_current_dir: false,
             tts_engine: TtsEngine::Edge,
             tts_voice: "it-IT-IsabellaNeural".to_string(),
@@ -193,6 +207,7 @@ impl Default for AppSettings {
             prompt_strip_ansi: true,
             prompt_beep_on_idle: true,
             prompt_prevent_sleep: true,
+            prompt_announce_lines: true,
         }
     }
 }
@@ -334,6 +349,9 @@ fn normalize_settings(mut settings: AppSettings) -> AppSettings {
     }
     if settings.podcast_mp3_bitrate == 0 {
         settings.podcast_mp3_bitrate = 128;
+    }
+    if settings.modified_marker_position == ModifiedMarkerPosition::Unknown {
+        settings.modified_marker_position = ModifiedMarkerPosition::End;
     }
     settings
 }

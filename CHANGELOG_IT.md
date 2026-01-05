@@ -10,7 +10,7 @@ Miglioramenti
 
 Versione 0.5.5 - 2026-01-03
 Nuove funzionalita
-• Aggiunto un prompt accessibile ottimizzato per programmi che inviano molto output agli screen reader (Ctrl+Shift+P).
+• Aggiunto un terminale accessibile ottimizzato per programmi che inviano molto output agli screen reader (Ctrl+Shift+P).
 • Aggiunta l'opzione per salvare le impostazioni utente nella cartella corrente (modalita' portable).
 Fix
 • Migliorati gli snippet di Trova nei file per mantenere l'anteprima allineata alla corrispondenza.

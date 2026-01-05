@@ -51,8 +51,8 @@ plus **podcast recording from microphone and system audio**.
   - Record from microphone and/or system audio (File menu, Ctrl+Shift+R)
 - **Accessibility-Focused**
   Designed to work correctly with screen readers such as NVDA and JAWS.
-- **Accessible Prompt**
-  - Dedicated prompt window with stable output for screen readers
+- **Accessible Terminal**
+  - Dedicated terminal window with stable output for screen readers
   - Shortcuts: Ctrl+Shift+P, Alt+I (input), Alt+O (output)
   - Options: auto-scroll, strip ANSI, beep on idle, prevent sleep; choose cmd/PowerShell/Codex CLI
 - **Readable UI Options**

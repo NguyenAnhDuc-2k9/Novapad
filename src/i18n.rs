@@ -8,7 +8,13 @@ const ES_JSON: &str = include_str!("../i18n/es.json");
 const PT_JSON: &str = include_str!("../i18n/pt.json");
 
 fn load_map(raw: &str) -> HashMap<String, String> {
-    serde_json::from_str(raw).unwrap_or_default()
+    let mut map: HashMap<String, String> = serde_json::from_str(raw).unwrap_or_default();
+    for value in map.values_mut() {
+        if value.contains("\\n") {
+            *value = value.replace("\\n", "\n");
+        }
+    }
+    map
 }
 
 fn map_for_language(language: Language) -> &'static HashMap<String, String> {

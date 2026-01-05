@@ -42,7 +42,9 @@ use std::mem::size_of;
 
 use std::path::{Path, PathBuf};
 
+use std::sync::Once;
 use std::sync::atomic::AtomicBool;
+use std::time::{Duration, Instant};
 
 use std::sync::Arc;
 
@@ -122,7 +124,7 @@ const VOICE_PANEL_ID_FAVORITES: usize = 8004;
 const VOICE_MENU_ID_ADD_FAVORITE: u32 = 9001;
 const VOICE_MENU_ID_REMOVE_FAVORITE: u32 = 9002;
 
-fn focus_editor(hwnd: HWND) {
+pub(crate) fn focus_editor(hwnd: HWND) {
     unsafe {
         SetForegroundWindow(hwnd);
         SetActiveWindow(hwnd);
@@ -158,6 +160,70 @@ fn log_path() -> Option<PathBuf> {
     Some(path)
 }
 
+const MAX_LOG_SIZE: u64 = 150 * 1024;
+
+fn log_lock_path(log_path: &Path) -> Option<PathBuf> {
+    let parent = log_path.parent()?;
+    Some(parent.join("Novapad.log.lock"))
+}
+
+fn truncate_log_if_needed(path: &Path) {
+    static LOG_INIT: Once = Once::new();
+    LOG_INIT.call_once(|| {
+        let Some(lock_path) = log_lock_path(path) else {
+            return;
+        };
+        let start = Instant::now();
+        let mut lock_acquired = false;
+        while start.elapsed() < Duration::from_millis(200) {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&lock_path)
+            {
+                Ok(mut file) => {
+                    let _ = writeln!(file, "{}", std::process::id());
+                    lock_acquired = true;
+                    break;
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(_) => {
+                    break;
+                }
+            }
+        }
+        if lock_acquired {
+            let needs_truncate = path.metadata().ok().map(|m| m.len() > MAX_LOG_SIZE) == Some(true);
+            if needs_truncate {
+                let mut truncated = false;
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(path)
+                {
+                    let _ = writeln!(file, "[INFO] log truncated (exceeded 150 KB)");
+                    truncated = true;
+                }
+                if !truncated {
+                    let _ = std::fs::remove_file(path);
+                    if let Ok(mut file) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .truncate(true)
+                        .open(path)
+                    {
+                        let _ = writeln!(file, "[INFO] log truncated (exceeded 150 KB)");
+                    }
+                }
+            }
+            let _ = std::fs::remove_file(&lock_path);
+        }
+    });
+}
+
 pub(crate) fn log_debug(message: &str) {
     let Some(path) = log_path() else {
         return;
@@ -165,6 +231,7 @@ pub(crate) fn log_debug(message: &str) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
+    truncate_log_if_needed(&path);
     if let Ok(mut log) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -198,6 +265,7 @@ pub(crate) struct AppState {
     prompt_window: HWND,
     podcast_window: HWND,
     podcast_save_window: HWND,
+    batch_audiobooks_window: HWND,
     find_msg: u32,
     find_text: Vec<u16>,
     replace_text: Vec<u16>,
@@ -239,11 +307,17 @@ fn main() -> windows::core::Result<()> {
 
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|arg| arg == "--self-update") {
-        if let Err(err) = updater::run_self_update(&args) {
-            log_debug(&format!("Self-update failed: {err}"));
+        match updater::run_self_update(&args) {
+            Ok(code) => std::process::exit(code),
+            Err(err) => {
+                log_debug(&format!("Self-update failed: {err}"));
+                std::process::exit(2);
+            }
         }
-        return Ok(());
     }
+    updater::cleanup_backup_on_start();
+    updater::cleanup_update_lock_on_start();
+    updater::cleanup_update_temp_on_start();
 
     unsafe {
         let _ = LoadLibraryW(w!("Msftedit.dll"));
@@ -303,6 +377,7 @@ fn main() -> windows::core::Result<()> {
         if hwnd.0 == 0 {
             return Ok(());
         }
+        updater::check_pending_update(hwnd, false);
 
         let current_version = env!("CARGO_PKG_VERSION");
         let mut show_changelog = false;
@@ -539,6 +614,19 @@ fn main() -> windows::core::Result<()> {
                         return;
                     }
                 }
+                if state.batch_audiobooks_window.0 != 0 {
+                    if app_windows::batch_audiobooks_window::handle_navigation(
+                        state.batch_audiobooks_window,
+                        &msg,
+                    ) {
+                        handled = true;
+                        return;
+                    }
+                    if handle_accessibility(state.batch_audiobooks_window, &msg) {
+                        handled = true;
+                        return;
+                    }
+                }
 
                 if state.tts_tuning_dialog.0 != 0 {
                     if app_windows::tts_tuning_window::handle_navigation(
@@ -745,6 +833,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 prompt_window: HWND(0),
                 podcast_window: HWND(0),
                 podcast_save_window: HWND(0),
+                batch_audiobooks_window: HWND(0),
                 find_msg,
                 find_text: vec![0u16; 256],
                 replace_text: vec![0u16; 256],
@@ -1133,6 +1222,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     tts_engine::start_audiobook(hwnd);
                     LRESULT(0)
                 }
+                IDM_FILE_BATCH_AUDIOBOOK => {
+                    log_debug("Menu: Batch audiobooks");
+                    app_windows::batch_audiobooks_window::open(hwnd);
+                    LRESULT(0)
+                }
                 IDM_FILE_PODCAST => {
                     log_debug("Menu: Record podcast");
                     app_windows::podcast_window::open(hwnd);
@@ -1235,6 +1329,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     editor_manager::join_lines_active_edit(hwnd);
                     LRESULT(0)
                 }
+                IDM_EDIT_CLEAN_EOL_HYPHENS => {
+                    log_debug("Menu: Clean EOL hyphens");
+                    editor_manager::clean_end_of_line_hyphens_active_edit(hwnd);
+                    LRESULT(0)
+                }
                 IDM_VIEW_SHOW_VOICES => {
                     log_debug("Menu: Toggle voice panel");
                     toggle_voice_panel(hwnd);
@@ -1302,6 +1401,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 IDM_HELP_CHECK_UPDATES => {
                     log_debug("Menu: Check updates");
                     updater::check_for_update(hwnd, true);
+                    LRESULT(0)
+                }
+                IDM_HELP_PENDING_UPDATE => {
+                    log_debug("Menu: Pending update");
+                    updater::check_pending_update(hwnd, true);
                     LRESULT(0)
                 }
                 IDM_HELP_ABOUT => {
@@ -2628,6 +2732,11 @@ unsafe fn create_accelerators() -> HACCEL {
         },
         ACCEL {
             fVirt: virt_shift,
+            key: 'B' as u16,
+            cmd: IDM_FILE_BATCH_AUDIOBOOK as u16,
+        },
+        ACCEL {
+            fVirt: virt_shift,
             key: 'R' as u16,
             cmd: IDM_FILE_PODCAST as u16,
         },
@@ -3154,7 +3263,7 @@ fn suggested_filename_from_text(text: &str) -> Option<String> {
     }
 }
 
-fn sanitize_filename(input: &str) -> String {
+pub(crate) fn sanitize_filename(input: &str) -> String {
     let mut out = String::new();
     for ch in input.chars() {
         if ch.is_ascii_control() {

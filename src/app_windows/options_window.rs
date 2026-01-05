@@ -4,10 +4,10 @@
     clippy::bind_instead_of_map
 )]
 use crate::accessibility::{handle_accessibility, to_wide};
-use crate::editor_manager::apply_word_wrap_to_all_edits;
+use crate::editor_manager::{apply_word_wrap_to_all_edits, update_window_title};
 use crate::settings::{
-    Language, OpenBehavior, TRUSTED_CLIENT_TOKEN, TtsEngine, VOICE_LIST_URL, VoiceInfo,
-    save_settings_with_default_copy,
+    Language, ModifiedMarkerPosition, OpenBehavior, TRUSTED_CLIENT_TOKEN, TtsEngine,
+    VOICE_LIST_URL, VoiceInfo, save_settings_with_default_copy,
 };
 use crate::{i18n, rebuild_menus, refresh_voice_panel, with_state};
 use std::thread;
@@ -34,6 +34,7 @@ use windows::core::{PCWSTR, w};
 
 const OPTIONS_CLASS_NAME: &str = "NovapadOptions";
 const OPTIONS_ID_LANG: usize = 6001;
+const OPTIONS_ID_MODIFIED_MARKER_POSITION: usize = 6023;
 const OPTIONS_ID_OPEN: usize = 6002;
 const OPTIONS_ID_TTS_ENGINE: usize = 6012;
 const OPTIONS_ID_VOICE: usize = 6003;
@@ -50,8 +51,6 @@ const OPTIONS_ID_WRAP_WIDTH: usize = 6017;
 const OPTIONS_ID_QUOTE_PREFIX: usize = 6018;
 const OPTIONS_ID_CHECK_UPDATES: usize = 6015;
 const OPTIONS_ID_PROMPT_PROGRAM: usize = 6019;
-const OPTIONS_ID_PROMPT_AUTOSCROLL: usize = 6020;
-const OPTIONS_ID_PROMPT_STRIP_ANSI: usize = 6021;
 const OPTIONS_ID_SETTINGS_CURRENT_DIR: usize = 6022;
 const OPTIONS_ID_OK: usize = 6005;
 const OPTIONS_ID_CANCEL: usize = 6006;
@@ -87,6 +86,7 @@ struct OptionsDialogState {
     parent: HWND,
     label_language: HWND,
     combo_lang: HWND,
+    combo_modified_marker_position: HWND,
     combo_open: HWND,
     combo_tts_engine: HWND,
     combo_voice: HWND,
@@ -108,14 +108,13 @@ struct OptionsDialogState {
     checkbox_settings_current_dir: HWND,
     label_prompt_program: HWND,
     combo_prompt_program: HWND,
-    checkbox_prompt_autoscroll: HWND,
-    checkbox_prompt_strip_ansi: HWND,
     ok_button: HWND,
 }
 
 struct OptionsLabels {
     title: String,
     label_language: String,
+    label_modified_marker_position: String,
     label_open: String,
     label_tts_engine: String,
     label_voice: String,
@@ -129,8 +128,6 @@ struct OptionsLabels {
     label_check_updates: String,
     label_settings_current_dir: String,
     label_prompt_program: String,
-    label_prompt_autoscroll: String,
-    label_prompt_strip_ansi: String,
     label_audio_skip: String,
     label_audio_split: String,
     label_audio_split_text: String,
@@ -139,6 +136,8 @@ struct OptionsLabels {
     lang_en: String,
     lang_es: String,
     lang_pt: String,
+    marker_position_end: String,
+    marker_position_beginning: String,
     open_new_tab: String,
     open_new_window: String,
     engine_edge: String,
@@ -158,6 +157,10 @@ fn options_labels(language: Language) -> OptionsLabels {
     OptionsLabels {
         title: i18n::tr(language, "options.title"),
         label_language: i18n::tr(language, "options.label.language"),
+        label_modified_marker_position: i18n::tr(
+            language,
+            "options.label.modified_marker_position",
+        ),
         label_open: i18n::tr(language, "options.label.open"),
         label_tts_engine: i18n::tr(language, "options.label.tts_engine"),
         label_voice: i18n::tr(language, "options.label.voice"),
@@ -171,8 +174,6 @@ fn options_labels(language: Language) -> OptionsLabels {
         label_check_updates: i18n::tr(language, "options.label.check_updates"),
         label_settings_current_dir: i18n::tr(language, "options.label.settings_current_dir"),
         label_prompt_program: i18n::tr(language, "options.label.prompt_program"),
-        label_prompt_autoscroll: i18n::tr(language, "options.label.prompt_autoscroll"),
-        label_prompt_strip_ansi: i18n::tr(language, "options.label.prompt_strip_ansi"),
         label_audio_skip: i18n::tr(language, "options.label.audio_skip"),
         label_audio_split: i18n::tr(language, "options.label.audio_split"),
         label_audio_split_text: i18n::tr(language, "options.label.audio_split_text"),
@@ -184,6 +185,8 @@ fn options_labels(language: Language) -> OptionsLabels {
         lang_en: i18n::tr(language, "options.lang.en"),
         lang_es: i18n::tr(language, "options.lang.es"),
         lang_pt: i18n::tr(language, "options.lang.pt"),
+        marker_position_end: i18n::tr(language, "options.modified_marker_position.end"),
+        marker_position_beginning: i18n::tr(language, "options.modified_marker_position.beginning"),
         open_new_tab: i18n::tr(language, "options.open.new_tab"),
         open_new_window: i18n::tr(language, "options.open.new_window"),
         engine_edge: i18n::tr(language, "options.engine.edge"),
@@ -350,6 +353,36 @@ unsafe extern "system" fn options_wndproc(
                 120,
                 hwnd,
                 HMENU(OPTIONS_ID_LANG as isize),
+                HINSTANCE(0),
+                None,
+            );
+            y += 40;
+
+            let label_modified_marker_position = CreateWindowExW(
+                Default::default(),
+                WC_STATIC,
+                PCWSTR(to_wide(&labels.label_modified_marker_position).as_ptr()),
+                WS_CHILD | WS_VISIBLE,
+                20,
+                y,
+                140,
+                20,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
+            let combo_modified_marker_position = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                WC_COMBOBOXW,
+                PCWSTR::null(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
+                170,
+                y - 2,
+                300,
+                120,
+                hwnd,
+                HMENU(OPTIONS_ID_MODIFIED_MARKER_POSITION as isize),
                 HINSTANCE(0),
                 None,
             );
@@ -751,38 +784,6 @@ unsafe extern "system" fn options_wndproc(
                 HINSTANCE(0),
                 None,
             );
-            y += 34;
-
-            let checkbox_prompt_autoscroll = CreateWindowExW(
-                Default::default(),
-                WC_BUTTON,
-                PCWSTR(to_wide(&labels.label_prompt_autoscroll).as_ptr()),
-                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
-                170,
-                y,
-                300,
-                20,
-                hwnd,
-                HMENU(OPTIONS_ID_PROMPT_AUTOSCROLL as isize),
-                HINSTANCE(0),
-                None,
-            );
-            y += 24;
-
-            let checkbox_prompt_strip_ansi = CreateWindowExW(
-                Default::default(),
-                WC_BUTTON,
-                PCWSTR(to_wide(&labels.label_prompt_strip_ansi).as_ptr()),
-                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
-                170,
-                y,
-                300,
-                20,
-                hwnd,
-                HMENU(OPTIONS_ID_PROMPT_STRIP_ANSI as isize),
-                HINSTANCE(0),
-                None,
-            );
             y += 40;
 
             let ok_button = CreateWindowExW(
@@ -843,10 +844,10 @@ unsafe extern "system" fn options_wndproc(
                 checkbox_settings_current_dir,
                 label_prompt_program,
                 combo_prompt_program,
-                checkbox_prompt_autoscroll,
-                checkbox_prompt_strip_ansi,
                 ok_button,
                 cancel_button,
+                label_modified_marker_position,
+                combo_modified_marker_position,
             ] {
                 if control.0 != 0 && hfont.0 != 0 {
                     let _ = SendMessageW(control, WM_SETFONT, WPARAM(hfont.0 as usize), LPARAM(1));
@@ -857,6 +858,7 @@ unsafe extern "system" fn options_wndproc(
                 parent,
                 label_language: label_lang,
                 combo_lang,
+                combo_modified_marker_position,
                 combo_open,
                 combo_tts_engine,
                 combo_voice,
@@ -878,8 +880,6 @@ unsafe extern "system" fn options_wndproc(
                 checkbox_settings_current_dir,
                 label_prompt_program,
                 combo_prompt_program,
-                checkbox_prompt_autoscroll,
-                checkbox_prompt_strip_ansi,
                 ok_button,
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(dialog_state) as isize);
@@ -1032,6 +1032,7 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
     let (
         parent,
         combo_lang,
+        combo_modified_marker_position,
         combo_open,
         combo_tts_engine,
         _combo_voice,
@@ -1053,12 +1054,11 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
         checkbox_settings_current_dir,
         _label_prompt_program,
         combo_prompt_program,
-        checkbox_prompt_autoscroll,
-        checkbox_prompt_strip_ansi,
     ) = match with_options_state(hwnd, |state| {
         (
             state.parent,
             state.combo_lang,
+            state.combo_modified_marker_position,
             state.combo_open,
             state.combo_tts_engine,
             state.combo_voice,
@@ -1080,8 +1080,6 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
             state.checkbox_settings_current_dir,
             state.label_prompt_program,
             state.combo_prompt_program,
-            state.checkbox_prompt_autoscroll,
-            state.checkbox_prompt_strip_ansi,
         )
     }) {
         Some(values) => values,
@@ -1123,6 +1121,35 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
         Language::Portuguese => 3,
     };
     let _ = SendMessageW(combo_lang, CB_SETCURSEL, WPARAM(lang_index), LPARAM(0));
+
+    let _ = SendMessageW(
+        combo_modified_marker_position,
+        CB_RESETCONTENT,
+        WPARAM(0),
+        LPARAM(0),
+    );
+    let _ = SendMessageW(
+        combo_modified_marker_position,
+        CB_ADDSTRING,
+        WPARAM(0),
+        LPARAM(to_wide(&labels.marker_position_end).as_ptr() as isize),
+    );
+    let _ = SendMessageW(
+        combo_modified_marker_position,
+        CB_ADDSTRING,
+        WPARAM(0),
+        LPARAM(to_wide(&labels.marker_position_beginning).as_ptr() as isize),
+    );
+    let position_index = match settings.modified_marker_position {
+        ModifiedMarkerPosition::Beginning => 1,
+        _ => 0,
+    };
+    let _ = SendMessageW(
+        combo_modified_marker_position,
+        CB_SETCURSEL,
+        WPARAM(position_index),
+        LPARAM(0),
+    );
 
     let _ = SendMessageW(combo_open, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
     let _ = SendMessageW(
@@ -1243,27 +1270,6 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
         }),
         LPARAM(0),
     );
-    let _ = SendMessageW(
-        checkbox_prompt_autoscroll,
-        BM_SETCHECK,
-        WPARAM(if settings.prompt_auto_scroll {
-            BST_CHECKED.0 as usize
-        } else {
-            0
-        }),
-        LPARAM(0),
-    );
-    let _ = SendMessageW(
-        checkbox_prompt_strip_ansi,
-        BM_SETCHECK,
-        WPARAM(if settings.prompt_strip_ansi {
-            BST_CHECKED.0 as usize
-        } else {
-            0
-        }),
-        LPARAM(0),
-    );
-
     let _ = SendMessageW(combo_prompt_program, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
     let prompt_options = [
         labels.prompt_cmd.clone(),
@@ -1434,6 +1440,7 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     let (
         parent,
         combo_lang,
+        combo_modified_marker_position,
         combo_open,
         combo_tts_engine,
         combo_voice,
@@ -1451,12 +1458,11 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
         checkbox_check_updates,
         checkbox_settings_current_dir,
         combo_prompt_program,
-        checkbox_prompt_autoscroll,
-        checkbox_prompt_strip_ansi,
     ) = match with_options_state(hwnd, |state| {
         (
             state.parent,
             state.combo_lang,
+            state.combo_modified_marker_position,
             state.combo_open,
             state.combo_tts_engine,
             state.combo_voice,
@@ -1474,8 +1480,6 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
             state.checkbox_check_updates,
             state.checkbox_settings_current_dir,
             state.combo_prompt_program,
-            state.checkbox_prompt_autoscroll,
-            state.checkbox_prompt_strip_ansi,
         )
     }) {
         Some(values) => values,
@@ -1484,6 +1488,7 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
 
     let mut settings = with_state(parent, |state| state.settings.clone()).unwrap_or_default();
     let old_language = settings.language;
+    let old_marker_position = settings.modified_marker_position;
     let old_word_wrap = settings.word_wrap;
     let old_settings_current_dir = settings.settings_in_current_dir;
     let (old_engine, old_voice, was_tts_active) = with_state(parent, |state| {
@@ -1501,6 +1506,19 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
         2 => Language::Spanish,
         3 => Language::Portuguese,
         _ => Language::Italian,
+    };
+
+    let marker_sel = SendMessageW(
+        combo_modified_marker_position,
+        CB_GETCURSEL,
+        WPARAM(0),
+        LPARAM(0),
+    )
+    .0;
+    settings.modified_marker_position = if marker_sel == 1 {
+        ModifiedMarkerPosition::Beginning
+    } else {
+        ModifiedMarkerPosition::End
     };
 
     let open_sel = SendMessageW(combo_open, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
@@ -1567,23 +1585,6 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     )
     .0 as u32
         == BST_CHECKED.0;
-    settings.prompt_auto_scroll = SendMessageW(
-        checkbox_prompt_autoscroll,
-        BM_GETCHECK,
-        WPARAM(0),
-        LPARAM(0),
-    )
-    .0 as u32
-        == BST_CHECKED.0;
-    settings.prompt_strip_ansi = SendMessageW(
-        checkbox_prompt_strip_ansi,
-        BM_GETCHECK,
-        WPARAM(0),
-        LPARAM(0),
-    )
-    .0 as u32
-        == BST_CHECKED.0;
-
     let prompt_sel = SendMessageW(combo_prompt_program, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
     settings.prompt_program = match prompt_sel {
         1 => "powershell.exe".to_string(),
@@ -1672,6 +1673,9 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
 
     if old_language != new_language {
         rebuild_menus(parent);
+    }
+    if old_marker_position != settings.modified_marker_position {
+        update_window_title(parent);
     }
     if old_word_wrap != settings.word_wrap {
         apply_word_wrap_to_all_edits(parent, settings.word_wrap);

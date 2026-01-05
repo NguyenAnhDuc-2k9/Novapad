@@ -61,6 +61,7 @@ template = "packager/wix/main.wxs"
 
 [dependencies]
 windows = { version = "0.54", features = [
+  "implement",
   "Win32_Devices_FunctionDiscovery",
   "Win32_Foundation",
   "Win32_Globalization",
@@ -87,6 +88,7 @@ windows = { version = "0.54", features = [
   "Win32_UI_Controls",
   "Win32_UI_Controls_Dialogs",
   "Win32_UI_Controls_RichEdit",
+  "Win32_UI_Accessibility",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
   "Win32_UI_Shell_PropertiesSystem",

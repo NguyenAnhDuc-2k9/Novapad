@@ -18,6 +18,13 @@ use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, Glo
 use windows::Win32::System::Power::{
     ES_CONTINUOUS, ES_SYSTEM_REQUIRED, EXECUTION_STATE, SetThreadExecutionState,
 };
+use windows::Win32::UI::Accessibility::{
+    Assertive, IRawElementProviderSimple, IRawElementProviderSimple_Impl, ProviderOptions,
+    ProviderOptions_ServerSideProvider, UIA_ControlTypePropertyId, UIA_IsContentElementPropertyId,
+    UIA_IsControlElementPropertyId, UIA_LiveRegionChangedEventId, UIA_LiveSettingPropertyId,
+    UIA_NamePropertyId, UIA_PATTERN_ID, UIA_PROPERTY_ID, UIA_TextControlTypeId,
+    UiaHostProviderFromHwnd, UiaRaiseAutomationEvent, UiaReturnRawElementProvider, UiaRootObjectId,
+};
 use windows::Win32::UI::Controls::{WC_BUTTON, WC_EDIT, WC_STATIC};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetFocus, GetKeyState, SetFocus, VK_CONTROL, VK_ESCAPE, VK_RETURN, VK_SHIFT, VK_TAB,
@@ -28,19 +35,22 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, LoadCursorW,
     MB_ICONQUESTION, MB_OKCANCEL, MESSAGEBOX_STYLE, MSG, MessageBoxW, PostMessageW, RegisterClassW,
     SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowTextW, WINDOW_STYLE, WM_APP,
-    WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_NCDESTROY, WM_SETFOCUS, WM_SETFONT,
-    WM_SIZE, WM_SYSKEYDOWN, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT,
-    WS_EX_DLGMODALFRAME, WS_SIZEBOX, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_GETOBJECT, WM_KEYDOWN, WM_NCDESTROY,
+    WM_SETFOCUS, WM_SETFONT, WM_SIZE, WM_SYSKEYDOWN, WNDCLASSW, WS_CAPTION, WS_CHILD,
+    WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME, WS_SIZEBOX, WS_SYSMENU, WS_TABSTOP,
+    WS_VISIBLE, WS_VSCROLL,
 };
-use windows::core::PCWSTR;
+use windows::core::{BSTR, Interface, PCWSTR, VARIANT, implement};
 
 const PROMPT_CLASS_NAME: &str = "NovapadPrompt";
+const LIVE_REGION_CLASS_NAME: &str = "NovapadPromptLiveRegion";
 const PROMPT_ID_INPUT: usize = 9301;
 const PROMPT_ID_OUTPUT: usize = 9302;
 const PROMPT_ID_AUTOSCROLL: usize = 9303;
 const PROMPT_ID_STRIP_ANSI: usize = 9304;
-const PROMPT_ID_BEEP_ON_IDLE: usize = 9305;
-const PROMPT_ID_PREVENT_SLEEP: usize = 9306;
+const PROMPT_ID_ANNOUNCE_LINES: usize = 9305;
+const PROMPT_ID_BEEP_ON_IDLE: usize = 9306;
+const PROMPT_ID_PREVENT_SLEEP: usize = 9307;
 
 const WM_PROMPT_OUTPUT: u32 = WM_APP + 60;
 const EM_SETSEL: u32 = 0x00B1;
@@ -54,6 +64,7 @@ struct PromptLabels {
     output: String,
     autoscroll: String,
     strip_ansi: String,
+    announce_lines: String,
     beep_on_idle: String,
     prevent_sleep: String,
     clear_confirm: String,
@@ -65,12 +76,15 @@ struct PromptState {
     input: HWND,
     label_output: HWND,
     output: HWND,
+    live_region: HWND,
     checkbox_autoscroll: HWND,
     checkbox_strip_ansi: HWND,
+    checkbox_announce_lines: HWND,
     checkbox_beep_on_idle: HWND,
     checkbox_prevent_sleep: HWND,
     auto_scroll: bool,
     strip_ansi: bool,
+    announce_lines: bool,
     beep_on_idle: bool,
     prevent_sleep: bool,
     buffer: String,
@@ -81,6 +95,7 @@ struct PromptState {
     blank_line_streak: u8,
     pending_ws: String,
     program_is_codex: bool,
+    last_announced_line: String,
     beep_state: Arc<PromptBeepState>,
     session: Option<ConPtySession>,
     reader_cancel: Arc<AtomicBool>,
@@ -93,6 +108,7 @@ fn prompt_labels(language: Language) -> PromptLabels {
         output: i18n::tr(language, "prompt.output"),
         autoscroll: i18n::tr(language, "prompt.autoscroll"),
         strip_ansi: i18n::tr(language, "prompt.strip_ansi"),
+        announce_lines: i18n::tr(language, "prompt.announce_lines"),
         beep_on_idle: i18n::tr(language, "prompt.beep_on_idle"),
         prevent_sleep: i18n::tr(language, "prompt.prevent_sleep"),
         clear_confirm: i18n::tr(language, "prompt.clear_confirm"),
@@ -118,6 +134,14 @@ pub unsafe fn open(parent: HWND) {
         ..Default::default()
     };
     RegisterClassW(&wc);
+    let live_class_name = to_wide(LIVE_REGION_CLASS_NAME);
+    let live_wc = WNDCLASSW {
+        hInstance: hinstance,
+        lpszClassName: PCWSTR(live_class_name.as_ptr()),
+        lpfnWndProc: Some(live_region_wndproc),
+        ..Default::default()
+    };
+    RegisterClassW(&live_wc);
 
     let language = with_state(parent, |state| state.settings.language).unwrap_or_default();
     let labels = prompt_labels(language);
@@ -185,6 +209,7 @@ pub unsafe fn handle_navigation(hwnd: HWND, msg: &MSG) -> bool {
                 state.output,
                 state.checkbox_autoscroll,
                 state.checkbox_strip_ansi,
+                state.checkbox_announce_lines,
                 state.checkbox_beep_on_idle,
                 state.checkbox_prevent_sleep,
             ];
@@ -229,6 +254,77 @@ pub unsafe fn handle_navigation(hwnd: HWND, msg: &MSG) -> bool {
     }
 
     false
+}
+
+#[implement(IRawElementProviderSimple)]
+struct LiveRegionProvider {
+    hwnd: HWND,
+}
+
+impl LiveRegionProvider {
+    fn new(hwnd: HWND) -> Self {
+        Self { hwnd }
+    }
+
+    fn read_text(&self) -> String {
+        unsafe {
+            let len = GetWindowTextLengthW(self.hwnd);
+            if len <= 0 {
+                return String::new();
+            }
+            let mut buffer = vec![0u16; (len + 1) as usize];
+            let read = GetWindowTextW(self.hwnd, &mut buffer);
+            String::from_utf16_lossy(&buffer[..read as usize])
+        }
+    }
+}
+
+impl IRawElementProviderSimple_Impl for LiveRegionProvider {
+    fn ProviderOptions(&self) -> windows::core::Result<ProviderOptions> {
+        Ok(ProviderOptions_ServerSideProvider)
+    }
+
+    fn GetPatternProvider(
+        &self,
+        _patternid: UIA_PATTERN_ID,
+    ) -> windows::core::Result<windows::core::IUnknown> {
+        unsafe { Ok(windows::core::IUnknown::from_raw(std::ptr::null_mut())) }
+    }
+
+    fn GetPropertyValue(&self, propertyid: UIA_PROPERTY_ID) -> windows::core::Result<VARIANT> {
+        if propertyid == UIA_NamePropertyId {
+            return Ok(VARIANT::from(BSTR::from(self.read_text())));
+        }
+        if propertyid == UIA_LiveSettingPropertyId {
+            return Ok(VARIANT::from(Assertive.0));
+        }
+        if propertyid == UIA_ControlTypePropertyId {
+            return Ok(VARIANT::from(UIA_TextControlTypeId.0));
+        }
+        if propertyid == UIA_IsControlElementPropertyId
+            || propertyid == UIA_IsContentElementPropertyId
+        {
+            return Ok(VARIANT::from(true));
+        }
+        Ok(VARIANT::default())
+    }
+
+    fn HostRawElementProvider(&self) -> windows::core::Result<IRawElementProviderSimple> {
+        unsafe { UiaHostProviderFromHwnd(self.hwnd) }
+    }
+}
+
+unsafe extern "system" fn live_region_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if msg == WM_GETOBJECT && lparam.0 as i32 == UiaRootObjectId {
+        let provider: IRawElementProviderSimple = LiveRegionProvider::new(hwnd).into();
+        return UiaReturnRawElementProvider(hwnd, wparam, lparam, &provider);
+    }
+    DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
 unsafe extern "system" fn prompt_wndproc(
@@ -309,6 +405,21 @@ unsafe extern "system" fn prompt_wndproc(
                 None,
             );
             let _ = SendMessageW(output, EM_LIMITTEXT, WPARAM(0x7FFFFFFE), LPARAM(0));
+            let live_region_class = to_wide(LIVE_REGION_CLASS_NAME);
+            let live_region = CreateWindowExW(
+                Default::default(),
+                PCWSTR(live_region_class.as_ptr()),
+                PCWSTR::null(),
+                WS_CHILD | WS_VISIBLE,
+                0,
+                0,
+                1,
+                1,
+                hwnd,
+                HMENU(0),
+                HINSTANCE(0),
+                None,
+            );
 
             let checkbox_autoscroll = CreateWindowExW(
                 Default::default(),
@@ -338,12 +449,26 @@ unsafe extern "system" fn prompt_wndproc(
                 HINSTANCE(0),
                 None,
             );
+            let checkbox_announce_lines = CreateWindowExW(
+                Default::default(),
+                WC_BUTTON,
+                PCWSTR(to_wide(&labels.announce_lines).as_ptr()),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
+                16,
+                464,
+                260,
+                20,
+                hwnd,
+                HMENU(PROMPT_ID_ANNOUNCE_LINES as isize),
+                HINSTANCE(0),
+                None,
+            );
             let checkbox_beep_on_idle = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
                 PCWSTR(to_wide(&labels.beep_on_idle).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
-                16,
+                290,
                 464,
                 240,
                 20,
@@ -357,8 +482,8 @@ unsafe extern "system" fn prompt_wndproc(
                 WC_BUTTON,
                 PCWSTR(to_wide(&labels.prevent_sleep).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
-                260,
-                464,
+                16,
+                488,
                 320,
                 20,
                 hwnd,
@@ -372,8 +497,10 @@ unsafe extern "system" fn prompt_wndproc(
                 input,
                 label_output,
                 output,
+                live_region,
                 checkbox_autoscroll,
                 checkbox_strip_ansi,
+                checkbox_announce_lines,
                 checkbox_beep_on_idle,
                 checkbox_prevent_sleep,
             ] {
@@ -384,6 +511,7 @@ unsafe extern "system" fn prompt_wndproc(
 
             let auto_scroll = settings.prompt_auto_scroll;
             let strip_ansi = settings.prompt_strip_ansi;
+            let announce_lines = settings.prompt_announce_lines;
             let beep_on_idle = settings.prompt_beep_on_idle;
             let prevent_sleep = settings.prompt_prevent_sleep;
             let program_is_codex = settings
@@ -400,6 +528,12 @@ unsafe extern "system" fn prompt_wndproc(
                 checkbox_strip_ansi,
                 BM_SETCHECK,
                 WPARAM(if strip_ansi { 1 } else { 0 }),
+                LPARAM(0),
+            );
+            let _ = SendMessageW(
+                checkbox_announce_lines,
+                BM_SETCHECK,
+                WPARAM(if announce_lines { 1 } else { 0 }),
                 LPARAM(0),
             );
             let _ = SendMessageW(
@@ -423,12 +557,15 @@ unsafe extern "system" fn prompt_wndproc(
                 input,
                 label_output,
                 output,
+                live_region,
                 checkbox_autoscroll,
                 checkbox_strip_ansi,
+                checkbox_announce_lines,
                 checkbox_beep_on_idle,
                 checkbox_prevent_sleep,
                 auto_scroll,
                 strip_ansi,
+                announce_lines,
                 beep_on_idle,
                 prevent_sleep,
                 buffer: String::new(),
@@ -439,6 +576,7 @@ unsafe extern "system" fn prompt_wndproc(
                 blank_line_streak: 0,
                 pending_ws: String::new(),
                 program_is_codex,
+                last_announced_line: String::new(),
                 beep_state: beep_state.clone(),
                 session: None,
                 reader_cancel: reader_cancel.clone(),
@@ -501,6 +639,22 @@ unsafe extern "system" fn prompt_wndproc(
                         state.strip_ansi = checked;
                         update_prompt_settings(state.parent, |settings| {
                             settings.prompt_strip_ansi = checked;
+                        });
+                    });
+                    LRESULT(0)
+                }
+                PROMPT_ID_ANNOUNCE_LINES => {
+                    let _ = with_prompt_state(hwnd, |state| {
+                        let checked = SendMessageW(
+                            state.checkbox_announce_lines,
+                            BM_GETCHECK,
+                            WPARAM(0),
+                            LPARAM(0),
+                        )
+                        .0 != 0;
+                        state.announce_lines = checked;
+                        update_prompt_settings(state.parent, |settings| {
+                            settings.prompt_announce_lines = checked;
                         });
                     });
                     LRESULT(0)
@@ -871,6 +1025,7 @@ unsafe fn clear_output(state: &mut PromptState) {
     state.line_has_content = false;
     state.blank_line_streak = 0;
     state.pending_ws.clear();
+    state.last_announced_line.clear();
     let _ = SetWindowTextW(state.output, PCWSTR::null());
 }
 
@@ -898,6 +1053,7 @@ unsafe fn trim_output_keep_last(state: &mut PromptState) {
     state.line_has_content = false;
     state.blank_line_streak = 0;
     state.pending_ws.clear();
+    state.last_announced_line.clear();
     let wide = to_wide(&state.buffer);
     let _ = SetWindowTextW(state.output, PCWSTR(wide.as_ptr()));
     let _ = SendMessageW(
@@ -954,6 +1110,8 @@ fn append_output(state: &mut PromptState, text: &str) {
     let prev_line_start_byte = state.line_start_byte;
     let mut had_cr = false;
     let mut delta = String::new();
+    let mut newline_appended = false;
+    let mut lines_to_announce: Vec<String> = Vec::new();
     let mut chars = filtered.chars().peekable();
     while let Some(ch) = chars.next() {
         if ch == '\r' {
@@ -967,7 +1125,12 @@ fn append_output(state: &mut PromptState, text: &str) {
                 } else {
                     state.blank_line_streak = 0;
                 }
-                append_newline(state, &mut delta);
+                append_newline(
+                    state,
+                    &mut delta,
+                    &mut newline_appended,
+                    &mut lines_to_announce,
+                );
                 state.line_has_content = false;
                 state.pending_ws.clear();
             } else {
@@ -990,7 +1153,12 @@ fn append_output(state: &mut PromptState, text: &str) {
             } else {
                 state.blank_line_streak = 0;
             }
-            append_newline(state, &mut delta);
+            append_newline(
+                state,
+                &mut delta,
+                &mut newline_appended,
+                &mut lines_to_announce,
+            );
             state.line_has_content = false;
             state.pending_ws.clear();
             continue;
@@ -1056,6 +1224,22 @@ fn append_output(state: &mut PromptState, text: &str) {
             LPARAM(wide.as_ptr() as isize),
         );
     }
+    if state.announce_lines && newline_appended {
+        for line in lines_to_announce {
+            announce_line(state.live_region, &line);
+            state.last_announced_line = line;
+        }
+    }
+    if state.announce_lines {
+        let current_line = state.buffer[state.line_start_byte..].to_string();
+        if !current_line.is_empty()
+            && current_line != state.last_announced_line
+            && looks_like_prompt(&current_line)
+        {
+            announce_line(state.live_region, &current_line);
+            state.last_announced_line = current_line;
+        }
+    }
 
     if should_scroll {
         unsafe {
@@ -1082,7 +1266,16 @@ fn append_output(state: &mut PromptState, text: &str) {
     }
 }
 
-fn append_newline(state: &mut PromptState, delta: &mut String) {
+fn append_newline(
+    state: &mut PromptState,
+    delta: &mut String,
+    newline_appended: &mut bool,
+    lines_to_announce: &mut Vec<String>,
+) {
+    let line = state.buffer[state.line_start_byte..].to_string();
+    if !line.is_empty() {
+        lines_to_announce.push(line);
+    }
     state.buffer.push('\r');
     state.buffer.push('\n');
     state.buffer_utf16_len += 2;
@@ -1090,6 +1283,28 @@ fn append_newline(state: &mut PromptState, delta: &mut String) {
     state.line_start_utf16 = state.buffer_utf16_len;
     delta.push('\r');
     delta.push('\n');
+    *newline_appended = true;
+}
+
+fn announce_line(live_region: HWND, line: &str) {
+    if line.is_empty() {
+        return;
+    }
+    unsafe {
+        let wide = to_wide(line);
+        let _ = SetWindowTextW(live_region, PCWSTR(wide.as_ptr()));
+        let provider: IRawElementProviderSimple = LiveRegionProvider::new(live_region).into();
+        let _ = UiaRaiseAutomationEvent(&provider, UIA_LiveRegionChangedEventId);
+    }
+}
+
+fn looks_like_prompt(line: &str) -> bool {
+    let trimmed = line.trim_end();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let last = trimmed.chars().last().unwrap_or(' ');
+    matches!(last, '>' | '$' | '#')
 }
 
 fn strip_ansi_csi(input: &str) -> String {
@@ -1268,7 +1483,7 @@ fn layout_prompt(hwnd: HWND, state: &PromptState) {
     y += input_height + spacing;
 
     let output_height =
-        (height - y - label_height - checkbox_height * 2 - spacing - margin).max(120);
+        (height - y - label_height - checkbox_height * 3 - spacing * 2 - margin).max(120);
     unsafe {
         let _ = windows::Win32::UI::WindowsAndMessaging::MoveWindow(
             state.label_output,
@@ -1290,6 +1505,7 @@ fn layout_prompt(hwnd: HWND, state: &PromptState) {
     let output_bottom = y + label_height + output_height;
     let checkbox_y = output_bottom + spacing;
     let checkbox_y2 = checkbox_y + checkbox_height + spacing;
+    let checkbox_y3 = checkbox_y2 + checkbox_height + spacing;
     unsafe {
         let _ = windows::Win32::UI::WindowsAndMessaging::MoveWindow(
             state.checkbox_autoscroll,
@@ -1308,8 +1524,16 @@ fn layout_prompt(hwnd: HWND, state: &PromptState) {
             true,
         );
         let _ = windows::Win32::UI::WindowsAndMessaging::MoveWindow(
-            state.checkbox_beep_on_idle,
+            state.checkbox_announce_lines,
             margin,
+            checkbox_y2,
+            260,
+            checkbox_height,
+            true,
+        );
+        let _ = windows::Win32::UI::WindowsAndMessaging::MoveWindow(
+            state.checkbox_beep_on_idle,
+            margin + 270,
             checkbox_y2,
             240,
             checkbox_height,
@@ -1317,10 +1541,18 @@ fn layout_prompt(hwnd: HWND, state: &PromptState) {
         );
         let _ = windows::Win32::UI::WindowsAndMessaging::MoveWindow(
             state.checkbox_prevent_sleep,
-            margin + 250,
-            checkbox_y2,
+            margin,
+            checkbox_y3,
             320,
             checkbox_height,
+            true,
+        );
+        let _ = windows::Win32::UI::WindowsAndMessaging::MoveWindow(
+            state.live_region,
+            0,
+            0,
+            1,
+            1,
             true,
         );
     }

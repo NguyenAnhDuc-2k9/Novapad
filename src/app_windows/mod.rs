@@ -1,5 +1,6 @@
 pub mod about_window;
 pub mod audiobook_window;
+pub mod batch_audiobooks_window;
 pub mod bookmarks_window;
 pub mod dictionary_window;
 pub mod find_in_files_window;

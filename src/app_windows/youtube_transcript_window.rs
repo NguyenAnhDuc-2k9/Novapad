@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{COLOR_WINDOW, HBRUSH, HFONT};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Accessibility::NotifyWinEvent;
 use windows::Win32::UI::Controls::RichEdit::{CHARRANGE, EM_EXSETSEL};
 use windows::Win32::UI::Controls::{
     BST_CHECKED, EM_SCROLLCARET, EM_SETSEL, WC_BUTTON, WC_COMBOBOXW, WC_STATIC,
@@ -42,6 +43,10 @@ const YT_ID_TIMESTAMP: usize = 9304;
 const YT_ID_OK: usize = 9305;
 const YT_ID_CANCEL: usize = 9306;
 const WM_YT_LOAD_COMPLETE: u32 = WM_APP + 40;
+const EVENT_OBJECT_FOCUS: u32 = 0x8005;
+const EVENT_OBJECT_VALUECHANGE: u32 = 0x800E;
+const OBJID_CLIENT: i32 = -4;
+const CHILDID_SELF: i32 = 0;
 
 #[derive(Clone)]
 struct ImportResult {
@@ -177,6 +182,13 @@ pub fn import_youtube_transcript(parent: HWND) {
         );
         let _ = SendMessageW(hwnd_edit, EM_SETSEL, WPARAM(0), LPARAM(0));
         let _ = SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
+        NotifyWinEvent(
+            EVENT_OBJECT_VALUECHANGE,
+            hwnd_edit,
+            OBJID_CLIENT,
+            CHILDID_SELF,
+        );
+        NotifyWinEvent(EVENT_OBJECT_FOCUS, hwnd_edit, OBJID_CLIENT, CHILDID_SELF);
         let _ = PostMessageW(parent, WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
     }
 }

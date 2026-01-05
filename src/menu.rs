@@ -23,6 +23,7 @@ pub const IDM_FILE_READ_PAUSE: usize = 1009;
 pub const IDM_FILE_READ_STOP: usize = 1010;
 pub const IDM_FILE_AUDIOBOOK: usize = 1011;
 pub const IDM_FILE_PODCAST: usize = 1012;
+pub const IDM_FILE_BATCH_AUDIOBOOK: usize = 1013;
 pub const IDM_EDIT_UNDO: usize = 2001;
 pub const IDM_EDIT_CUT: usize = 2002;
 pub const IDM_EDIT_COPY: usize = 2003;
@@ -42,6 +43,7 @@ pub const IDM_EDIT_QUOTE_LINES: usize = 2016;
 pub const IDM_EDIT_UNQUOTE_LINES: usize = 2017;
 pub const IDM_EDIT_TEXT_STATS: usize = 2018;
 pub const IDM_EDIT_JOIN_LINES: usize = 2019;
+pub const IDM_EDIT_CLEAN_EOL_HYPHENS: usize = 2020;
 pub const IDM_INSERT_BOOKMARK: usize = 2101;
 pub const IDM_MANAGE_BOOKMARKS: usize = 2102;
 pub const IDM_NEXT_TAB: usize = 3001;
@@ -70,6 +72,7 @@ pub const IDM_HELP_GUIDE: usize = 7001;
 pub const IDM_HELP_ABOUT: usize = 7002;
 pub const IDM_HELP_CHECK_UPDATES: usize = 7003;
 pub const IDM_HELP_CHANGELOG: usize = 7004;
+pub const IDM_HELP_PENDING_UPDATE: usize = 7005;
 pub const MAX_RECENT: usize = 5;
 
 pub struct MenuLabels {
@@ -113,6 +116,7 @@ pub struct MenuLabels {
     pub file_read_stop: String,
     pub file_audiobook: String,
     pub file_podcast: String,
+    pub file_batch_audiobooks: String,
     pub file_exit: String,
     pub edit_undo: String,
     pub edit_cut: String,
@@ -133,11 +137,13 @@ pub struct MenuLabels {
     pub edit_unquote_lines: String,
     pub edit_text_stats: String,
     pub edit_join_lines: String,
+    pub edit_clean_eol_hyphens: String,
     pub insert_bookmark: String,
     pub manage_bookmarks: String,
     pub help_guide: String,
     pub help_changelog: String,
     pub help_check_updates: String,
+    pub help_pending_update: String,
     pub help_about: String,
     pub recent_empty: String,
 }
@@ -184,6 +190,7 @@ pub fn menu_labels(language: Language) -> MenuLabels {
         file_read_stop: i18n::tr(language, "file.read_stop"),
         file_audiobook: i18n::tr(language, "file.audiobook"),
         file_podcast: i18n::tr(language, "file.podcast"),
+        file_batch_audiobooks: i18n::tr(language, "file.batch_audiobooks"),
         file_exit: i18n::tr(language, "file.exit"),
         edit_undo: i18n::tr(language, "edit.undo"),
         edit_cut: i18n::tr(language, "edit.cut"),
@@ -204,11 +211,13 @@ pub fn menu_labels(language: Language) -> MenuLabels {
         edit_unquote_lines: i18n::tr(language, "edit.unquote_lines"),
         edit_text_stats: i18n::tr(language, "edit.text_stats"),
         edit_join_lines: i18n::tr(language, "edit.join_lines"),
+        edit_clean_eol_hyphens: i18n::tr(language, "edit.clean_eol_hyphens"),
         insert_bookmark: i18n::tr(language, "insert.bookmark"),
         manage_bookmarks: i18n::tr(language, "insert.manage_bookmarks"),
         help_guide: i18n::tr(language, "help.guide"),
         help_changelog: i18n::tr(language, "help.changelog"),
         help_check_updates: i18n::tr(language, "help.check_updates"),
+        help_pending_update: i18n::tr(language, "help.pending_update"),
         help_about: i18n::tr(language, "help.about"),
         recent_empty: i18n::tr(language, "recent.empty"),
     }
@@ -271,6 +280,12 @@ pub unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
         MF_STRING,
         IDM_FILE_AUDIOBOOK,
         &labels.file_audiobook,
+    );
+    let _ = append_menu_string(
+        file_menu,
+        MF_STRING,
+        IDM_FILE_BATCH_AUDIOBOOK,
+        &labels.file_batch_audiobooks,
     );
     let _ = append_menu_string(file_menu, MF_STRING, IDM_FILE_PODCAST, &labels.file_podcast);
     let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
@@ -356,6 +371,12 @@ pub unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
         MF_STRING,
         IDM_EDIT_JOIN_LINES,
         &labels.edit_join_lines,
+    );
+    let _ = append_menu_string(
+        edit_menu,
+        MF_STRING,
+        IDM_EDIT_CLEAN_EOL_HYPHENS,
+        &labels.edit_clean_eol_hyphens,
     );
     let _ = append_menu_string(
         edit_menu,
@@ -523,6 +544,12 @@ pub unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
         MF_STRING,
         IDM_HELP_CHECK_UPDATES,
         &labels.help_check_updates,
+    );
+    let _ = append_menu_string(
+        help_menu,
+        MF_STRING,
+        IDM_HELP_PENDING_UPDATE,
+        &labels.help_pending_update,
     );
     let _ = append_menu_string(help_menu, MF_STRING, IDM_HELP_ABOUT, &labels.help_about);
     let _ = append_menu_string(hmenu, MF_POPUP, help_menu.0 as usize, &labels.menu_help);

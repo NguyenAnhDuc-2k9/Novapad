@@ -54,8 +54,8 @@ oltre alla **registrazione podcast da microfono e audio di sistema**.
 - **Accessibilità**
   Progettato per funzionare correttamente con screen reader
   come NVDA e JAWS.
-- **Prompt accessibile**
-  - Finestra prompt dedicata con output stabile per gli screen reader
+- **Terminale accessibile**
+  - Finestra terminale dedicata con output stabile per gli screen reader
   - Scorciatoie: Ctrl+Shift+P, Alt+I (input), Alt+O (output)
   - Opzioni: scorrimento automatico, rimuovi ANSI, beep dopo inattivita', evita sospensione; scelta tra cmd/PowerShell/Codex CLI
 - **Opzioni di leggibilita'**

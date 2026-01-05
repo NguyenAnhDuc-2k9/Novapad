@@ -813,7 +813,11 @@ fn apply_dictionary(text: &str, dictionary: &[DictionaryEntry]) -> String {
     out
 }
 
-fn prepare_tts_text(text: &str, split_on_newline: bool, dictionary: &[DictionaryEntry]) -> String {
+pub(crate) fn prepare_tts_text(
+    text: &str,
+    split_on_newline: bool,
+    dictionary: &[DictionaryEntry],
+) -> String {
     let normalized = normalize_for_tts(text, split_on_newline);
     apply_dictionary(&normalized, dictionary)
 }
@@ -822,9 +826,9 @@ fn normalize_newlines(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
 }
 
-struct MarkerEntry {
-    pos: usize,
-    label: String,
+pub(crate) struct MarkerEntry {
+    pub(crate) pos: usize,
+    pub(crate) label: String,
 }
 
 fn marker_label_for_position(text: &str, pos: usize, marker: &str) -> String {
@@ -841,7 +845,7 @@ fn marker_label_for_position(text: &str, pos: usize, marker: &str) -> String {
     }
 }
 
-fn collect_marker_entries(
+pub(crate) fn collect_marker_entries(
     text: &str,
     marker: &str,
     require_newline: bool,
@@ -891,7 +895,7 @@ fn split_text_by_positions(text: &str, positions: &[usize]) -> Option<Vec<String
     Some(parts)
 }
 
-fn build_audiobook_parts_by_positions(
+pub(crate) fn build_audiobook_parts_by_positions(
     text: &str,
     positions: &[usize],
     split_on_newline: bool,
@@ -1565,7 +1569,7 @@ fn run_marker_split_sapi_audiobook(
     Ok(())
 }
 
-fn run_tts_audiobook_part(
+pub(crate) fn run_tts_audiobook_part(
     chunks: &[String],
     voice: &str,
     output: &Path,

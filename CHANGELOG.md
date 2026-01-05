@@ -9,7 +9,7 @@ Improvements
 
 Version 0.5.5 – 2026-01-03
 New features
-• Added an accessible prompt optimized for large output and screen readers (Ctrl+Shift+P).
+• Added an accessible terminal optimized for large output and screen readers (Ctrl+Shift+P).
 • Added a setting to save user settings in the current folder (portable mode).
 Fixes
 • Improved Find in Files snippets so the preview stays aligned with the match.
