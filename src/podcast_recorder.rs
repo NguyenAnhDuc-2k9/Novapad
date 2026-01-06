@@ -200,8 +200,10 @@ fn device_friendly_name(device: &IMMDevice) -> Option<String> {
 pub struct RecorderConfig {
     pub include_mic: bool,
     pub mic_device_id: String,
+    pub mic_gain: f32,
     pub include_system: bool,
     pub system_device_id: String,
+    pub system_gain: f32,
     pub output_format: PodcastFormat,
     pub mp3_bitrate: u32,
     pub save_folder: PathBuf,
@@ -304,11 +306,13 @@ pub fn start_recording(config: RecorderConfig) -> Result<RecorderHandle, String>
         let stop_flag = stop.clone();
         let paused_flag = paused.clone();
         let device_id = config.mic_device_id.clone();
+        let mic_gain = config.mic_gain;
         threads.push(thread::spawn(move || {
             let result = capture_source(
                 SourceKind::Microphone,
                 &device_id,
                 false,
+                mic_gain,
                 buffer,
                 shared_state.clone(),
                 stop_flag.clone(),
@@ -333,11 +337,13 @@ pub fn start_recording(config: RecorderConfig) -> Result<RecorderHandle, String>
         let stop_flag = stop.clone();
         let paused_flag = paused.clone();
         let device_id = config.system_device_id.clone();
+        let system_gain = config.system_gain;
         threads.push(thread::spawn(move || {
             let result = capture_source(
                 SourceKind::System,
                 &device_id,
                 true,
+                system_gain,
                 buffer,
                 shared_state.clone(),
                 stop_flag.clone(),
@@ -775,6 +781,7 @@ fn capture_source(
     kind: SourceKind,
     device_id: &str,
     loopback: bool,
+    gain: f32,
     buffer: Arc<MixBuffer>,
     shared: Arc<SharedState>,
     stop: Arc<AtomicBool>,
@@ -863,7 +870,15 @@ fn capture_source(
 
             update_peak(&shared, &kind, &samples);
             let resampled = resampler.push(&samples);
-            let stereo = to_stereo(&resampled, input_channels as usize);
+            let mut stereo = to_stereo(&resampled, input_channels as usize);
+
+            // Apply gain
+            if gain != 1.0 {
+                for sample in stereo.iter_mut() {
+                    *sample = (*sample * gain).clamp(-1.0, 1.0);
+                }
+            }
+
             buffer.push(kind, stereo);
             packet_len = unsafe {
                 capture

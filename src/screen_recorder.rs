@@ -122,22 +122,13 @@ fn encoder_loop(
             let audio_empty = audio_queue.is_empty();
 
             if video_empty && audio_empty {
-                crate::log_debug(
-                    "Stop signal received and queues empty, waiting 100ms for final samples...",
-                );
                 thread::sleep(Duration::from_millis(100));
 
                 // Final check
                 if video_queue.is_empty() && audio_queue.is_empty() {
-                    crate::log_debug("Exiting encoder loop - no more data");
+                    crate::log_debug("Exiting encoder loop - all queues drained");
                     break;
                 }
-            } else {
-                crate::log_debug(&format!(
-                    "Stop signal received - draining queues (video_empty: {}, audio_empty: {})",
-                    video_empty, audio_empty
-                ));
-                // Continue processing - don't exit until BOTH queues are empty
             }
         }
 
@@ -185,14 +176,7 @@ fn encoder_loop(
             || (audio_timestamp <= last_video_ts && audio_behind_video < max_audio_lag);
 
         if should_stop && !audio_queue.is_empty() {
-            if can_write_audio {
-                crate::log_debug(&format!(
-                    "Attempting to drain audio queue (audio_ts: {}, video_ts: {}, lag: {} ms)...",
-                    audio_timestamp,
-                    last_video_ts,
-                    audio_behind_video / 10_000
-                ));
-            } else {
+            if !can_write_audio {
                 let lag_seconds = audio_behind_video as f64 / 10_000_000.0;
                 crate::log_debug(&format!(
                     "Audio too far behind video ({:.2}s lag), discarding remaining audio to prevent MF blocking",
@@ -215,36 +199,23 @@ fn encoder_loop(
         if can_write_audio {
             match audio_queue.pop(audio_timeout) {
                 Some(audio_sample) => {
-                    if should_stop {
-                        crate::log_debug(&format!(
-                            "Popped audio sample: {} bytes",
-                            audio_sample.data.len()
-                        ));
-                    }
-
-                    if should_stop {
-                        crate::log_debug("Writing audio sample...");
-                    }
-
                     match writer.write_audio_samples(&audio_sample.data) {
                         Ok(()) => {
                             audio_samples_encoded += audio_sample.data.len() as u64;
 
-                            // Log every second of audio written
-                            let audio_duration = writer.get_audio_duration_seconds();
-                            if (audio_duration as u64) % 1 == 0 && audio_duration > 0.0 {
-                                let prev_duration = ((audio_duration - 0.1) as u64) % 1;
-                                if prev_duration != 0 {
-                                    crate::log_debug(&format!(
-                                        "Audio written: {:.2}s (queue size: {})",
-                                        audio_duration,
-                                        audio_queue.len()
-                                    ));
+                            // Log every second of audio written (only during normal recording)
+                            if !should_stop {
+                                let audio_duration = writer.get_audio_duration_seconds();
+                                if (audio_duration as u64) % 1 == 0 && audio_duration > 0.0 {
+                                    let prev_duration = ((audio_duration - 0.1) as u64) % 1;
+                                    if prev_duration != 0 {
+                                        crate::log_debug(&format!(
+                                            "Audio written: {:.2}s (queue size: {})",
+                                            audio_duration,
+                                            audio_queue.len()
+                                        ));
+                                    }
                                 }
-                            }
-
-                            if should_stop {
-                                crate::log_debug("Audio sample written successfully");
                             }
                         }
                         Err(e) => {

@@ -349,6 +349,8 @@
   "podcast.group.status": "Stato",
   "podcast.include_mic": "Include Microfono",
   "podcast.mic_device": "Dispositivo microfono:",
+  "podcast.mic_gain": "Volume microfono:",
+  "podcast.system_gain": "Volume audio di sistema:",
   "podcast.include_system": "Include Audio di sistema",
   "podcast.system_device": "Dispositivo audio di sistema:",
   "podcast.system_unavailable": "Audio di sistema non disponibile su questo dispositivo.",
@@ -385,5 +387,14 @@
   "podcast.hint.select_source": "Seleziona almeno una sorgente di input.",
   "podcast.confirm_close_recording": "Registrazione in corso. Fermare e salvare prima di chiudere?",
   "podcast.error.system_audio": "Acquisizione audio di sistema non disponibile.",
-  "podcast.error.microphone": "Acquisizione microfono non disponibile."
+  "podcast.error.microphone": "Acquisizione microfono non disponibile.",
+  "podcast.gain.quarter": "Un quarto del volume",
+  "podcast.gain.third": "Un terzo del volume",
+  "podcast.gain.half": "Meta' del volume",
+  "podcast.gain.three_quarters": "Tre quarti del volume",
+  "podcast.gain.normal": "Volume normale",
+  "podcast.gain.one_half": "Una volta e mezza",
+  "podcast.gain.double": "Il doppio del volume",
+  "podcast.gain.triple": "Il triplo del volume",
+  "podcast.gain.quadruple": "Il quadruplo del volume"
 }

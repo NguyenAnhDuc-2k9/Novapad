@@ -10,5 +10,6 @@
       "Bash(cargo fmt:*)"
     ]
   },
-  "spinnerTipsEnabled": true
+  "spinnerTipsEnabled": true,
+  "outputStyle": "default"
 }

@@ -40,6 +40,8 @@ const PODCAST_TIMER_ID: usize = 1;
 
 const PODCAST_ID_INCLUDE_MIC: usize = 11001;
 const PODCAST_ID_MIC_DEVICE: usize = 11002;
+const PODCAST_ID_MIC_GAIN: usize = 11021;
+const PODCAST_ID_SYSTEM_GAIN: usize = 11022;
 const PODCAST_ID_INCLUDE_SYSTEM: usize = 11003;
 const PODCAST_ID_SYSTEM_DEVICE: usize = 11004;
 const PODCAST_ID_FORMAT: usize = 11005;
@@ -98,8 +100,10 @@ struct PodcastState {
     language: Language,
     include_mic: HWND,
     mic_device: HWND,
+    mic_gain: HWND,
     include_system: HWND,
     system_device: HWND,
+    system_gain: HWND,
     format_combo: HWND,
     bitrate_combo: HWND,
     save_path: HWND,
@@ -130,6 +134,8 @@ struct PodcastLabels {
     status_group: String,
     include_mic: String,
     mic_device: String,
+    mic_gain_label: String,
+    system_gain_label: String,
     include_system: String,
     system_device: String,
     system_unavailable: String,
@@ -167,6 +173,8 @@ fn labels(language: Language) -> PodcastLabels {
         status_group: i18n::tr(language, "podcast.group.status"),
         include_mic: i18n::tr(language, "podcast.include_mic"),
         mic_device: i18n::tr(language, "podcast.mic_device"),
+        mic_gain_label: i18n::tr(language, "podcast.mic_gain"),
+        system_gain_label: i18n::tr(language, "podcast.system_gain"),
         include_system: i18n::tr(language, "podcast.include_system"),
         system_device: i18n::tr(language, "podcast.system_device"),
         system_unavailable: i18n::tr(language, "podcast.system_unavailable"),
@@ -266,7 +274,7 @@ unsafe extern "system" fn podcast_wndproc(
                 10,
                 10,
                 600,
-                140,
+                210,
                 hwnd,
                 HMENU(0),
                 None,
@@ -318,13 +326,43 @@ unsafe extern "system" fn podcast_wndproc(
                 None,
             );
 
+            let label_mic_gain = CreateWindowExW(
+                Default::default(),
+                WC_STATIC,
+                PCWSTR(to_wide(&labels.mic_gain_label).as_ptr()),
+                WS_CHILD | WS_VISIBLE,
+                40,
+                85,
+                180,
+                18,
+                hwnd,
+                HMENU(0),
+                None,
+                None,
+            );
+
+            let mic_gain = CreateWindowExW(
+                Default::default(),
+                WC_COMBOBOXW,
+                PCWSTR::null(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
+                230,
+                81,
+                140,
+                200,
+                hwnd,
+                HMENU(PODCAST_ID_MIC_GAIN as isize),
+                None,
+                None,
+            );
+
             let include_system = CreateWindowExW(
                 Default::default(),
                 WC_BUTTON,
                 PCWSTR(to_wide(&labels.include_system).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
                 20,
-                88,
+                111,
                 220,
                 22,
                 hwnd,
@@ -339,7 +377,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.system_device).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 40,
-                115,
+                138,
                 180,
                 18,
                 hwnd,
@@ -354,11 +392,41 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR::null(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
                 230,
-                111,
+                134,
                 350,
                 200,
                 hwnd,
                 HMENU(PODCAST_ID_SYSTEM_DEVICE as isize),
+                None,
+                None,
+            );
+
+            let label_system_gain = CreateWindowExW(
+                Default::default(),
+                WC_STATIC,
+                PCWSTR(to_wide(&labels.system_gain_label).as_ptr()),
+                WS_CHILD | WS_VISIBLE,
+                40,
+                161,
+                180,
+                18,
+                hwnd,
+                HMENU(0),
+                None,
+                None,
+            );
+
+            let system_gain = CreateWindowExW(
+                Default::default(),
+                WC_COMBOBOXW,
+                PCWSTR::null(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
+                230,
+                157,
+                140,
+                200,
+                hwnd,
+                HMENU(PODCAST_ID_SYSTEM_GAIN as isize),
                 None,
                 None,
             );
@@ -369,7 +437,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.system_unavailable).as_ptr()),
                 WS_CHILD,
                 40,
-                135,
+                182,
                 540,
                 18,
                 hwnd,
@@ -384,7 +452,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.output_group).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_GROUPBOX as u32),
                 10,
-                160,
+                225,
                 600,
                 170,
                 hwnd,
@@ -399,7 +467,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.format).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
-                190,
+                215,
                 100,
                 18,
                 hwnd,
@@ -414,7 +482,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR::null(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
                 140,
-                186,
+                211,
                 140,
                 200,
                 hwnd,
@@ -429,7 +497,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.bitrate).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 300,
-                190,
+                215,
                 100,
                 18,
                 hwnd,
@@ -444,7 +512,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR::null(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
                 420,
-                186,
+                211,
                 140,
                 200,
                 hwnd,
@@ -459,7 +527,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.save_path).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
-                220,
+                245,
                 220,
                 18,
                 hwnd,
@@ -474,7 +542,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR::null(),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 20,
-                242,
+                267,
                 430,
                 24,
                 hwnd,
@@ -489,7 +557,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.browse).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 460,
-                240,
+                265,
                 100,
                 26,
                 hwnd,
@@ -504,7 +572,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.filename).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
-                272,
+                297,
                 220,
                 18,
                 hwnd,
@@ -519,7 +587,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR::null(),
                 WS_CHILD | WS_VISIBLE,
                 20,
-                294,
+                319,
                 540,
                 18,
                 hwnd,
@@ -534,7 +602,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.controls_group).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_GROUPBOX as u32),
                 10,
-                340,
+                365,
                 600,
                 100,
                 hwnd,
@@ -549,7 +617,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.start).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32),
                 20,
-                365,
+                390,
                 90,
                 28,
                 hwnd,
@@ -564,7 +632,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.pause).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 120,
-                365,
+                390,
                 90,
                 28,
                 hwnd,
@@ -579,7 +647,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.resume).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 220,
-                365,
+                390,
                 90,
                 28,
                 hwnd,
@@ -594,7 +662,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.stop).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 320,
-                365,
+                390,
                 110,
                 28,
                 hwnd,
@@ -609,7 +677,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.close).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 440,
-                365,
+                390,
                 90,
                 28,
                 hwnd,
@@ -624,7 +692,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.status_group).as_ptr()),
                 WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_GROUPBOX as u32),
                 10,
-                450,
+                475,
                 600,
                 130,
                 hwnd,
@@ -639,7 +707,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.status_label).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
-                475,
+                500,
                 80,
                 18,
                 hwnd,
@@ -654,7 +722,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.status_idle).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 110,
-                475,
+                500,
                 180,
                 18,
                 hwnd,
@@ -669,7 +737,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.elapsed_label).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 300,
-                475,
+                500,
                 120,
                 18,
                 hwnd,
@@ -684,7 +752,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide("00:00:00").as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 430,
-                475,
+                500,
                 120,
                 18,
                 hwnd,
@@ -699,7 +767,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.level_mic).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 20,
-                505,
+                530,
                 150,
                 18,
                 hwnd,
@@ -714,7 +782,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide("0").as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 180,
-                505,
+                530,
                 80,
                 18,
                 hwnd,
@@ -729,7 +797,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.level_system).as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 300,
-                505,
+                530,
                 150,
                 18,
                 hwnd,
@@ -744,7 +812,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide("0").as_ptr()),
                 WS_CHILD | WS_VISIBLE,
                 460,
-                505,
+                530,
                 80,
                 18,
                 hwnd,
@@ -759,7 +827,7 @@ unsafe extern "system" fn podcast_wndproc(
                 PCWSTR(to_wide(&labels.hint_select_source).as_ptr()),
                 WS_CHILD,
                 20,
-                528,
+                553,
                 540,
                 18,
                 hwnd,
@@ -773,9 +841,13 @@ unsafe extern "system" fn podcast_wndproc(
                 include_mic,
                 label_mic,
                 mic_device,
+                label_mic_gain,
+                mic_gain,
                 include_system,
                 label_system,
                 system_device,
+                label_system_gain,
+                system_gain,
                 system_unavailable_text,
                 group_output,
                 label_format,
@@ -812,7 +884,9 @@ unsafe extern "system" fn podcast_wndproc(
                 format_combo,
                 bitrate_combo,
                 mic_device,
+                mic_gain,
                 system_device,
+                system_gain,
                 language,
             );
 
@@ -823,8 +897,10 @@ unsafe extern "system" fn podcast_wndproc(
                 language,
                 include_mic,
                 mic_device,
+                mic_gain,
                 include_system,
                 system_device,
+                system_gain,
                 format_combo,
                 bitrate_combo,
                 save_path,
@@ -872,7 +948,10 @@ unsafe extern "system" fn podcast_wndproc(
                     persist_settings(state);
                     handled = true;
                 }
-                PODCAST_ID_MIC_DEVICE | PODCAST_ID_SYSTEM_DEVICE => {
+                PODCAST_ID_MIC_DEVICE
+                | PODCAST_ID_MIC_GAIN
+                | PODCAST_ID_SYSTEM_DEVICE
+                | PODCAST_ID_SYSTEM_GAIN => {
                     if code == CBN_SELCHANGE as u16 {
                         persist_settings(state);
                     }
@@ -1092,7 +1171,9 @@ fn populate_combos(
     format_combo: HWND,
     bitrate_combo: HWND,
     mic_combo: HWND,
+    mic_gain_combo: HWND,
     system_combo: HWND,
+    system_gain_combo: HWND,
     language: Language,
 ) {
     unsafe {
@@ -1117,6 +1198,41 @@ fn populate_combos(
             let text = to_wide(bitrate);
             let _ = SendMessageW(
                 bitrate_combo,
+                CB_ADDSTRING,
+                WPARAM(0),
+                LPARAM(text.as_ptr() as isize),
+            );
+        }
+
+        // Populate microphone gain combo with Italian text
+        let _ = SendMessageW(mic_gain_combo, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
+        let gain_options = [
+            "podcast.gain.quarter",
+            "podcast.gain.third",
+            "podcast.gain.half",
+            "podcast.gain.three_quarters",
+            "podcast.gain.normal",
+            "podcast.gain.one_half",
+            "podcast.gain.double",
+            "podcast.gain.triple",
+            "podcast.gain.quadruple",
+        ];
+        for key in gain_options {
+            let text = to_wide(&i18n::tr(language, key));
+            let _ = SendMessageW(
+                mic_gain_combo,
+                CB_ADDSTRING,
+                WPARAM(0),
+                LPARAM(text.as_ptr() as isize),
+            );
+        }
+
+        // Populate system gain combo with Italian text
+        let _ = SendMessageW(system_gain_combo, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
+        for key in gain_options {
+            let text = to_wide(&i18n::tr(language, key));
+            let _ = SendMessageW(
+                system_gain_combo,
                 CB_ADDSTRING,
                 WPARAM(0),
                 LPARAM(text.as_ptr() as isize),
@@ -1201,6 +1317,15 @@ fn apply_settings_to_ui(state: &mut PodcastState, settings: &AppSettings) {
             let _ = SendMessageW(state.mic_device, CB_SETCURSEL, WPARAM(0), LPARAM(0));
         }
 
+        // Set mic gain
+        let mic_gain_index = gain_to_index(settings.podcast_microphone_gain);
+        let _ = SendMessageW(
+            state.mic_gain,
+            CB_SETCURSEL,
+            WPARAM(mic_gain_index),
+            LPARAM(0),
+        );
+
         for (index, device) in state.system_devices.iter().enumerate() {
             let name = to_wide(&device.name);
             let _ = SendMessageW(
@@ -1216,6 +1341,15 @@ fn apply_settings_to_ui(state: &mut PodcastState, settings: &AppSettings) {
         if SendMessageW(state.system_device, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 == -1 {
             let _ = SendMessageW(state.system_device, CB_SETCURSEL, WPARAM(0), LPARAM(0));
         }
+
+        // Set system gain
+        let system_gain_index = gain_to_index(settings.podcast_system_gain);
+        let _ = SendMessageW(
+            state.system_gain,
+            CB_SETCURSEL,
+            WPARAM(system_gain_index),
+            LPARAM(0),
+        );
 
         let format_index = match settings.podcast_output_format {
             PodcastFormat::Mp3 => 0,
@@ -1255,7 +1389,9 @@ fn update_source_controls(state: &PodcastState) {
         let mic_checked = is_checked(state.include_mic);
         let system_checked = is_checked(state.include_system);
         EnableWindow(state.mic_device, mic_checked);
+        EnableWindow(state.mic_gain, mic_checked);
         EnableWindow(state.system_device, system_checked);
+        EnableWindow(state.system_gain, system_checked);
 
         if !state.system_available {
             EnableWindow(state.include_system, false);
@@ -1433,8 +1569,10 @@ fn start_recording_action(state: &mut PodcastState) {
     let config = RecorderConfig {
         include_mic,
         mic_device_id: selected_device_id(state, true),
+        mic_gain: selected_mic_gain(state),
         include_system,
         system_device_id: selected_device_id(state, false),
+        system_gain: selected_system_gain(state),
         output_format: selected_format(state),
         mp3_bitrate: selected_bitrate(state),
         save_folder: selected_save_folder(state),
@@ -1539,7 +1677,9 @@ fn persist_settings(state: &PodcastState) {
     let include_mic = is_checked(state.include_mic);
     let include_system = is_checked(state.include_system);
     let mic_device_id = selected_device_id(state, true);
+    let mic_gain = selected_mic_gain(state);
     let system_device_id = selected_device_id(state, false);
+    let system_gain = selected_system_gain(state);
     let output_format = selected_format(state);
     let bitrate = selected_bitrate(state);
     let save_folder = selected_save_folder(state).to_string_lossy().to_string();
@@ -1547,8 +1687,10 @@ fn persist_settings(state: &PodcastState) {
         let _ = with_state(state.parent, |app| {
             app.settings.podcast_include_microphone = include_mic;
             app.settings.podcast_microphone_device_id = mic_device_id;
+            app.settings.podcast_microphone_gain = mic_gain;
             app.settings.podcast_include_system_audio = include_system;
             app.settings.podcast_system_device_id = system_device_id;
+            app.settings.podcast_system_gain = system_gain;
             app.settings.podcast_output_format = output_format;
             app.settings.podcast_mp3_bitrate = bitrate;
             app.settings.podcast_save_folder = save_folder;
@@ -1572,6 +1714,52 @@ fn selected_bitrate(state: &PodcastState) -> u32 {
         1 => 192,
         2 => 256,
         _ => 128,
+    }
+}
+
+fn selected_mic_gain(state: &PodcastState) -> f32 {
+    selected_gain(state.mic_gain)
+}
+
+fn selected_system_gain(state: &PodcastState) -> f32 {
+    selected_gain(state.system_gain)
+}
+
+fn selected_gain(combo: HWND) -> f32 {
+    let sel = unsafe { SendMessageW(combo, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 };
+    match sel {
+        0 => 0.25, // Un quarto del volume
+        1 => 0.33, // Un terzo del volume
+        2 => 0.5,  // Metà del volume
+        3 => 0.75, // Tre quarti del volume
+        4 => 1.0,  // Volume normale
+        5 => 1.5,  // Una volta e mezza
+        6 => 2.0,  // Il doppio del volume
+        7 => 3.0,  // Il triplo del volume
+        8 => 4.0,  // Il quadruplo del volume
+        _ => 1.0,  // Default: Volume normale
+    }
+}
+
+fn gain_to_index(gain: f32) -> usize {
+    if gain <= 0.25 {
+        0 // Un quarto del volume
+    } else if gain <= 0.33 {
+        1 // Un terzo del volume
+    } else if gain <= 0.5 {
+        2 // Metà del volume
+    } else if gain <= 0.75 {
+        3 // Tre quarti del volume
+    } else if gain <= 1.0 {
+        4 // Volume normale
+    } else if gain <= 1.5 {
+        5 // Una volta e mezza
+    } else if gain <= 2.0 {
+        6 // Il doppio del volume
+    } else if gain <= 3.0 {
+        7 // Il triplo del volume
+    } else {
+        8 // Il quadruplo del volume
     }
 }
 
