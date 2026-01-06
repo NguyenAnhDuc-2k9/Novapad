@@ -116,6 +116,23 @@ impl AudioRecorderHandle {
     }
 }
 
+/// Create an AudioRecorderHandle from components (for internal use)
+pub fn create_audio_recorder_handle(
+    stop: Arc<AtomicBool>,
+    thread: JoinHandle<Result<(), String>>,
+    audio_queue: Arc<AudioQueue>,
+    sample_rate: u32,
+    channels: u16,
+) -> AudioRecorderHandle {
+    AudioRecorderHandle {
+        stop,
+        thread: Some(thread),
+        audio_queue,
+        sample_rate,
+        channels,
+    }
+}
+
 /// Start audio recording using WASAPI loopback
 pub fn start_audio_recording() -> Result<AudioRecorderHandle, String> {
     let audio_queue = Arc::new(AudioQueue::new(3000)); // Large buffer to prevent overflow
