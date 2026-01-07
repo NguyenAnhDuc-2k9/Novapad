@@ -21,6 +21,7 @@ mod tts_engine;
 use tts_engine::*;
 mod file_handler;
 mod mf_encoder;
+
 mod sapi5_engine;
 use file_handler::*;
 mod menu;
@@ -33,12 +34,9 @@ mod editor_manager;
 use editor_manager::*;
 mod app_windows;
 mod audio_capture;
-mod graphics_capture;
 mod i18n;
 mod podcast_recorder;
-mod screen_recorder;
 mod updater;
-mod video_recorder;
 
 use std::io::Write;
 use std::mem::size_of;
@@ -110,6 +108,7 @@ const WM_TTS_PLAYBACK_ERROR: u32 = WM_APP + 5;
 const WM_UPDATE_PROGRESS: u32 = WM_APP + 6;
 const WM_TTS_CHUNK_START: u32 = WM_APP + 7;
 const WM_TTS_SAPI_VOICES_LOADED: u32 = WM_APP + 8;
+
 pub const WM_FOCUS_EDITOR: u32 = WM_APP + 30;
 const FOCUS_EDITOR_TIMER_ID: usize = 1;
 const FOCUS_EDITOR_TIMER_ID2: usize = 2;
@@ -239,12 +238,6 @@ pub(crate) fn log_debug(message: &str) {
     }
 }
 
-struct ScreenRecordingSession {
-    recorder: screen_recorder::ScreenRecorder,
-    output_path: PathBuf,
-    start_time: Instant,
-}
-
 #[derive(Default)]
 pub(crate) struct AppState {
     hwnd_tab: HWND,
@@ -282,6 +275,7 @@ pub(crate) struct AppState {
     tts_last_offset: i32,
     edge_voices: Vec<VoiceInfo>,
     sapi_voices: Vec<VoiceInfo>,
+
     audiobook_progress: HWND,
     audiobook_cancel: Option<Arc<AtomicBool>>,
     active_audiobook: Option<AudiobookPlayer>,
@@ -298,7 +292,6 @@ pub(crate) struct AppState {
     find_in_files_cache: Option<FindInFilesCache>,
     normalize_undo: Option<NormalizeUndo>,
     normalize_skip_change: bool,
-    screen_recorder: Option<ScreenRecordingSession>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -851,6 +844,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 tts_last_offset: 0,
                 edge_voices: Vec::new(),
                 sapi_voices: Vec::new(),
+
                 audiobook_progress: HWND(0),
                 audiobook_cancel: None,
                 active_audiobook: None,
@@ -867,7 +861,6 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 find_in_files_cache: None,
                 normalize_undo: None,
                 normalize_skip_change: false,
-                screen_recorder: None,
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
 
@@ -981,6 +974,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             refresh_voice_panel(hwnd);
             LRESULT(0)
         }
+
         WM_TTS_PLAYBACK_DONE => {
             let session_id = wparam.0 as u64;
             let _ = with_state(hwnd, |state| {
@@ -1393,16 +1387,6 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     app_windows::prompt_window::open(hwnd);
                     LRESULT(0)
                 }
-                IDM_TOOLS_SCREEN_RECORD => {
-                    log_debug("Menu: Start screen recording");
-                    start_screen_recording(hwnd);
-                    LRESULT(0)
-                }
-                IDM_TOOLS_STOP_RECORD => {
-                    log_debug("Menu: Stop screen recording");
-                    stop_screen_recording(hwnd);
-                    LRESULT(0)
-                }
                 IDM_HELP_GUIDE => {
                     log_debug("Menu: Guide");
                     app_windows::help_window::open(hwnd);
@@ -1526,6 +1510,7 @@ struct VoicePanelLabels {
     label_multilingual: String,
     engine_edge: String,
     engine_sapi: String,
+    engine_sapi4: String,
     voices_empty: String,
     favorites_empty: String,
     add_favorite: String,
@@ -1540,6 +1525,7 @@ fn voice_panel_labels(language: Language) -> VoicePanelLabels {
         label_multilingual: i18n::tr(language, "voice_panel.label_multilingual"),
         engine_edge: i18n::tr(language, "voice_panel.engine_edge"),
         engine_sapi: i18n::tr(language, "voice_panel.engine_sapi"),
+        engine_sapi4: i18n::tr(language, "voice_panel.engine_sapi4"),
         voices_empty: i18n::tr(language, "voice_panel.voices_empty"),
         favorites_empty: i18n::tr(language, "voice_panel.favorites_empty"),
         add_favorite: i18n::tr(language, "voice_panel.add_favorite"),
@@ -3810,149 +3796,6 @@ pub(crate) unsafe fn save_file_dialog_with_encoding(
     } else {
         pfd.Unadvise(cookie).ok()?;
         None
-    }
-}
-
-// Screen recording functions
-fn start_screen_recording(hwnd: HWND) {
-    unsafe {
-        // Check if already recording
-        let is_recording =
-            with_state(hwnd, |state| state.screen_recorder.is_some()).unwrap_or(false);
-        if is_recording {
-            let msg = "Already recording. Stop the current recording first.";
-            let title = "Screen Recording";
-            MessageBoxW(
-                hwnd,
-                PCWSTR(to_wide(msg).as_ptr()),
-                PCWSTR(to_wide(title).as_ptr()),
-                MB_OK | MB_ICONINFORMATION,
-            );
-            return;
-        }
-
-        // List available monitors
-        let monitors = match graphics_capture::list_monitors() {
-            Ok(m) if !m.is_empty() => m,
-            _ => {
-                let msg = "No monitors found.";
-                let title = "Screen Recording";
-                MessageBoxW(
-                    hwnd,
-                    PCWSTR(to_wide(msg).as_ptr()),
-                    PCWSTR(to_wide(title).as_ptr()),
-                    MB_OK | MB_ICONERROR,
-                );
-                return;
-            }
-        };
-
-        // For simplicity, use the first (primary) monitor
-        let monitor = &monitors[0];
-        log_debug(&format!("Starting recording on monitor: {}", monitor.name));
-
-        // Ask user where to save the video
-        let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-        let suggested_name = format!("screen_recording_{}.mp4", timestamp);
-
-        let output_path = match save_file_dialog_mp4(hwnd, Some(&suggested_name)) {
-            Some(path) => path,
-            None => return, // User cancelled
-        };
-
-        // Start integrated screen recording (video + audio + encoding)
-        match screen_recorder::ScreenRecorder::start(monitor, output_path.clone()) {
-            Ok(recorder) => {
-                let session = ScreenRecordingSession {
-                    recorder,
-                    output_path: output_path.clone(),
-                    start_time: Instant::now(),
-                };
-
-                with_state(hwnd, |state| {
-                    state.screen_recorder = Some(session);
-                });
-
-                log_debug(&format!("Screen recording started: {:?}", output_path));
-                let msg = "Screen recording with audio started!\nRecording in progress...";
-                let title = "Screen Recording";
-                MessageBoxW(
-                    hwnd,
-                    PCWSTR(to_wide(msg).as_ptr()),
-                    PCWSTR(to_wide(title).as_ptr()),
-                    MB_OK | MB_ICONINFORMATION,
-                );
-            }
-            Err(e) => {
-                log_debug(&format!("Failed to start recording: {}", e));
-                let msg = format!("Failed to start recording:\n{}", e);
-                let title = "Screen Recording";
-                MessageBoxW(
-                    hwnd,
-                    PCWSTR(to_wide(&msg).as_ptr()),
-                    PCWSTR(to_wide(title).as_ptr()),
-                    MB_OK | MB_ICONERROR,
-                );
-            }
-        }
-    }
-}
-
-fn stop_screen_recording(hwnd: HWND) {
-    unsafe {
-        // Take the recording session
-        let session = with_state(hwnd, |state| state.screen_recorder.take()).flatten();
-
-        match session {
-            None => {
-                let msg = "Not currently recording.";
-                let title = "Screen Recording";
-                MessageBoxW(
-                    hwnd,
-                    PCWSTR(to_wide(msg).as_ptr()),
-                    PCWSTR(to_wide(title).as_ptr()),
-                    MB_OK | MB_ICONINFORMATION,
-                );
-            }
-            Some(session) => {
-                let duration = session.start_time.elapsed();
-                let output_path = session.output_path.clone();
-                let title = "Screen Recording";
-                log_debug(&format!("Stopping recording after {:?}", duration));
-
-                // Stop the recorder (this will finalize the MP4 file)
-                // Note: This may take a few seconds while encoding completes
-                match session.recorder.stop() {
-                    Ok(()) => {
-                        log_debug(&format!(
-                            "Recording stopped successfully: {:?}",
-                            output_path
-                        ));
-                        let msg = format!(
-                            "Recording saved successfully!\n\nFile: {}\nDuration: {:.1} seconds",
-                            output_path.display(),
-                            duration.as_secs_f32()
-                        );
-                        MessageBoxW(
-                            hwnd,
-                            PCWSTR(to_wide(&msg).as_ptr()),
-                            PCWSTR(to_wide(title).as_ptr()),
-                            MB_OK | MB_ICONINFORMATION,
-                        );
-                    }
-                    Err(e) => {
-                        log_debug(&format!("Error stopping recording: {}", e));
-                        let msg = format!("Error finalizing recording:\n{}", e);
-                        MessageBoxW(
-                            hwnd,
-                            PCWSTR(to_wide(&msg).as_ptr()),
-                            PCWSTR(to_wide(title).as_ptr()),
-                            MB_OK | MB_ICONERROR,
-                        );
-                    }
-                }
-            }
-        }
     }
 }
 

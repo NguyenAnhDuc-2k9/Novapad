@@ -1,6 +1,6 @@
 use crate::accessibility::{handle_accessibility, to_wide};
 use crate::app_windows::podcast_save_window;
-use crate::graphics_capture::{MonitorInfo, list_monitors};
+// VIDEO REMOVED: MonitorInfo and list_monitors imports removed
 use crate::podcast_recorder::{
     AudioDevice, RecorderConfig, RecorderHandle, RecorderStatus, default_output_folder,
     list_input_devices, list_output_devices, probe_device, start_recording,
@@ -107,8 +107,7 @@ struct PodcastState {
     include_system: HWND,
     system_device: HWND,
     system_gain: HWND,
-    include_video: HWND,
-    monitor_combo: HWND,
+    // VIDEO REMOVED: include_video, monitor_combo, video_unavailable_text removed
     format_combo: HWND,
     bitrate_combo: HWND,
     save_path: HWND,
@@ -123,10 +122,10 @@ struct PodcastState {
     level_system_text: HWND,
     hint_text: HWND,
     system_unavailable_text: HWND,
-    video_unavailable_text: HWND,
+    // VIDEO REMOVED: video_unavailable_text removed
     mic_devices: Vec<AudioDevice>,
     system_devices: Vec<AudioDevice>,
-    monitors: Vec<MonitorInfo>,
+    // VIDEO REMOVED: monitors removed
     recorder: Option<RecorderHandle>,
     system_available: bool,
     saving_dialog: HWND,
@@ -146,9 +145,7 @@ struct PodcastLabels {
     include_system: String,
     system_device: String,
     system_unavailable: String,
-    include_video: String,
-    monitor: String,
-    video_unavailable: String,
+    // VIDEO REMOVED: include_video, monitor, video_unavailable removed
     format: String,
     bitrate: String,
     save_path: String,
@@ -188,9 +185,7 @@ fn labels(language: Language) -> PodcastLabels {
         include_system: i18n::tr(language, "podcast.include_system"),
         system_device: i18n::tr(language, "podcast.system_device"),
         system_unavailable: i18n::tr(language, "podcast.system_unavailable"),
-        include_video: i18n::tr(language, "podcast.include_video"),
-        monitor: i18n::tr(language, "podcast.monitor"),
-        video_unavailable: i18n::tr(language, "podcast.video_unavailable"),
+        // VIDEO REMOVED: include_video, monitor, video_unavailable removed
         format: i18n::tr(language, "podcast.format"),
         bitrate: i18n::tr(language, "podcast.bitrate"),
         save_path: i18n::tr(language, "podcast.save_path"),
@@ -459,65 +454,7 @@ unsafe extern "system" fn podcast_wndproc(
                 None,
             );
 
-            let include_video = CreateWindowExW(
-                Default::default(),
-                WC_BUTTON,
-                PCWSTR(to_wide(&labels.include_video).as_ptr()),
-                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
-                20,
-                210,
-                250,
-                22,
-                hwnd,
-                HMENU(PODCAST_ID_INCLUDE_VIDEO as isize),
-                None,
-                None,
-            );
-
-            let label_monitor = CreateWindowExW(
-                Default::default(),
-                WC_STATIC,
-                PCWSTR(to_wide(&labels.monitor).as_ptr()),
-                WS_CHILD | WS_VISIBLE,
-                40,
-                237,
-                180,
-                18,
-                hwnd,
-                HMENU(0),
-                None,
-                None,
-            );
-
-            let monitor_combo = CreateWindowExW(
-                Default::default(),
-                WC_COMBOBOXW,
-                PCWSTR::null(),
-                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
-                230,
-                233,
-                350,
-                200,
-                hwnd,
-                HMENU(PODCAST_ID_MONITOR as isize),
-                None,
-                None,
-            );
-
-            let video_unavailable_text = CreateWindowExW(
-                Default::default(),
-                WC_STATIC,
-                PCWSTR(to_wide(&labels.video_unavailable).as_ptr()),
-                WS_CHILD,
-                40,
-                257,
-                540,
-                18,
-                hwnd,
-                HMENU((PODCAST_ID_SYSTEM_UNAVAILABLE + 100) as isize),
-                None,
-                None,
-            );
+            // VIDEO REMOVED: All video controls completely removed
 
             let group_output = CreateWindowExW(
                 Default::default(),
@@ -922,10 +859,7 @@ unsafe extern "system" fn podcast_wndproc(
                 label_system_gain,
                 system_gain,
                 system_unavailable_text,
-                include_video,
-                label_monitor,
-                monitor_combo,
-                video_unavailable_text,
+                // VIDEO REMOVED: include_video, label_monitor, monitor_combo, video_unavailable_text removed
                 group_output,
                 label_format,
                 format_combo,
@@ -968,7 +902,7 @@ unsafe extern "system" fn podcast_wndproc(
             );
 
             let (mic_devices, system_devices, system_available) = load_devices(language);
-            let monitors = load_monitors();
+            // VIDEO REMOVED: monitors loading removed
             let settings = with_state(parent, |state| state.settings.clone()).unwrap_or_default();
             let mut state = PodcastState {
                 parent,
@@ -979,8 +913,7 @@ unsafe extern "system" fn podcast_wndproc(
                 include_system,
                 system_device,
                 system_gain,
-                include_video,
-                monitor_combo,
+                // VIDEO REMOVED: include_video, monitor_combo, video_unavailable_text removed
                 format_combo,
                 bitrate_combo,
                 save_path,
@@ -995,17 +928,17 @@ unsafe extern "system" fn podcast_wndproc(
                 level_system_text,
                 hint_text,
                 system_unavailable_text,
-                video_unavailable_text,
+                // VIDEO REMOVED: video_unavailable_text removed
                 mic_devices,
                 system_devices,
-                monitors,
+                // VIDEO REMOVED: monitors removed
                 recorder: None,
                 system_available,
                 saving_dialog: HWND(0),
                 save_cancel: None,
             };
 
-            populate_monitors(&state);
+            // VIDEO REMOVED: populate_monitors removed
             apply_settings_to_ui(&mut state, &settings);
             update_source_controls(&state);
             update_format_controls(&state);
@@ -1362,9 +1295,7 @@ fn load_devices(language: Language) -> (Vec<AudioDevice>, Vec<AudioDevice>, bool
     (mic_devices, system_devices, system_available)
 }
 
-fn load_monitors() -> Vec<MonitorInfo> {
-    list_monitors().unwrap_or_default()
-}
+// VIDEO REMOVED: load_monitors function removed
 
 fn apply_settings_to_ui(state: &mut PodcastState, settings: &AppSettings) {
     unsafe {
@@ -1414,27 +1345,7 @@ fn apply_settings_to_ui(state: &mut PodcastState, settings: &AppSettings) {
             LPARAM(0),
         );
 
-        // Set include_video
-        let _ = SendMessageW(
-            state.include_video,
-            BM_SETCHECK,
-            WPARAM(if settings.podcast_include_video {
-                BST_CHECKED.0 as usize
-            } else {
-                BST_UNCHECKED.0 as usize
-            }),
-            LPARAM(0),
-        );
-
-        // Set monitor
-        for (index, monitor) in state.monitors.iter().enumerate() {
-            if monitor.id == settings.podcast_monitor_id {
-                let _ = SendMessageW(state.monitor_combo, CB_SETCURSEL, WPARAM(index), LPARAM(0));
-            }
-        }
-        if SendMessageW(state.monitor_combo, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 == -1 {
-            let _ = SendMessageW(state.monitor_combo, CB_SETCURSEL, WPARAM(0), LPARAM(0));
-        }
+        // VIDEO REMOVED: include_video and monitor setup removed
 
         for (index, device) in state.system_devices.iter().enumerate() {
             let name = to_wide(&device.name);
@@ -1498,12 +1409,12 @@ fn update_source_controls(state: &PodcastState) {
     unsafe {
         let mic_checked = is_checked(state.include_mic);
         let system_checked = is_checked(state.include_system);
-        let video_checked = is_checked(state.include_video);
+        // VIDEO REMOVED: video_checked removed
         EnableWindow(state.mic_device, mic_checked);
         EnableWindow(state.mic_gain, mic_checked);
         EnableWindow(state.system_device, system_checked);
         EnableWindow(state.system_gain, system_checked);
-        EnableWindow(state.monitor_combo, video_checked);
+        // VIDEO REMOVED: monitor_combo removed
 
         if !state.system_available {
             EnableWindow(state.include_system, false);
@@ -1519,22 +1430,9 @@ fn update_source_controls(state: &PodcastState) {
             );
         }
 
-        let video_available = !state.monitors.is_empty();
-        if !video_available {
-            EnableWindow(state.include_video, false);
-            EnableWindow(state.monitor_combo, false);
-            ShowWindow(
-                state.video_unavailable_text,
-                windows::Win32::UI::WindowsAndMessaging::SW_SHOW,
-            );
-        } else {
-            ShowWindow(
-                state.video_unavailable_text,
-                windows::Win32::UI::WindowsAndMessaging::SW_HIDE,
-            );
-        }
+        // VIDEO REMOVED: video availability check removed
 
-        let hint = if !mic_checked && !system_checked && !video_checked {
+        let hint = if !mic_checked && !system_checked {
             windows::Win32::UI::WindowsAndMessaging::SW_SHOW
         } else {
             windows::Win32::UI::WindowsAndMessaging::SW_HIDE
@@ -1543,23 +1441,7 @@ fn update_source_controls(state: &PodcastState) {
     }
 }
 
-fn populate_monitors(state: &PodcastState) {
-    unsafe {
-        let _ = SendMessageW(state.monitor_combo, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
-        for monitor in &state.monitors {
-            let name = to_wide(&monitor.name);
-            let _ = SendMessageW(
-                state.monitor_combo,
-                CB_ADDSTRING,
-                WPARAM(0),
-                LPARAM(name.as_ptr() as isize),
-            );
-        }
-        if !state.monitors.is_empty() {
-            let _ = SendMessageW(state.monitor_combo, CB_SETCURSEL, WPARAM(0), LPARAM(0));
-        }
-    }
-}
+// VIDEO REMOVED: populate_monitors function removed
 
 fn update_format_controls(state: &PodcastState) {
     unsafe {
@@ -1647,7 +1529,7 @@ fn update_filename_preview(state: &PodcastState) {
         let _ = SetWindowTextW(state.filename_preview, PCWSTR(wide.as_ptr()));
     }
 }
-fn start_recording_action(state: &mut PodcastState, hwnd: HWND) {
+fn start_recording_action(state: &mut PodcastState, _hwnd: HWND) {
     if state.recorder.is_some() {
         return;
     }
@@ -1711,9 +1593,6 @@ fn start_recording_action(state: &mut PodcastState, hwnd: HWND) {
         return;
     }
 
-    let include_video = is_checked(state.include_video);
-    let monitor_id = selected_monitor_id(state);
-
     let config = RecorderConfig {
         include_mic,
         mic_device_id: selected_device_id(state, true),
@@ -1721,8 +1600,6 @@ fn start_recording_action(state: &mut PodcastState, hwnd: HWND) {
         include_system,
         system_device_id: selected_device_id(state, false),
         system_gain: selected_system_gain(state),
-        include_video,
-        monitor_id,
         output_format: selected_format(state),
         mp3_bitrate: selected_bitrate(state),
         save_folder: selected_save_folder(state),
@@ -1826,12 +1703,10 @@ fn stop_recording_action(state: &mut PodcastState, hwnd: HWND) {
 fn persist_settings(state: &PodcastState) {
     let include_mic = is_checked(state.include_mic);
     let include_system = is_checked(state.include_system);
-    let include_video = is_checked(state.include_video);
     let mic_device_id = selected_device_id(state, true);
     let mic_gain = selected_mic_gain(state);
     let system_device_id = selected_device_id(state, false);
     let system_gain = selected_system_gain(state);
-    let monitor_id = selected_monitor_id(state);
     let output_format = selected_format(state);
     let bitrate = selected_bitrate(state);
     let save_folder = selected_save_folder(state).to_string_lossy().to_string();
@@ -1843,8 +1718,6 @@ fn persist_settings(state: &PodcastState) {
             app.settings.podcast_include_system_audio = include_system;
             app.settings.podcast_system_device_id = system_device_id;
             app.settings.podcast_system_gain = system_gain;
-            app.settings.podcast_include_video = include_video;
-            app.settings.podcast_monitor_id = monitor_id;
             app.settings.podcast_output_format = output_format;
             app.settings.podcast_mp3_bitrate = bitrate;
             app.settings.podcast_save_folder = save_folder;
@@ -1853,15 +1726,7 @@ fn persist_settings(state: &PodcastState) {
     }
 }
 
-fn selected_monitor_id(state: &PodcastState) -> String {
-    let sel = unsafe { SendMessageW(state.monitor_combo, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 };
-    let index = if sel < 0 { 0 } else { sel as usize };
-    state
-        .monitors
-        .get(index)
-        .map(|m| m.id.clone())
-        .unwrap_or_default()
-}
+// VIDEO REMOVED: selected_monitor_id function removed
 
 fn selected_format(state: &PodcastState) -> PodcastFormat {
     let sel = unsafe { SendMessageW(state.format_combo, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0 };

@@ -1,10 +1,8 @@
 use crate::accessibility::from_wide;
 use crate::audio_capture::{self, AudioRecorderHandle as AudioRecorder};
-use crate::graphics_capture::list_monitors;
 use crate::mf_encoder;
 use crate::settings;
 use crate::settings::{PODCAST_DEVICE_DEFAULT, PodcastFormat};
-use crate::video_recorder::{self, VideoRecorderHandle};
 use chrono::Local;
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
@@ -207,8 +205,6 @@ pub struct RecorderConfig {
     pub include_system: bool,
     pub system_device_id: String,
     pub system_gain: f32,
-    pub include_video: bool,
-    pub monitor_id: String,
     pub output_format: PodcastFormat,
     pub mp3_bitrate: u32,
     pub save_folder: PathBuf,
@@ -232,13 +228,6 @@ pub struct RecorderHandle {
     temp_wav: PathBuf,
     temp_mp3: PathBuf,
     format: PodcastFormat,
-    // For video recording (integrated like screen_recorder)
-    video_recorder: Option<VideoRecorderHandle>,
-    system_audio_recorder: Option<AudioRecorder>,
-    mic_audio_recorder: Option<AudioRecorder>,
-    encoder_stop: Option<Arc<AtomicBool>>,
-    encoder_thread: Option<JoinHandle<Result<(), String>>>,
-    is_video_recording: bool,
 }
 
 struct SharedState {
@@ -275,7 +264,7 @@ pub struct LevelSnapshot {
 }
 
 pub fn start_recording(config: RecorderConfig) -> Result<RecorderHandle, String> {
-    if !config.include_mic && !config.include_system && !config.include_video {
+    if !config.include_mic && !config.include_system {
         return Err("No sources selected.".to_string());
     }
 
@@ -292,122 +281,16 @@ pub fn start_recording(config: RecorderConfig) -> Result<RecorderHandle, String>
     let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
     let base_name = format!("Podcast_{timestamp}");
 
-    // If video is included, output will be MP4
-    let output_path = if config.include_video {
-        output_folder.join(format!("{base_name}.mp4"))
-    } else {
-        output_folder.join(format!(
-            "{}.{}",
-            base_name,
-            match config.output_format {
-                PodcastFormat::Mp3 => "mp3",
-                PodcastFormat::Wav => "wav",
-            }
-        ))
-    };
+    let output_path = output_folder.join(format!(
+        "{}.{}",
+        base_name,
+        match config.output_format {
+            PodcastFormat::Mp3 => "mp3",
+            PodcastFormat::Wav => "wav",
+        }
+    ));
     let temp_wav = output_folder.join(format!("{base_name}.wav.tmp"));
     let temp_mp3 = output_folder.join(format!("{base_name}_tmp.mp3"));
-
-    // Handle video recording path - COPIED FROM screen_recorder.rs
-    if config.include_video {
-        crate::log_debug(&format!(
-            "Starting podcast video recording: {:?}",
-            output_path
-        ));
-
-        // Find the monitor
-        let monitors = list_monitors().unwrap_or_default();
-        let monitor = monitors
-            .iter()
-            .find(|m| m.id == config.monitor_id)
-            .or_else(|| monitors.first())
-            .ok_or_else(|| "No monitors available for video recording".to_string())?;
-
-        // Start video capture (EXACTLY like screen_recorder)
-        let video_recorder = video_recorder::start_video_recording(monitor)?;
-        crate::log_debug("Video recorder started");
-
-        // Start system audio capture (EXACTLY like screen_recorder)
-        let audio_recorder = audio_capture::start_audio_recording()?;
-        crate::log_debug(&format!(
-            "System audio recorder started: {} Hz, {} channels",
-            audio_recorder.sample_rate, audio_recorder.channels
-        ));
-
-        // Start microphone capture if requested
-        let mic_recorder = if config.include_mic {
-            match start_mic_audio_recording(&config.mic_device_id) {
-                Ok(recorder) => {
-                    crate::log_debug(&format!(
-                        "Mic audio recorder started: {} Hz, {} channels",
-                        recorder.sample_rate, recorder.channels
-                    ));
-                    Some(recorder)
-                }
-                Err(e) => {
-                    crate::log_debug(&format!("Warning: Could not start mic recording: {}", e));
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        let mic_gain = config.mic_gain;
-        let system_gain = config.system_gain;
-
-        // Create MP4 writer with audio sample rate from capture (EXACTLY like screen_recorder)
-        let writer = crate::mf_encoder::Mp4StreamWriter::create(
-            &output_path,
-            monitor.width,
-            monitor.height,
-            audio_recorder.sample_rate,
-        )?;
-        crate::log_debug("MP4 writer created");
-
-        // Start encoder thread (with mic support)
-        let encoder_stop = Arc::new(AtomicBool::new(false));
-        let encoder_stop_clone = Arc::clone(&encoder_stop);
-        let video_queue = Arc::clone(&video_recorder.frame_queue);
-        let audio_queue = Arc::clone(&audio_recorder.audio_queue);
-        let mic_queue = mic_recorder.as_ref().map(|r| Arc::clone(&r.audio_queue));
-
-        let encoder_thread = thread::spawn(move || {
-            podcast_video_encoder_loop(
-                writer,
-                video_queue,
-                audio_queue,
-                mic_queue,
-                encoder_stop_clone,
-                mic_gain,
-                system_gain,
-            )
-        });
-
-        crate::log_debug("Encoder thread started");
-
-        // Return immediately with video recording state
-        let shared = Arc::new(SharedState::new(false, false));
-        *shared.status.lock().unwrap() = RecorderStatus::Recording;
-        *shared.started_at.lock().unwrap() = Some(Instant::now());
-
-        return Ok(RecorderHandle {
-            shared,
-            stop: Arc::new(AtomicBool::new(false)),
-            paused: Arc::new(AtomicBool::new(false)),
-            threads: Vec::new(),
-            output_path,
-            temp_wav,
-            temp_mp3,
-            format: config.output_format,
-            video_recorder: Some(video_recorder),
-            system_audio_recorder: Some(audio_recorder),
-            mic_audio_recorder: mic_recorder,
-            encoder_stop: Some(encoder_stop),
-            encoder_thread: Some(encoder_thread),
-            is_video_recording: true,
-        });
-    }
 
     // Audio-only path
     let shared = Arc::new(SharedState::new(config.include_mic, config.include_system));
@@ -536,18 +419,12 @@ pub fn start_recording(config: RecorderConfig) -> Result<RecorderHandle, String>
         temp_wav,
         temp_mp3,
         format: config.output_format,
-        video_recorder: None,
-        system_audio_recorder: None,
-        mic_audio_recorder: None,
-        encoder_stop: None,
-        encoder_thread: None,
-        is_video_recording: false,
     })
 }
 
 /// Start microphone audio recording using WASAPI (non-loopback)
 fn start_mic_audio_recording(device_id: &str) -> Result<AudioRecorder, String> {
-    use crate::audio_capture::{AudioQueue, AudioSample};
+    use crate::audio_capture::AudioQueue;
 
     let audio_queue = Arc::new(AudioQueue::new(3000));
     let stop = Arc::new(AtomicBool::new(false));
@@ -695,458 +572,6 @@ fn mic_capture_loop(
     Ok(())
 }
 
-/// Encoder loop for podcast video recording - with mic mixing support
-fn podcast_video_encoder_loop(
-    mut writer: crate::mf_encoder::Mp4StreamWriter,
-    video_queue: Arc<crate::video_recorder::FrameQueue>,
-    system_audio_queue: Arc<audio_capture::AudioQueue>,
-    mic_audio_queue: Option<Arc<audio_capture::AudioQueue>>,
-    stop: Arc<AtomicBool>,
-    mic_gain: f32,
-    system_gain: f32,
-) -> Result<(), String> {
-    crate::log_debug("Encoder loop started");
-
-    let mut last_video_ts = 0i64;
-    let mut frames_encoded = 0u64;
-    let mut audio_samples_encoded = 0u64;
-
-    loop {
-        let should_stop = stop.load(Ordering::SeqCst);
-
-        // If stop signal received, check if we can exit
-        if should_stop {
-            let video_empty = video_queue.is_empty();
-            let system_audio_empty = system_audio_queue.is_empty();
-            let mic_audio_empty = mic_audio_queue.as_ref().map_or(true, |q| q.is_empty());
-
-            if video_empty && system_audio_empty && mic_audio_empty {
-                thread::sleep(Duration::from_millis(100));
-
-                // Final check
-                let video_empty = video_queue.is_empty();
-                let system_audio_empty = system_audio_queue.is_empty();
-                let mic_audio_empty = mic_audio_queue.as_ref().map_or(true, |q| q.is_empty());
-
-                if video_empty && system_audio_empty && mic_audio_empty {
-                    crate::log_debug("Exiting encoder loop - all queues drained");
-                    break;
-                }
-            }
-        }
-
-        // Process video frames with adaptive timeout
-        // Use shorter timeout if not stopping, to process audio faster
-        let video_timeout = if should_stop {
-            Duration::from_millis(10)
-        } else {
-            Duration::from_millis(30) // Reduced from 100ms to prevent audio backlog
-        };
-        if let Some(frame) = video_queue.pop(video_timeout) {
-            if frame.timestamp > last_video_ts {
-                match writer.write_video_frame(&frame) {
-                    Ok(()) => {
-                        last_video_ts = frame.timestamp;
-                        frames_encoded += 1;
-
-                        if frames_encoded % 30 == 0 {
-                            crate::log_debug(&format!(
-                                "Encoded {} video frames, {} audio samples",
-                                frames_encoded, audio_samples_encoded
-                            ));
-                        }
-                    }
-                    Err(e) => {
-                        crate::log_debug(&format!("Error writing video frame: {}", e));
-                    }
-                }
-            }
-        }
-
-        // Process audio samples with shorter timeout when stopping
-        let audio_timeout = if should_stop {
-            Duration::from_millis(5)
-        } else {
-            Duration::from_millis(10)
-        };
-
-        // Check if we should write more audio
-        // Don't write if audio is too far behind video (prevents MF blocking)
-        let audio_timestamp = writer.get_audio_timestamp();
-        let max_audio_lag = 150_000_000; // 15 seconds max lag in 100-nanosecond units (increased for slow encoding)
-        let audio_behind_video = last_video_ts.saturating_sub(audio_timestamp);
-        let can_write_audio = !should_stop
-            || (audio_timestamp <= last_video_ts && audio_behind_video < max_audio_lag);
-
-        if should_stop && !system_audio_queue.is_empty() {
-            if !can_write_audio {
-                let lag_seconds = audio_behind_video as f64 / 10_000_000.0;
-                crate::log_debug(&format!(
-                    "Audio too far behind video ({:.2}s lag), discarding remaining audio to prevent MF blocking",
-                    lag_seconds
-                ));
-                // Drain queues without writing
-                let mut discarded = 0;
-                while let Some(_) = system_audio_queue.pop(Duration::from_millis(1)) {
-                    discarded += 1;
-                }
-                if let Some(mic_queue) = mic_audio_queue.as_ref() {
-                    while let Some(_) = mic_queue.pop(Duration::from_millis(1)) {
-                        discarded += 1;
-                    }
-                }
-                crate::log_debug(&format!(
-                    "Discarded {} audio samples (audio was at {:.2}s, video at {:.2}s)",
-                    discarded,
-                    audio_timestamp as f64 / 10_000_000.0,
-                    last_video_ts as f64 / 10_000_000.0
-                ));
-            }
-        }
-
-        if can_write_audio {
-            // Get system audio
-            let system_sample = system_audio_queue.pop(audio_timeout);
-
-            // Get mic audio if available
-            let mic_sample = if let Some(mic_queue) = mic_audio_queue.as_ref() {
-                mic_queue.pop(audio_timeout)
-            } else {
-                None
-            };
-
-            // Mix the two audio streams
-            if system_sample.is_some() || mic_sample.is_some() {
-                let mixed_data = match (system_sample, mic_sample) {
-                    (Some(sys), Some(mic)) => {
-                        // System is stereo (2 channels), mic is mono (1 channel)
-                        // We need to convert mic mono to stereo and mix
-                        let sys_channels = 2;
-                        let mic_channels = 1;
-
-                        // Number of frames (samples per channel)
-                        let sys_frames = sys.data.len() / sys_channels;
-                        let mic_frames = mic.data.len() / mic_channels;
-                        let frames = sys_frames.min(mic_frames);
-
-                        let mut mixed = Vec::with_capacity(frames * 2);
-
-                        for frame in 0..frames {
-                            let sys_left = sys.data[frame * 2] as f32 * system_gain;
-                            let sys_right = sys.data[frame * 2 + 1] as f32 * system_gain;
-                            let mic_mono = mic.data[frame] as f32 * mic_gain;
-
-                            // Mix: system (stereo) + mic (converted to stereo by duplicating)
-                            let left =
-                                ((sys_left + mic_mono) / 2.0).clamp(-32768.0, 32767.0) as i16;
-                            let right =
-                                ((sys_right + mic_mono) / 2.0).clamp(-32768.0, 32767.0) as i16;
-
-                            mixed.push(left);
-                            mixed.push(right);
-                        }
-                        mixed
-                    }
-                    (Some(sys), None) => {
-                        // Only system audio - apply gain
-                        sys.data
-                            .iter()
-                            .map(|&s| ((s as f32) * system_gain).clamp(-32768.0, 32767.0) as i16)
-                            .collect()
-                    }
-                    (None, Some(mic)) => {
-                        // Only mic - convert mono to stereo and apply gain
-                        let mut stereo = Vec::with_capacity(mic.data.len() * 2);
-                        for &sample in &mic.data {
-                            let s = ((sample as f32) * mic_gain).clamp(-32768.0, 32767.0) as i16;
-                            stereo.push(s);
-                            stereo.push(s); // Duplicate for stereo
-                        }
-                        stereo
-                    }
-                    (None, None) => continue,
-                };
-
-                match writer.write_audio_samples(&mixed_data) {
-                    Ok(()) => {
-                        audio_samples_encoded += mixed_data.len() as u64;
-
-                        // Log every second of audio written (only during normal recording)
-                        if !should_stop {
-                            let audio_duration = writer.get_audio_duration_seconds();
-                            if (audio_duration as u64) % 1 == 0 && audio_duration > 0.0 {
-                                let prev_duration = ((audio_duration - 0.1) as u64) % 1;
-                                if prev_duration != 0 {
-                                    let sys_queue_size = system_audio_queue.len();
-                                    let mic_queue_size =
-                                        mic_audio_queue.as_ref().map_or(0, |q| q.len());
-                                    crate::log_debug(&format!(
-                                        "Audio written: {:.2}s (sys queue: {}, mic queue: {})",
-                                        audio_duration, sys_queue_size, mic_queue_size
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        crate::log_debug(&format!("Error writing audio: {}", e));
-                    }
-                }
-            }
-        } else if !should_stop {
-            // Log when audio writing is blocked during recording (shouldn't happen normally)
-            crate::log_debug(&format!(
-                "WARNING: Audio writing blocked during recording! audio_ts={}, video_ts={}, lag={}s",
-                writer.get_audio_timestamp(),
-                last_video_ts,
-                (last_video_ts - writer.get_audio_timestamp()) as f64 / 10_000_000.0
-            ));
-        }
-    }
-
-    // Calculate actual durations
-    let video_duration_seconds = if frames_encoded > 0 {
-        (last_video_ts as f64) / 10_000_000.0
-    } else {
-        0.0
-    };
-
-    let audio_duration_seconds = writer.get_audio_duration_seconds();
-
-    crate::log_debug(&format!(
-        "=== RECORDING STATISTICS ===\n\
-         Video: {} frames, duration: {:.2} seconds (last_ts: {})\n\
-         Audio: {} samples, duration: {:.2} seconds\n\
-         ============================",
-        frames_encoded,
-        video_duration_seconds,
-        last_video_ts,
-        audio_samples_encoded,
-        audio_duration_seconds
-    ));
-
-    // Check if any data was written
-    if frames_encoded == 0 {
-        crate::log_debug(&format!(
-            "Warning: No video frames were encoded. Recording may have been too short. \
-             Audio samples: {}",
-            audio_samples_encoded
-        ));
-        // Don't return error - allow finalization to attempt completion
-    }
-
-    // Finalize the MP4 file
-    crate::log_debug("Calling writer.finalize()...");
-    writer.finalize()?;
-    crate::log_debug("MP4 file finalized successfully");
-
-    Ok(())
-}
-
-/// Encode video with audio loop - reads from video queue and audio mix buffer (OLD - not used for video anymore)
-fn encode_video_with_audio(
-    mut writer: crate::mf_encoder::Mp4StreamWriter,
-    video_queue: Arc<crate::video_recorder::FrameQueue>,
-    audio_buffer: Arc<MixBuffer>,
-    shared: Arc<SharedState>,
-    stop: Arc<AtomicBool>,
-    paused: Arc<AtomicBool>,
-) -> Result<(), String> {
-    crate::log_debug("Encoder loop started");
-    let mut last_video_ts = 0i64;
-    let mut frames_encoded = 0u64;
-    let mut audio_samples_written = 0u64;
-    let mut audio_chunks_written = 0u64;
-
-    loop {
-        let should_stop = stop.load(Ordering::SeqCst);
-        let is_paused = paused.load(Ordering::SeqCst);
-
-        // If stop signal received, check if we can exit
-        if should_stop {
-            let video_empty = video_queue.is_empty();
-            let audio_empty = audio_buffer.is_empty();
-
-            if video_empty && audio_empty {
-                thread::sleep(Duration::from_millis(100));
-
-                // Final check
-                if video_queue.is_empty() && audio_buffer.is_empty() {
-                    crate::log_debug("Exiting encoder loop - all queues drained");
-                    break;
-                }
-            }
-        }
-
-        // Process video frames
-        if !is_paused {
-            let video_timeout = if should_stop {
-                Duration::from_millis(10)
-            } else {
-                Duration::from_millis(30)
-            };
-
-            if let Some(frame) = video_queue.pop(video_timeout) {
-                if frame.timestamp > last_video_ts {
-                    match writer.write_video_frame(&frame) {
-                        Ok(()) => {
-                            last_video_ts = frame.timestamp;
-                            frames_encoded += 1;
-                        }
-                        Err(e) => {
-                            crate::log_debug(&format!("Error writing video frame: {}", e));
-                            return Err(format!("Error writing video frame: {}", e));
-                        }
-                    }
-                }
-            }
-        } else {
-            // When paused, still drain video queue to prevent overflow but don't write
-            while video_queue.pop(Duration::from_millis(1)).is_some() {}
-            thread::sleep(Duration::from_millis(50));
-        }
-
-        // Process audio samples
-        if !is_paused {
-            let audio_timeout = if should_stop {
-                Duration::from_millis(5)
-            } else {
-                Duration::from_millis(10)
-            };
-
-            // Check if we should write more audio
-            // Don't write if audio is too far behind video (prevents MF blocking)
-            let audio_timestamp = writer.get_audio_timestamp();
-            let max_audio_lag = 150_000_000; // 15 seconds max lag in 100-nanosecond units
-            let audio_behind_video = last_video_ts.saturating_sub(audio_timestamp);
-            let can_write_audio = !should_stop
-                || (audio_timestamp <= last_video_ts && audio_behind_video < max_audio_lag);
-
-            if should_stop && !audio_buffer.is_empty() {
-                if !can_write_audio {
-                    let lag_seconds = audio_behind_video as f64 / 10_000_000.0;
-                    crate::log_debug(&format!(
-                        "Audio too far behind video ({:.2}s lag), discarding remaining audio to prevent MF blocking",
-                        lag_seconds
-                    ));
-                    // Drain queue without writing
-                    let mut discarded = 0;
-                    while let Some(_) = audio_buffer.pop_chunk(Duration::from_millis(1)) {
-                        discarded += 1;
-                    }
-                    crate::log_debug(&format!(
-                        "Discarded {} audio chunks (audio was at {:.2}s, video at {:.2}s)",
-                        discarded,
-                        audio_timestamp as f64 / 10_000_000.0,
-                        last_video_ts as f64 / 10_000_000.0
-                    ));
-                }
-            }
-
-            if can_write_audio {
-                match audio_buffer.pop_chunk(audio_timeout) {
-                    Some(chunk) => {
-                        // Update audio peaks for monitoring
-                        let mut max_sample = 0i16;
-                        for &sample in &chunk {
-                            max_sample = max_sample.max(sample.abs());
-                        }
-                        let peak = (max_sample as f32 / i16::MAX as f32 * 100.0) as u32;
-
-                        if shared.include_mic && !shared.include_system {
-                            shared.mic_peak.store(peak, Ordering::Relaxed);
-                        } else if shared.include_system && !shared.include_mic {
-                            shared.system_peak.store(peak, Ordering::Relaxed);
-                        } else {
-                            // Both enabled, split peak evenly
-                            shared.mic_peak.store(peak / 2, Ordering::Relaxed);
-                            shared.system_peak.store(peak / 2, Ordering::Relaxed);
-                        }
-
-                        match writer.write_audio_samples(&chunk) {
-                            Ok(()) => {
-                                audio_samples_written += chunk.len() as u64;
-                                audio_chunks_written += 1;
-
-                                // Log every 100 chunks
-                                if audio_chunks_written % 100 == 0 {
-                                    crate::log_debug(&format!(
-                                        "Audio written: {} chunks, {} samples, {:.2}s",
-                                        audio_chunks_written,
-                                        audio_samples_written,
-                                        writer.get_audio_duration_seconds()
-                                    ));
-                                }
-                            }
-                            Err(e) => {
-                                crate::log_debug(&format!("Error writing audio: {}", e));
-                                return Err(format!("Error writing audio: {}", e));
-                            }
-                        }
-                    }
-                    None => {
-                        if should_stop && !audio_buffer.is_empty() {
-                            crate::log_debug(
-                                "WARNING: audio_buffer.pop_chunk() returned None but buffer not empty!",
-                            );
-                        }
-                    }
-                }
-            } else if !should_stop {
-                // Log when audio writing is blocked during recording (shouldn't happen normally)
-                crate::log_debug(&format!(
-                    "WARNING: Audio writing blocked during recording! audio_ts={}, video_ts={}, lag={}s",
-                    writer.get_audio_timestamp(),
-                    last_video_ts,
-                    (last_video_ts - writer.get_audio_timestamp()) as f64 / 10_000_000.0
-                ));
-            }
-        } else {
-            // When paused, drain audio buffer but don't write
-            while audio_buffer.pop_chunk(Duration::from_millis(1)).is_some() {}
-            thread::sleep(Duration::from_millis(50));
-        }
-    }
-
-    // Calculate actual durations
-    let video_duration_seconds = if frames_encoded > 0 {
-        (last_video_ts as f64) / 10_000_000.0
-    } else {
-        0.0
-    };
-
-    let audio_duration_seconds = writer.get_audio_duration_seconds();
-
-    crate::log_debug(&format!(
-        "=== RECORDING STATISTICS ===\n\
-         Video: {} frames, duration: {:.2} seconds (last_ts: {})\n\
-         Audio: {} samples, duration: {:.2} seconds\n\
-         ============================",
-        frames_encoded,
-        video_duration_seconds,
-        last_video_ts,
-        audio_samples_written,
-        audio_duration_seconds
-    ));
-
-    // Check if any data was written
-    if frames_encoded == 0 {
-        crate::log_debug(&format!(
-            "Warning: No video frames were encoded. Recording may have been too short. \
-             Audio samples: {}",
-            audio_samples_written
-        ));
-        // Don't return error - allow finalization to attempt completion
-    }
-
-    // Finalize the MP4 file
-    crate::log_debug("Calling writer.finalize()...");
-    writer.finalize()?;
-    crate::log_debug("MP4 file finalized successfully");
-
-    Ok(())
-}
-
 impl RecorderHandle {
     pub fn pause(&self) {
         if !self.paused.swap(true, Ordering::SeqCst) {
@@ -1189,63 +614,7 @@ impl RecorderHandle {
     {
         crate::log_debug("Stopping podcast recording");
 
-        // If video recording, use screen_recorder stop logic
-        if self.is_video_recording {
-            crate::log_debug("Stopping podcast video recording");
-
-            // FIRST: Signal encoder to stop (EXACTLY like screen_recorder)
-            if let Some(encoder_stop) = self.encoder_stop.as_ref() {
-                encoder_stop.store(true, Ordering::SeqCst);
-                crate::log_debug("Signaled encoder to stop");
-            }
-
-            // SECOND: Signal recorders to stop (EXACTLY like screen_recorder)
-            if let Some(video_rec) = self.video_recorder.as_ref() {
-                video_rec.signal_stop();
-            }
-            if let Some(audio_rec) = self.system_audio_recorder.as_ref() {
-                audio_rec.signal_stop();
-            }
-            if let Some(mic_rec) = self.mic_audio_recorder.as_ref() {
-                mic_rec.signal_stop();
-            }
-            crate::log_debug("Signaled recorders to stop");
-
-            // THIRD: Wait for encoder to finish (EXACTLY like screen_recorder)
-            if let Some(thread) = self.encoder_thread.take() {
-                crate::log_debug("Waiting for encoder to finish...");
-                thread
-                    .join()
-                    .map_err(|_| "Encoder thread panicked".to_string())??;
-                crate::log_debug("Encoder stopped");
-            }
-
-            // FOURTH: Wait for recorders to shut down (EXACTLY like screen_recorder)
-            if let Some(video_rec) = self.video_recorder.take() {
-                video_rec.join()?;
-                crate::log_debug("Video recorder stopped");
-            }
-
-            if let Some(audio_rec) = self.system_audio_recorder.take() {
-                audio_rec.join()?;
-                crate::log_debug("System audio recorder stopped");
-            }
-
-            if let Some(mic_rec) = self.mic_audio_recorder.take() {
-                mic_rec.join()?;
-                crate::log_debug("Mic audio recorder stopped");
-            }
-
-            crate::log_debug("Podcast video recording stopped successfully");
-
-            if let Ok(mut status) = self.shared.status.lock() {
-                *status = RecorderStatus::Idle;
-            }
-            return Ok(self.output_path.clone());
-        }
-
-        // Audio-only path
-        // FIRST: Signal encoder to stop (so it knows to drain queues and exit)
+        // Signal encoder to stop (so it knows to drain queues and exit)
         self.stop.store(true, Ordering::SeqCst);
         crate::log_debug("Signaled encoder to stop");
 
@@ -1253,7 +622,7 @@ impl RecorderHandle {
             *status = RecorderStatus::Saving;
         }
 
-        // SECOND: Wait for all threads to finish
+        // Wait for all threads to finish
         let threads = std::mem::take(&mut self.threads);
         for handle in threads {
             match handle.join() {
@@ -1277,17 +646,11 @@ impl RecorderHandle {
             if cancel.load(Ordering::Relaxed) {
                 let _ = std::fs::remove_file(&self.temp_wav);
                 let _ = std::fs::remove_file(&self.temp_mp3);
-                if self.is_video_recording {
-                    let _ = std::fs::remove_file(&self.output_path);
-                }
                 return Err("Saving canceled.".to_string());
             }
         }
 
-        // For video recording, the MP4 file is already complete
-        if self.is_video_recording {
-            progress(100);
-        } else if self.format == PodcastFormat::Mp3 {
+        if self.format == PodcastFormat::Mp3 {
             progress(100);
             if let Err(err) = rename_atomic(&self.temp_mp3, &self.output_path) {
                 self.set_error(&err);

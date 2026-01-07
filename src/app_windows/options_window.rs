@@ -51,7 +51,7 @@ const OPTIONS_ID_WRAP_WIDTH: usize = 6017;
 const OPTIONS_ID_QUOTE_PREFIX: usize = 6018;
 const OPTIONS_ID_CHECK_UPDATES: usize = 6015;
 const OPTIONS_ID_PROMPT_PROGRAM: usize = 6019;
-const OPTIONS_ID_SETTINGS_CURRENT_DIR: usize = 6022;
+
 const OPTIONS_ID_OK: usize = 6005;
 const OPTIONS_ID_CANCEL: usize = 6006;
 const OPTIONS_FOCUS_LANG_MSG: u32 = WM_APP + 30;
@@ -105,7 +105,6 @@ struct OptionsDialogState {
     edit_quote_prefix: HWND,
     checkbox_move_cursor: HWND,
     checkbox_check_updates: HWND,
-    checkbox_settings_current_dir: HWND,
     label_prompt_program: HWND,
     combo_prompt_program: HWND,
     ok_button: HWND,
@@ -126,7 +125,6 @@ struct OptionsLabels {
     label_quote_prefix: String,
     label_move_cursor: String,
     label_check_updates: String,
-    label_settings_current_dir: String,
     label_prompt_program: String,
     label_audio_skip: String,
     label_audio_split: String,
@@ -142,6 +140,7 @@ struct OptionsLabels {
     open_new_window: String,
     engine_edge: String,
     engine_sapi5: String,
+
     split_none: String,
     split_by_text: String,
     split_parts: String,
@@ -172,7 +171,6 @@ fn options_labels(language: Language) -> OptionsLabels {
         label_quote_prefix: i18n::tr(language, "options.label.quote_prefix"),
         label_move_cursor: i18n::tr(language, "options.label.move_cursor"),
         label_check_updates: i18n::tr(language, "options.label.check_updates"),
-        label_settings_current_dir: i18n::tr(language, "options.label.settings_current_dir"),
         label_prompt_program: i18n::tr(language, "options.label.prompt_program"),
         label_audio_skip: i18n::tr(language, "options.label.audio_skip"),
         label_audio_split: i18n::tr(language, "options.label.audio_split"),
@@ -191,6 +189,7 @@ fn options_labels(language: Language) -> OptionsLabels {
         open_new_window: i18n::tr(language, "options.open.new_window"),
         engine_edge: i18n::tr(language, "options.engine.edge"),
         engine_sapi5: i18n::tr(language, "options.engine.sapi5"),
+
         split_none: i18n::tr(language, "options.split.none"),
         split_by_text: i18n::tr(language, "options.split.by_text"),
         split_parts: i18n::tr(language, "options.split.parts"),
@@ -270,10 +269,10 @@ pub unsafe fn refresh_voices(hwnd: HWND) {
     // Determine current engine from combo if possible, otherwise settings
     let engine_sel = SendMessageW(combo_engine, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
     let engine = if engine_sel >= 0 {
-        if engine_sel == 1 {
-            TtsEngine::Sapi5
-        } else {
-            TtsEngine::Edge
+        match engine_sel {
+            1 => TtsEngine::Sapi5,
+
+            _ => TtsEngine::Edge,
         }
     } else {
         settings.tts_engine
@@ -740,22 +739,6 @@ unsafe extern "system" fn options_wndproc(
             );
             y += 28;
 
-            let checkbox_settings_current_dir = CreateWindowExW(
-                Default::default(),
-                WC_BUTTON,
-                PCWSTR(to_wide(&labels.label_settings_current_dir).as_ptr()),
-                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_AUTOCHECKBOX as u32),
-                170,
-                y,
-                300,
-                20,
-                hwnd,
-                HMENU(OPTIONS_ID_SETTINGS_CURRENT_DIR as isize),
-                HINSTANCE(0),
-                None,
-            );
-            y += 24;
-
             let label_prompt_program = CreateWindowExW(
                 Default::default(),
                 WC_STATIC,
@@ -841,7 +824,6 @@ unsafe extern "system" fn options_wndproc(
                 edit_quote_prefix,
                 checkbox_move_cursor,
                 checkbox_check_updates,
-                checkbox_settings_current_dir,
                 label_prompt_program,
                 combo_prompt_program,
                 ok_button,
@@ -877,7 +859,7 @@ unsafe extern "system" fn options_wndproc(
                 edit_quote_prefix,
                 checkbox_move_cursor,
                 checkbox_check_updates,
-                checkbox_settings_current_dir,
+
                 label_prompt_program,
                 combo_prompt_program,
                 ok_button,
@@ -929,7 +911,7 @@ unsafe extern "system" fn options_wndproc(
                             with_options_state(hwnd, |s| s.combo_tts_engine).unwrap_or(HWND(0));
                         let sel = SendMessageW(combo, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
                         if sel == 1 {
-                            // SAPI
+                            // SAPI5
                             let parent = with_options_state(hwnd, |s| s.parent).unwrap_or(HWND(0));
                             let has_sapi =
                                 with_state(parent, |s| !s.sapi_voices.is_empty()).unwrap_or(false);
@@ -939,6 +921,7 @@ unsafe extern "system" fn options_wndproc(
                                 ensure_sapi_voices_loaded(parent, lang);
                             }
                         }
+
                         refresh_voices(hwnd);
                     }
                     LRESULT(0)
@@ -1051,7 +1034,6 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
         edit_quote_prefix,
         checkbox_move_cursor,
         checkbox_check_updates,
-        checkbox_settings_current_dir,
         _label_prompt_program,
         combo_prompt_program,
     ) = match with_options_state(hwnd, |state| {
@@ -1077,7 +1059,6 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
             state.edit_quote_prefix,
             state.checkbox_move_cursor,
             state.checkbox_check_updates,
-            state.checkbox_settings_current_dir,
             state.label_prompt_program,
             state.combo_prompt_program,
         )
@@ -1185,6 +1166,7 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
         WPARAM(0),
         LPARAM(to_wide(&labels.engine_sapi5).as_ptr() as isize),
     );
+
     let engine_index = match settings.tts_engine {
         TtsEngine::Edge => 0,
         TtsEngine::Sapi5 => 1,
@@ -1262,16 +1244,7 @@ unsafe fn initialize_options_dialog(hwnd: HWND) {
         }),
         LPARAM(0),
     );
-    let _ = SendMessageW(
-        checkbox_settings_current_dir,
-        BM_SETCHECK,
-        WPARAM(if settings.settings_in_current_dir {
-            BST_CHECKED.0 as usize
-        } else {
-            0
-        }),
-        LPARAM(0),
-    );
+
     let _ = SendMessageW(combo_prompt_program, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
     let prompt_options = [
         labels.prompt_cmd.clone(),
@@ -1458,7 +1431,6 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
         edit_quote_prefix,
         checkbox_move_cursor,
         checkbox_check_updates,
-        checkbox_settings_current_dir,
         combo_prompt_program,
     ) = match with_options_state(hwnd, |state| {
         (
@@ -1480,7 +1452,6 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
             state.edit_quote_prefix,
             state.checkbox_move_cursor,
             state.checkbox_check_updates,
-            state.checkbox_settings_current_dir,
             state.combo_prompt_program,
         )
     }) {
@@ -1492,7 +1463,7 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     let old_language = settings.language;
     let old_marker_position = settings.modified_marker_position;
     let old_word_wrap = settings.word_wrap;
-    let old_settings_current_dir = settings.settings_in_current_dir;
+    let old_word_wrap = settings.word_wrap;
     let (old_engine, old_voice, was_tts_active) = with_state(parent, |state| {
         (
             state.settings.tts_engine,
@@ -1531,10 +1502,10 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     };
 
     let engine_sel = SendMessageW(combo_tts_engine, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
-    settings.tts_engine = if engine_sel == 1 {
-        TtsEngine::Sapi5
-    } else {
-        TtsEngine::Edge
+    settings.tts_engine = match engine_sel {
+        1 => TtsEngine::Sapi5,
+
+        _ => TtsEngine::Edge,
     };
 
     settings.tts_only_multilingual =
@@ -1579,14 +1550,7 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     settings.check_updates_on_startup =
         SendMessageW(checkbox_check_updates, BM_GETCHECK, WPARAM(0), LPARAM(0)).0 as u32
             == BST_CHECKED.0;
-    settings.settings_in_current_dir = SendMessageW(
-        checkbox_settings_current_dir,
-        BM_GETCHECK,
-        WPARAM(0),
-        LPARAM(0),
-    )
-    .0 as u32
-        == BST_CHECKED.0;
+
     let prompt_sel = SendMessageW(combo_prompt_program, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
     settings.prompt_program = match prompt_sel {
         1 => "powershell.exe".to_string(),
@@ -1658,19 +1622,7 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     });
     let new_language = settings.language;
     let mut keep_default_copy = false;
-    if settings.settings_in_current_dir && !old_settings_current_dir {
-        let msg = i18n::tr(settings.language, "options.settings_copy_prompt");
-        let title = i18n::tr(settings.language, "app.confirm_title");
-        let msg_w = to_wide(&msg);
-        let title_w = to_wide(&title);
-        let result = MessageBoxW(
-            hwnd,
-            PCWSTR(msg_w.as_ptr()),
-            PCWSTR(title_w.as_ptr()),
-            MB_YESNO | MB_ICONQUESTION,
-        );
-        keep_default_copy = result == IDYES;
-    }
+
     save_settings_with_default_copy(settings.clone(), keep_default_copy);
 
     if old_language != new_language {
@@ -1769,23 +1721,20 @@ pub(crate) fn ensure_voice_lists_loaded(hwnd: HWND, language: Language) {
 }
 
 fn ensure_sapi_voices_loaded(hwnd: HWND, _language: Language) {
-    thread::spawn(move || {
-        match crate::sapi5_engine::list_sapi_voices() {
-            Ok(list) => {
-                let payload = Box::new(list);
-                let _ = unsafe {
-                    windows::Win32::UI::WindowsAndMessaging::PostMessageW(
-                        hwnd,
-                        WM_TTS_SAPI_VOICES_LOADED,
-                        WPARAM(0),
-                        LPARAM(Box::into_raw(payload) as isize),
-                    )
-                };
-            }
-            Err(err) => {
-                crate::log_debug(&format!("Failed to load SAPI voices: {}", err));
-                // Optional: show error if user specifically selected SAPI?
-            }
+    thread::spawn(move || match crate::sapi5_engine::list_sapi_voices() {
+        Ok(list) => {
+            let payload = Box::new(list);
+            let _ = unsafe {
+                windows::Win32::UI::WindowsAndMessaging::PostMessageW(
+                    hwnd,
+                    WM_TTS_SAPI_VOICES_LOADED,
+                    WPARAM(0),
+                    LPARAM(Box::into_raw(payload) as isize),
+                )
+            };
+        }
+        Err(err) => {
+            crate::log_debug(&format!("Failed to load SAPI voices: {}", err));
         }
     });
 }

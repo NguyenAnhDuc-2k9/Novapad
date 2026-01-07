@@ -2,6 +2,7 @@
   "app.untitled_base": "Sin titulo",
   "app.recent_missing": "El archivo reciente ya no existe.",
   "app.confirm_save": "El documento \"{title}\" ha sido modificado. Guardar?",
+  "app.confirm_save_named": "¿Guardar cambios en '{name}'?",
   "app.confirm_title": "Confirmar",
   "app.error_title": "Error",
   "app.tts_no_text": "No hay texto para leer.",

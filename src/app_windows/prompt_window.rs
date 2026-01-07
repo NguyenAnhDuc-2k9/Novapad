@@ -55,6 +55,7 @@ const PROMPT_ID_PREVENT_SLEEP: usize = 9307;
 const WM_PROMPT_OUTPUT: u32 = WM_APP + 60;
 const EM_SETSEL: u32 = 0x00B1;
 const EM_LIMITTEXT: u32 = 0x00C5;
+const EM_SETREADONLY: u32 = 0x00CF;
 const PROMPT_OUTPUT_LIMIT: usize = 40_000;
 const PROMPT_OUTPUT_KEEP: usize = 10_000;
 
@@ -1048,16 +1049,35 @@ fn start_output_reader(
     });
     std::thread::spawn(move || {
         let mut buffer = [0u8; 4096];
+        let mut total_read = 0usize;
         loop {
             if cancel.load(Ordering::Relaxed) {
                 break;
             }
             let mut read = 0u32;
+            log_debug("Prompt: Calling ReadFile...");
             let ok =
                 unsafe { ReadFile(output_read, Some(&mut buffer), Some(&mut read), None).is_ok() };
-            if !ok || read == 0 {
+            if !ok {
+                let err = unsafe { windows::Win32::Foundation::GetLastError() };
+                log_debug(&format!(
+                    "Prompt: ReadFile returned false, error code: {:?}, total bytes read so far: {}",
+                    err, total_read
+                ));
                 break;
             }
+            if read == 0 {
+                log_debug(&format!(
+                    "Prompt: ReadFile read 0 bytes (EOF), total bytes read: {}",
+                    total_read
+                ));
+                break;
+            }
+            total_read += read as usize;
+            log_debug(&format!(
+                "Prompt: ReadFile read {} bytes, total: {}",
+                read, total_read
+            ));
             beep_state.last_output_ms.store(now_ms(), Ordering::Relaxed);
             beep_state.beeped.store(false, Ordering::Relaxed);
             if beep_state.sleep_enabled.load(Ordering::Relaxed)
@@ -1164,7 +1184,9 @@ unsafe fn trim_output_keep_last(state: &mut PromptState) {
     state.pending_ws.clear();
     state.last_announced_line.clear();
     let wide = to_wide(&state.buffer);
+    let _ = SendMessageW(state.output, EM_SETREADONLY, WPARAM(0), LPARAM(0));
     let _ = SetWindowTextW(state.output, PCWSTR(wide.as_ptr()));
+    let _ = SendMessageW(state.output, EM_SETREADONLY, WPARAM(1), LPARAM(0));
     let _ = SendMessageW(
         state.output,
         EM_SETSEL,
@@ -1321,7 +1343,17 @@ fn append_output(state: &mut PromptState, text: &str) {
     };
 
     let wide = to_wide(&replace_text);
+    log_debug(&format!(
+        "Prompt: appending output '{}'",
+        replace_text.trim()
+    ));
     unsafe {
+        let _ = SendMessageW(
+            output,
+            EM_SETREADONLY,
+            WPARAM(0), // False
+            LPARAM(0),
+        );
         let _ = SendMessageW(
             output,
             EM_SETSEL,
@@ -1333,6 +1365,12 @@ fn append_output(state: &mut PromptState, text: &str) {
             EM_REPLACESEL,
             WPARAM(1),
             LPARAM(wide.as_ptr() as isize),
+        );
+        let _ = SendMessageW(
+            output,
+            EM_SETREADONLY,
+            WPARAM(1), // True
+            LPARAM(0),
         );
     }
     if state.announce_lines && newline_appended {

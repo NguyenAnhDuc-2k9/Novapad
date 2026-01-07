@@ -1,43 +1,7 @@
-[2026-01-06 18:45:37] Application started.
-[2026-01-06 18:45:39] Menu: Record podcast
-[2026-01-06 18:45:50] Starting podcast video recording: "C:\\Users\\ambro\\Documents\\Novapad Recordings\\Podcast_2026-01-06_18-45-50.mp4"
-[2026-01-06 18:45:50] Video recorder started
-[2026-01-06 18:45:50] Video capture loop started
-[2026-01-06 18:45:50] Audio capture will use: 48000 Hz, 2 channels
-[2026-01-06 18:45:50] System audio recorder started: 48000 Hz, 2 channels
-[2026-01-06 18:45:50] Audio capture loop started
-[2026-01-06 18:45:50] Mic audio capture will use: 48000 Hz, 1 channels
-[2026-01-06 18:45:50] Mic audio recorder started: 48000 Hz, 1 channels
-[2026-01-06 18:45:50] MF: creating MP4 writer. path="C:\\Users\\ambro\\Documents\\Novapad Recordings\\Podcast_2026-01-06_18-45-50.mp4" size=1536x864 audio=48000Hz
-[2026-01-06 18:45:50] Audio format: 48000 Hz, 2 channels, 32 bits
-[2026-01-06 18:45:50] Mic capture loop started
-[2026-01-06 18:45:50] MP4 writer initialized successfully
-[2026-01-06 18:45:50] MP4 writer created
-[2026-01-06 18:45:50] Encoder thread started
-[2026-01-06 18:45:50] Encoder loop started
-[2026-01-06 18:45:50] Created reusable staging texture: 1920x1080
-[2026-01-06 18:46:03] Stopping podcast recording
-[2026-01-06 18:46:03] Stopping podcast video recording
-[2026-01-06 18:46:03] Signaled encoder to stop
-[2026-01-06 18:46:03] Signaled recorders to stop
-[2026-01-06 18:46:03] Waiting for encoder to finish...
-[2026-01-06 18:46:03] Video capture loop stopped
-[2026-01-06 18:46:03] Audio capture loop stopped
-[2026-01-06 18:46:03] Mic capture loop stopped
-[2026-01-06 18:46:10] Encoded 30 video frames, 124800 audio samples
-[2026-01-06 18:46:51] Audio too far behind video (-0.00s lag), discarding remaining audio to prevent MF blocking
-[2026-01-06 18:46:51] Discarded 7 audio samples (audio was at 12.79s, video at 12.79s)
-[2026-01-06 18:46:51] Exiting encoder loop - all queues drained
-[2026-01-06 18:46:51] === RECORDING STATISTICS ===
-Video: 45 frames, duration: 12.79 seconds (last_ts: 127882900)
-Audio: 1227840 samples, duration: 12.79 seconds
-============================
-[2026-01-06 18:46:51] Calling writer.finalize()...
-[2026-01-06 18:46:51] Finalizing MP4 writer...
-[2026-01-06 18:46:51] MP4 writer finalized successfully
-[2026-01-06 18:46:51] MP4 file finalized successfully
-[2026-01-06 18:46:51] Encoder stopped
-[2026-01-06 18:46:51] Video recorder stopped
-[2026-01-06 18:46:51] System audio recorder stopped
-[2026-01-06 18:46:51] Mic audio recorder stopped
-[2026-01-06 18:46:51] Podcast video recording stopped successfully
+[2026-01-07 19:36:14] Application started.
+[2026-01-07 19:36:16] Menu: Prompt
+[2026-01-07 19:36:16] ConPty: Pipes created successfully
+[2026-01-07 19:36:16] ConPty: PseudoConsole created successfully
+[2026-01-07 19:36:16] ConPty: Process created successfully, PID=29264
+[2026-01-07 19:36:16] Prompt: Calling ReadFile...
+[2026-01-07 19:36:19] Prompt: ReadFile returned false, error code: WIN32_ERROR(109), total bytes read so far: 0

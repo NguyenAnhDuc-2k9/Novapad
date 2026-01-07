@@ -1,9 +1,15 @@
 use serde::{Deserialize, Serialize};
+use std::ffi::OsStr;
+use std::os::windows::prelude::*;
 use std::path::PathBuf;
+use std::path::{Component, Prefix};
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Globalization::GetUserDefaultLocaleName;
+use windows::Win32::Storage::FileSystem::GetDriveTypeW;
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::UI::Shell::{FOLDERID_Documents, SHGetKnownFolderPath};
+
+pub const DRIVE_REMOVABLE: u32 = 2;
 
 pub const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
 pub const VOICE_LIST_URL: &str =
@@ -128,7 +134,6 @@ pub struct AppSettings {
     pub open_behavior: OpenBehavior,
     pub language: Language,
     pub modified_marker_position: ModifiedMarkerPosition,
-    pub settings_in_current_dir: bool,
     pub tts_engine: TtsEngine,
     pub tts_voice: String,
     pub tts_only_multilingual: bool,
@@ -179,7 +184,6 @@ impl Default for AppSettings {
             open_behavior: OpenBehavior::NewTab,
             language: Language::Italian,
             modified_marker_position: ModifiedMarkerPosition::End,
-            settings_in_current_dir: false,
             tts_engine: TtsEngine::Edge,
             tts_voice: "it-IT-IsabellaNeural".to_string(),
             tts_only_multilingual: false,
@@ -226,18 +230,86 @@ impl Default for AppSettings {
     }
 }
 
-fn settings_store_path_appdata() -> Option<PathBuf> {
-    let base = std::env::var_os("APPDATA")?;
-    let mut path = PathBuf::from(base);
-    path.push("Novapad");
-    path.push("settings.json");
-    Some(path)
+fn wide(s: &str) -> Vec<u16> {
+    OsStr::new(s).encode_wide().chain(Some(0)).collect()
 }
 
-fn settings_store_path_current_dir() -> Option<PathBuf> {
-    let mut path = std::env::current_dir().ok()?;
-    path.push("settings.json");
-    Some(path)
+fn is_portable_folder(exe_dir: &std::path::Path) -> bool {
+    exe_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.eq_ignore_ascii_case("novapad portable"))
+        .unwrap_or(false)
+}
+
+fn exe_drive_type(exe: &std::path::Path) -> Option<u32> {
+    match exe.components().next()? {
+        Component::Prefix(p) => match p.kind() {
+            Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => {
+                let root = format!("{}:\\", letter as char);
+                Some(unsafe { GetDriveTypeW(windows::core::PCWSTR(wide(&root).as_ptr())) })
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn dir_is_writable(dir: &std::path::Path) -> bool {
+    if std::fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    let probe = dir.join(format!(".probe_{}", std::process::id()));
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+    {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn get_settings_path() -> PathBuf {
+    let exe_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
+    let exe_dir = exe_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .to_path_buf();
+
+    // Portable: <exe_dir>\config\settings.json
+    let portable_dir = exe_dir.join("config");
+
+    // Non-portable: %APPDATA%\Novapad\settings.json
+    let appdata_dir = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .map(|p| p.join("Novapad"))
+        .unwrap_or_else(|| portable_dir.clone());
+
+    // 1) "novapad portable" -> portable forzato
+    let preferred_dir = if is_portable_folder(&exe_dir) {
+        portable_dir.clone()
+    }
+    // 2) drive removibile -> portable
+    else if matches!(exe_drive_type(&exe_path), Some(t) if t == DRIVE_REMOVABLE) {
+        portable_dir.clone()
+    }
+    // 3) default -> AppData\Novapad
+    else {
+        appdata_dir
+    };
+
+    let settings_dir = if dir_is_writable(&preferred_dir) {
+        preferred_dir
+    } else {
+        let _ = std::fs::create_dir_all(&portable_dir);
+        portable_dir
+    };
+
+    settings_dir.join("settings.json")
 }
 
 const PORTABLE_MODE: bool = cfg!(feature = "portable");
@@ -299,55 +371,10 @@ pub fn load_settings() -> AppSettings {
         language: system_language(),
         ..Default::default()
     };
-    let appdata_path = settings_store_path_appdata();
-    let current_path = settings_store_path_current_dir();
-    let appdata_exists = appdata_path.as_ref().is_some_and(|path| path.exists());
-    let current_exists = current_path.as_ref().is_some_and(|path| path.exists());
 
-    if PORTABLE_MODE {
-        if appdata_exists {
-            return normalize_settings(
-                std::fs::read_to_string(appdata_path.as_ref().unwrap())
-                    .ok()
-                    .and_then(|data| serde_json::from_str(&data).ok())
-                    .unwrap_or_else(|| default_settings.clone()),
-            );
-        }
-        if current_exists {
-            if let Ok(data) = std::fs::read_to_string(current_path.as_ref().unwrap()) {
-                if let Ok(mut settings) = serde_json::from_str::<AppSettings>(&data) {
-                    settings.settings_in_current_dir = true;
-                    return normalize_settings(settings);
-                }
-            }
-        }
-        let mut settings = default_settings;
-        settings.settings_in_current_dir = true;
-        return normalize_settings(settings);
-    }
-
-    if let Some(path) = appdata_path.as_ref().filter(|path| path.exists()) {
-        let settings = normalize_settings(
-            std::fs::read_to_string(path)
-                .ok()
-                .and_then(|data| serde_json::from_str(&data).ok())
-                .unwrap_or_else(|| default_settings.clone()),
-        );
-
-        if settings.settings_in_current_dir {
-            if current_exists {
-                if let Ok(data) = std::fs::read_to_string(current_path.as_ref().unwrap()) {
-                    if let Ok(portable) = serde_json::from_str(&data) {
-                        return normalize_settings(portable);
-                    }
-                }
-            }
-        }
-        return settings;
-    }
-
-    if let Some(path) = current_path.as_ref().filter(|path| path.exists()) {
-        if let Ok(data) = std::fs::read_to_string(path) {
+    let path = get_settings_path();
+    if path.exists() {
+        if let Ok(data) = std::fs::read_to_string(&path) {
             if let Ok(settings) = serde_json::from_str(&data) {
                 return normalize_settings(settings);
             }
@@ -371,72 +398,17 @@ fn normalize_settings(mut settings: AppSettings) -> AppSettings {
 }
 
 pub fn save_settings(settings: AppSettings) {
-    let appdata_path = settings_store_path_appdata();
-    let current_path = settings_store_path_current_dir();
-    let appdata_exists = appdata_path.as_ref().is_some_and(|path| path.exists());
-    let prefer_current_dir = settings.settings_in_current_dir || (PORTABLE_MODE && !appdata_exists);
-    let path = if prefer_current_dir {
-        current_path.clone()
-    } else {
-        appdata_path.clone()
-    };
-    let Some(path) = path else {
-        return;
-    };
+    let path = get_settings_path();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let mut wrote = false;
     if let Ok(json) = serde_json::to_string_pretty(&settings) {
-        if std::fs::write(&path, json).is_ok() {
-            wrote = true;
-        }
-    }
-    if wrote {
-        if let (Some(appdata_path), Some(current_path)) = (appdata_path, current_path) {
-            if appdata_path != current_path {
-                let stale_path = if prefer_current_dir {
-                    appdata_path
-                } else {
-                    current_path
-                };
-                if stale_path.exists() {
-                    let _ = std::fs::remove_file(stale_path);
-                }
-            }
-        }
+        let _ = std::fs::write(path, json);
     }
 }
 
-pub fn save_settings_with_default_copy(settings: AppSettings, keep_default_copy: bool) {
-    save_settings(settings.clone());
-    if keep_default_copy && settings.settings_in_current_dir {
-        let Some(appdata_path) = settings_store_path_appdata() else {
-            return;
-        };
-        if let Some(parent) = appdata_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(json) = serde_json::to_string_pretty(&settings) {
-            let _ = std::fs::write(appdata_path, json);
-        }
-    }
-}
-
-pub fn untitled_base(language: Language) -> String {
-    crate::i18n::tr(language, "app.untitled_base")
-}
-
-pub fn untitled_title(language: Language, count: usize) -> String {
-    format!("{} {}", untitled_base(language), count)
-}
-
-pub fn recent_missing_message(language: Language) -> String {
-    crate::i18n::tr(language, "app.recent_missing")
-}
-
-pub fn confirm_save_message(language: Language, title: &str) -> String {
-    crate::i18n::tr_f(language, "app.confirm_save", &[("title", title)])
+pub fn save_settings_with_default_copy(settings: AppSettings, _keep_default_copy: bool) {
+    save_settings(settings);
 }
 
 pub fn confirm_title(language: Language) -> String {
@@ -485,4 +457,25 @@ pub fn error_save_file_message(language: Language, _err: impl std::fmt::Display)
         "app.error_save_file",
         &[("err", &format!("{_err}"))],
     )
+}
+
+pub fn confirm_save_message(language: Language, title: &str) -> String {
+    crate::i18n::tr_f(language, "app.confirm_save", &[("title", title)])
+}
+
+pub fn untitled_base(language: Language) -> String {
+    crate::i18n::tr(language, "app.untitled_base")
+}
+
+pub fn untitled_title(language: Language, number: usize) -> String {
+    let base = untitled_base(language);
+    if number == 0 {
+        base
+    } else {
+        format!("{} {}", base, number)
+    }
+}
+
+pub fn recent_missing_message(language: Language) -> String {
+    crate::i18n::tr(language, "app.recent_missing")
 }

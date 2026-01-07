@@ -1,0 +1,1 @@
+// New AVI encoder function
