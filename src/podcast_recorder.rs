@@ -423,6 +423,7 @@ pub fn start_recording(config: RecorderConfig) -> Result<RecorderHandle, String>
 }
 
 /// Start microphone audio recording using WASAPI (non-loopback)
+#[allow(dead_code)]
 fn start_mic_audio_recording(device_id: &str) -> Result<AudioRecorder, String> {
     use crate::audio_capture::AudioQueue;
 
@@ -470,6 +471,7 @@ fn start_mic_audio_recording(device_id: &str) -> Result<AudioRecorder, String> {
 }
 
 /// Microphone capture loop - similar to audio_capture but for mic
+#[allow(dead_code)]
 fn mic_capture_loop(
     audio_queue: Arc<audio_capture::AudioQueue>,
     stop: Arc<AtomicBool>,
@@ -779,6 +781,7 @@ impl MixBuffer {
         self.condvar.notify_one();
     }
 
+    #[allow(dead_code)]
     fn pop_chunk(&self, timeout: Duration) -> Option<Vec<i16>> {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
 
@@ -814,6 +817,7 @@ impl MixBuffer {
         Some(output)
     }
 
+    #[allow(dead_code)]
     fn is_empty(&self) -> bool {
         let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.mic.is_empty() && inner.system.is_empty()

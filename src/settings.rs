@@ -312,6 +312,7 @@ fn get_settings_path() -> PathBuf {
     settings_dir.join("settings.json")
 }
 
+#[allow(dead_code)]
 const PORTABLE_MODE: bool = cfg!(feature = "portable");
 
 fn system_language() -> Language {

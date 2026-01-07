@@ -1510,6 +1510,7 @@ struct VoicePanelLabels {
     label_multilingual: String,
     engine_edge: String,
     engine_sapi: String,
+    #[allow(dead_code)]
     engine_sapi4: String,
     voices_empty: String,
     favorites_empty: String,
@@ -3799,6 +3800,7 @@ pub(crate) unsafe fn save_file_dialog_with_encoding(
     }
 }
 
+#[allow(dead_code)]
 unsafe fn save_file_dialog_mp4(hwnd: HWND, suggested_name: Option<&str>) -> Option<PathBuf> {
     let pfd: IFileSaveDialog = CoCreateInstance(&FileSaveDialog, None, CLSCTX_ALL).ok()?;
 

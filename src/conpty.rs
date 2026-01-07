@@ -1,4 +1,4 @@
-use crate::accessibility::to_wide;
+use crate::{accessibility::to_wide, log_debug};
 use std::ffi::c_void;
 use std::mem::size_of;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
@@ -35,6 +35,11 @@ impl ConPtySession {
         unsafe {
             CreatePipe(&mut input_read, &mut input_write, None, 0)?;
         }
+
+        log_debug(&format!(
+            "ConPty: spawn() called with command: {}, cols: {}, rows: {}",
+            command, cols, rows
+        ));
 
         let mut output_read = HANDLE(0);
         let mut output_write = HANDLE(0);
@@ -111,7 +116,7 @@ impl ConPtySession {
                 PWSTR(cmdline.as_mut_ptr()),
                 None,
                 None,
-                false,
+                true,
                 flags,
                 None,
                 None,

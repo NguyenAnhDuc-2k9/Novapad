@@ -23,12 +23,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CB_GETCURSEL, CB_GETDROPPEDSTATE, CB_GETITEMDATA, CB_RESETCONTENT, CB_SETCURSEL,
     CB_SETITEMDATA, CBN_SELCHANGE, CBS_DROPDOWNLIST, CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW,
     DefWindowProcW, DestroyWindow, ES_AUTOHSCROLL, GWLP_USERDATA, GetParent, GetWindowLongPtrW,
-    GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IDYES, KillTimer, LoadCursorW,
-    MB_ICONQUESTION, MB_YESNO, MSG, MessageBoxW, PostMessageW, RegisterClassW, SW_HIDE, SW_SHOW,
-    SendMessageW, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowTextW, ShowWindow,
-    WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_NCDESTROY,
-    WM_NEXTDLGCTL, WM_SETFOCUS, WM_SETFONT, WM_TIMER, WNDCLASSW, WS_CAPTION, WS_CHILD,
-    WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, KillTimer, LoadCursorW, MSG,
+    PostMessageW, RegisterClassW, SW_HIDE, SW_SHOW, SendMessageW, SetForegroundWindow, SetTimer,
+    SetWindowLongPtrW, SetWindowTextW, ShowWindow, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND,
+    WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_NCDESTROY, WM_NEXTDLGCTL, WM_SETFOCUS, WM_SETFONT,
+    WM_TIMER, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT,
+    WS_EX_DLGMODALFRAME, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
 };
 use windows::core::{PCWSTR, w};
 
@@ -1463,7 +1463,6 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
     let old_language = settings.language;
     let old_marker_position = settings.modified_marker_position;
     let old_word_wrap = settings.word_wrap;
-    let old_word_wrap = settings.word_wrap;
     let (old_engine, old_voice, was_tts_active) = with_state(parent, |state| {
         (
             state.settings.tts_engine,
@@ -1621,7 +1620,7 @@ unsafe fn apply_options_dialog(hwnd: HWND) {
         state.settings = settings.clone();
     });
     let new_language = settings.language;
-    let mut keep_default_copy = false;
+    let keep_default_copy = false;
 
     save_settings_with_default_copy(settings.clone(), keep_default_copy);
 
