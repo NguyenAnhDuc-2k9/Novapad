@@ -147,20 +147,26 @@ pub fn ensure_nvda_controller_client() {
     }
 
     let url = format!(
-        "https://raw.githubusercontent.com/Ambro86/Novapad/main/dll/{}",
+        "https://raw.githubusercontent.com/Ambro86/Novapad/master/dll/{}",
         dll_name
     );
 
-    // Simple blocking download
-    // We print to stdout/stderr in case something goes wrong, but we don't crash
-    if let Ok(response) = reqwest::blocking::get(&url) {
-        if response.status().is_success() {
-            if let Ok(bytes) = response.bytes() {
-                if let Ok(mut file) = std::fs::File::create(&dll_path) {
-                    use std::io::Write;
-                    let _ = file.write_all(&bytes);
+    // Run download in a separate thread to not block startup
+    std::thread::spawn(move || {
+        if let Ok(response) = reqwest::blocking::get(&url) {
+            if response.status().is_success() {
+                if let Ok(bytes) = response.bytes() {
+                    // Unique temporary file to avoid partial reads if multiple processes try this
+                    // (though unlikely in this context, good practice)
+                    let tmp_path = dll_path.with_extension("tmp");
+                    if let Ok(mut file) = std::fs::File::create(&tmp_path) {
+                        use std::io::Write;
+                        if file.write_all(&bytes).is_ok() {
+                            let _ = std::fs::rename(tmp_path, dll_path);
+                        }
+                    }
                 }
             }
         }
-    }
+    });
 }
