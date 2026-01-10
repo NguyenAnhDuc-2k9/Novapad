@@ -275,12 +275,6 @@ pub unsafe fn create_menus(hwnd: HWND, language: Language) -> (HMENU, HMENU) {
         IDM_FILE_CLOSE_OTHERS,
         &labels.file_close_others,
     );
-    let _ = append_menu_string(
-        file_menu,
-        MF_STRING,
-        IDM_FILE_CLOSE_OTHERS,
-        &labels.file_close_others,
-    );
     let _ = AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = append_menu_string(
         file_menu,

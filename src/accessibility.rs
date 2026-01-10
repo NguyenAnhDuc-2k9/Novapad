@@ -1,3 +1,4 @@
+use crate::settings;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
 use windows::Win32::Foundation::HWND;
@@ -101,12 +102,13 @@ pub fn nvda_speak(text: &str) -> bool {
     unsafe {
         if NVDA_HANDLE == 0 {
             let dll_name = if cfg!(target_arch = "x86_64") {
-                to_wide("nvdaControllerClient64.dll")
+                "nvdaControllerClient64.dll"
             } else {
-                to_wide("nvdaControllerClient32.dll")
+                "nvdaControllerClient32.dll"
             };
-
-            if let Ok(h) = LoadLibraryW(PCWSTR(dll_name.as_ptr())) {
+            let dll_path = settings::settings_dir().join(dll_name);
+            let dll_path_wide = to_wide(&dll_path.to_string_lossy());
+            if let Ok(h) = LoadLibraryW(PCWSTR(dll_path_wide.as_ptr())) {
                 NVDA_HANDLE = h.0;
                 let proc_name = std::ffi::CString::new("nvdaController_speakText").unwrap();
                 if let Some(addr) = GetProcAddress(
@@ -136,11 +138,7 @@ pub fn ensure_nvda_controller_client() {
         "nvdaControllerClient32.dll"
     };
 
-    let exe_path = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let exe_dir = exe_path
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."));
-    let dll_path = exe_dir.join(dll_name);
+    let dll_path = settings::settings_dir().join(dll_name);
 
     if dll_path.exists() {
         return;

@@ -69,6 +69,10 @@ Na janela adicionar/editar: digite "Palavra original", depois Tab para "Palavra 
 Na lista, Tab move para "Editar entrada" e "Remover entrada selecionada".
 As substituicoes do dicionario sao aplicadas durante a leitura e criacao de audiolivros e sao salvas.
 Importar transcricao do YouTube: cole uma URL, escolha o idioma e importe o texto para o editor (Ctrl+Y). Opcional com timestamps.
+Terminal acessivel: abre um terminal dedicado com saida estavel para leitores de tela (Ctrl+Shift+T).
+RSS / Artigos: abre a janela RSS/Artigos, adicione fontes, expanda um feed e pressione Enter para importar um artigo para o editor.
+Na janela RSS, selecione um feed ou site e pressione Delete para remove-lo da biblioteca.
+No menu contextual de um feed ou site voce pode modificar ou eliminar um RSS ou site.
 
 Opcoes:
 Idioma: alterar o idioma da interface.

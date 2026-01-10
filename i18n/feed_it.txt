@@ -33,7 +33,6 @@ Formiche | https://www.formiche.net/feed/
 Linkiesta | https://www.linkiesta.it/feed/
 Il Foglio | https://www.ilfoglio.it/rss.xml
 Il Giornale | https://www.ilgiornale.it/rss.xml
-Avvenire | https://www.avvenire.it/rss
 Quotidiano.net | https://www.quotidiano.net/rss
 Today | https://www.today.it/rss/
 RomaToday | https://www.romatoday.it/rss/

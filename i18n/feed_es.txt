@@ -1,0 +1,16 @@
+EL PAÍS – Portada | https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada
+El Mundo – Portada | http://estaticos.elmundo.es/elmundo/rss/portada.xml
+RTVE Noticias – Temas noticias | https://www.rtve.es/rss/temas_noticias.xml
+RTVE Noticias – España | https://www.rtve.es/rss/temas_espana.xml
+RTVE Noticias – Mundo | https://www.rtve.es/rss/temas_mundo.xml
+La Vanguardia – Portada | https://www.lavanguardia.com/rss/home.xml
+La Vanguardia – Internacional | https://www.lavanguardia.com/rss/internacional.xml
+La Vanguardia – Economía | https://www.lavanguardia.com/rss/economia.xml
+El Confidencial – España | https://rss.elconfidencial.com/espana/
+El Confidencial – Mundo | https://rss.elconfidencial.com/mundo/
+elDiario.es – Portada | https://www.eldiario.es/rss/
+El HuffPost (España) – Portada | https://www.huffingtonpost.es/feeds/index.xml
+Expansión – Portada | https://e00-expansion.uecdn.es/rss/portada.xml
+MARCA – Portada | https://e00-marca.uecdn.es/rss/portada.xml
+Xataka – Tecnología | https://feeds.weblogssl.com/xataka2
+20minutos – Portada | https://www.20minutos.es/rss/

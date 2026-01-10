@@ -3,7 +3,6 @@
 Versione 0.5.8 - 2026-01-09
 Nuove funzionalita
 • Aggiunto il controllo volume per microfono e audio di sistema durante la registrazione podcast.
-• Aggiunte le funzioni di modifica menzionate sopra.
 • Aggiunta una nuova funzione per importare articoli da siti web o feed RSS, includendo per ogni lingua i feed piu importanti.
 • Aggiunta la funzione per rimuovere tutti i segnalibri del file corrente.
 • Aggiunta la funzione per rimuovere le linee duplicate e le linee duplicate consecutive.
@@ -11,6 +10,11 @@ Nuove funzionalita
 • Inserita la voce Donazioni nel menu Aiuto per tutte le lingue.
 Miglioramenti
 • Migliorato il terminale accessibile evitando alcuni crash.
+• Migliorati e sistemati access key e scorciatoie da tastiera del programma.
+• Corretto un problema per cui chiudendo la finestra di riproduzione audio la riproduzione non si fermava.
+• Aggiunte finestre di conferma per azioni importanti (es. rimozione linee duplicate, rimozione trattini a fine riga, rimozione di tutti i segnalibri del file corrente). Nessuna conferma se l'azione non si applica.
+• Aggiunta la possibilita di eliminare feed/siti RSS dalla libreria selezionandoli e premendo Canc.
+• Aggiunto un menu contestuale nella finestra RSS per modificare o eliminare feed/siti RSS.
 • Rimossa la casella per spostare le impostazioni nella cartella corrente: ora il programma lo gestisce automaticamente (se la cartella dell'exe si chiama "novapad portable" o l'exe e su un drive rimovibile, salva nella cartella dell'exe in `config`, altrimenti in `%APPDATA%\\Novapad`, con fallback a `config` se la cartella preferita non e scrivibile).
 
 Versione 0.5.7 - 2026-01-05
@@ -27,11 +31,11 @@ Miglioramenti
 
 Versione 0.5.6 - 2026-01-04
 Fix
- Migliorata Trova nei file: premendo Invio apre il file esattamente alla posizione dello snippet selezionato.
+  Migliorata Trova nei file: premendo Invio apre il file esattamente alla posizione dello snippet selezionato.
 Miglioramenti
- Aggiunto supporto PPT/PPTX.
- Per i formati non testuali, Salva ora propone sempre .txt per evitare di rovinare la formattazione (PDF/DOC/DOCX/EPUB/HTML/PPT/PPTX).
- Aggiunta registrazione podcast da microfono e audio di sistema (menu File, Ctrl+Shift+R).
+  Aggiunto supporto PPT/PPTX.
+  Per i formati non testuali, Salva ora propone sempre .txt per evitare di rovinare la formattazione (PDF/DOC/DOCX/EPUB/HTML/PPT/PPTX).
+  Aggiunta registrazione podcast da microfono e audio di sistema (menu File, Ctrl+Shift+R).
 
 Versione 0.5.5 - 2026-01-03
 Nuove funzionalita

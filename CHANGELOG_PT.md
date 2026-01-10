@@ -2,7 +2,6 @@
 Versao 0.5.8 - 2026-01-09
 Novas funcionalidades
 • Adicionado controle de volume para o microfone e o audio do sistema ao gravar podcasts.
-• Adicionadas as funcoes de edicao mencionadas acima.
 • Adicionada uma nova funcao para importar artigos de sites ou feeds RSS, incluindo os feeds mais importantes para cada idioma.
 • Adicionada uma funcao para remover todos os marcadores do arquivo atual.
 • Adicionada a funcao para remover linhas duplicadas e linhas duplicadas consecutivas.
@@ -10,6 +9,11 @@ Novas funcionalidades
 • Adicionada a entrada Doacoes no menu Ajuda para todos os idiomas.
 Melhorias
 • Melhorado o terminal acessivel para evitar alguns crashes.
+• Melhoradas e corrigidas as access key e os atalhos de teclado do programa.
+• Corrigido um problema em que, ao fechar a janela de reproducao de audio, a reproducao nao parava.
+• Adicionadas janelas de confirmacao para acoes importantes (ex.: remover linhas duplicadas, remover hifens no fim da linha, remover todos os marcadores do arquivo atual). Nenhuma confirmacao e mostrada se a acao nao se aplica.
+• Adicionada a possibilidade de excluir feeds/sites RSS da biblioteca selecionando-os e pressionando Delete.
+• Adicionado um menu contextual na janela RSS para modificar ou eliminar feeds/sites RSS.
 • Removida a opcao para mover as definicoes para a pasta atual; agora o programa faz isso automaticamente (se a pasta do exe se chama "novapad portable" ou o exe esta em unidade removivel, salva na pasta do exe em `config`, senao em `%APPDATA%\\Novapad`, com fallback para `config` se a pasta preferida nao for gravavel).
 
 Versao 0.5.7 - 2026-01-05
@@ -26,11 +30,11 @@ Melhorias
 
 Versao 0.5.6 - 2026-01-04
 Correcoes
- Melhorado Procurar em arquivos: ao pressionar Enter abre o arquivo exatamente no trecho selecionado.
+  Melhorado Procurar em arquivos: ao pressionar Enter abre o arquivo exatamente no trecho selecionado.
 Melhorias
- Suporte a PPT/PPTX.
- Para formatos nao textuais, Salvar agora propoe sempre .txt para evitar corromper a formatacao (PDF/DOC/DOCX/EPUB/HTML/PPT/PPTX).
- Gravacao de podcast do microfone e/ou audio do sistema (menu Arquivo, Ctrl+Shift+R).
+  Suporte a PPT/PPTX.
+  Para formatos nao textuais, Salvar agora propoe sempre .txt para evitar corromper a formatacao (PDF/DOC/DOCX/EPUB/HTML/PPT/PPTX).
+  Gravacao de podcast do microfone e/ou audio do sistema (menu Arquivo, Ctrl+Shift+R).
 
 Versao 0.5.5 - 2026-01-03
 Novas funcionalidades

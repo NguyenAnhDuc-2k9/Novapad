@@ -2,7 +2,6 @@
 Version 0.5.8 - 2026-01-09
 New features
 • Added volume control for the microphone and system audio when recording podcasts.
-• Added the editing functions mentioned above.
 • Added a new feature to import articles from websites or RSS feeds, including the most important feeds for each language.
 • Added a function to remove all bookmarks for the current file.
 • Added a function to remove duplicate lines and duplicate consecutive lines.
@@ -10,6 +9,11 @@ New features
 • Added a Donations entry in the Help menu for all languages.
 Improvements
 • Improved the accessible terminal to prevent some crashes.
+• Improved and fixed access keys and keyboard shortcuts across the app.
+• Fixed an issue where closing the audio playback window did not stop playback.
+• Added confirmation dialogs for important actions (e.g., remove duplicate lines, remove end-of-line hyphens, remove all bookmarks in the current file). No dialog is shown when the action does not apply.
+• Added the ability to delete RSS feeds/sites from the library by selecting them and pressing Delete.
+• Added a context menu in the RSS window to edit or delete RSS feeds/sites.
 • Removed the setting to move settings to the current folder; the app now handles this automatically based on location (if the exe folder is named "novapad portable" or the exe is on a removable drive, settings go to the exe folder in `config`, otherwise `%APPDATA%\\Novapad`, with fallback to the exe `config` if the preferred folder is not writable).
 
 Version 0.5.7 - 2026-01-05
@@ -26,11 +30,11 @@ Improvements
 
 Version 0.5.6 - 2026-01-04
 Fixes
- Improved Find in Files so pressing Enter opens the file exactly at the selected snippet.
+  Improved Find in Files so pressing Enter opens the file exactly at the selected snippet.
 Improvements
- Added PPT/PPTX support (open as text).
- Opening non-text formats now saves as .txt to avoid formatting corruption (PDF/DOC/DOCX/EPUB/HTML/PPT/PPTX).
- Added podcast recording from microphone and system audio (File menu, Ctrl+Shift+R).
+  Added PPT/PPTX support (open as text).
+  Opening non-text formats now saves as .txt to avoid formatting corruption (PDF/DOC/DOCX/EPUB/HTML/PPT/PPTX).
+  Added podcast recording from microphone and system audio (File menu, Ctrl+Shift+R).
 
 Version 0.5.5 – 2026-01-03
 New features

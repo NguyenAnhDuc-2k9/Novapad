@@ -564,6 +564,9 @@ unsafe extern "system" fn import_wndproc(
                 EnableWindow(state.parent, true);
                 SetForegroundWindow(state.parent);
                 let _ = PostMessageW(state.parent, WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
+                if let Some(hwnd_edit) = get_active_edit(state.parent) {
+                    NotifyWinEvent(EVENT_OBJECT_FOCUS, hwnd_edit, OBJID_CLIENT, CHILDID_SELF);
+                }
             });
             LRESULT(0)
         }

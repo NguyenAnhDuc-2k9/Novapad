@@ -147,24 +147,24 @@ pub unsafe fn select_all_active_edit(hwnd: HWND) {
     }
 }
 
-pub unsafe fn remove_duplicate_lines_active_edit(hwnd: HWND) {
-    apply_text_op_active_edit(hwnd, crate::text_ops::remove_duplicate_lines);
+pub unsafe fn remove_duplicate_lines_active_edit(hwnd: HWND) -> bool {
+    apply_text_op_active_edit(hwnd, crate::text_ops::remove_duplicate_lines)
 }
 
-pub unsafe fn remove_duplicate_consecutive_lines_active_edit(hwnd: HWND) {
-    apply_text_op_active_edit(hwnd, crate::text_ops::remove_duplicate_consecutive_lines);
+pub unsafe fn remove_duplicate_consecutive_lines_active_edit(hwnd: HWND) -> bool {
+    apply_text_op_active_edit(hwnd, crate::text_ops::remove_duplicate_consecutive_lines)
 }
 
-unsafe fn apply_text_op_active_edit<F>(hwnd: HWND, op: F)
+unsafe fn apply_text_op_active_edit<F>(hwnd: HWND, op: F) -> bool
 where
     F: Fn(&str) -> String,
 {
     let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
-        return;
+        return false;
     };
     let text = get_edit_text(hwnd_edit);
     if text.is_empty() {
-        return;
+        return false;
     }
 
     let mut selection = CHARRANGE { cpMin: 0, cpMax: 0 };
@@ -190,7 +190,7 @@ where
     let processed = op(affected);
 
     if processed == affected {
-        return;
+        return false;
     }
 
     let mut replace_range = CHARRANGE {
@@ -236,6 +236,7 @@ where
     end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
+    true
 }
 
 pub unsafe fn apply_word_wrap_to_all_edits(hwnd: HWND, word_wrap: bool) {
@@ -366,17 +367,17 @@ pub unsafe fn handle_normalize_edit_change(hwnd: HWND, hwnd_edit: HWND) {
     });
 }
 
-pub unsafe fn strip_markdown_active_edit(hwnd: HWND) {
+pub unsafe fn strip_markdown_active_edit(hwnd: HWND) -> bool {
     let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
-        return;
+        return false;
     };
     let text = get_edit_text(hwnd_edit);
     if text.is_empty() {
-        return;
+        return false;
     }
     let cleaned = strip_markdown_text(&text);
     if cleaned == text {
-        return;
+        return false;
     }
     let mut replace_range = CHARRANGE {
         cpMin: 0,
@@ -400,15 +401,16 @@ pub unsafe fn strip_markdown_active_edit(hwnd: HWND) {
     end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
+    true
 }
 
-pub unsafe fn normalize_whitespace_active_edit(hwnd: HWND) {
+pub unsafe fn normalize_whitespace_active_edit(hwnd: HWND) -> bool {
     let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
-        return;
+        return false;
     };
     let text = get_edit_text(hwnd_edit);
     if text.is_empty() {
-        return;
+        return false;
     }
 
     let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
@@ -480,7 +482,7 @@ pub unsafe fn normalize_whitespace_active_edit(hwnd: HWND) {
     let affected = &text[affected_start..affected_end];
     let normalized = normalize_whitespace_block(affected, line_ending);
     if normalized == affected {
-        return;
+        return false;
     }
     let was_dirty = with_state(hwnd, |state| {
         state
@@ -534,15 +536,16 @@ pub unsafe fn normalize_whitespace_active_edit(hwnd: HWND) {
     );
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
+    true
 }
 
-pub unsafe fn hard_line_break_active_edit(hwnd: HWND) {
+pub unsafe fn hard_line_break_active_edit(hwnd: HWND) -> bool {
     let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
-        return;
+        return false;
     };
     let text = get_edit_text(hwnd_edit);
     if text.is_empty() {
-        return;
+        return false;
     }
     let wrap_width = with_state(hwnd, |state| state.settings.wrap_width).unwrap_or(80);
     let wrap_width = wrap_width.max(1) as usize;
@@ -564,7 +567,7 @@ pub unsafe fn hard_line_break_active_edit(hwnd: HWND) {
     } else {
         let caret = utf16_index_to_byte(&text, selection.cpMin);
         let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
-            return;
+            return false;
         };
         (start, end, trailing)
     };
@@ -572,7 +575,7 @@ pub unsafe fn hard_line_break_active_edit(hwnd: HWND) {
     let target = &text[range_start..range_end];
     let reformatted = reflow_block_text(target, wrap_width, line_ending, has_trailing_newline);
     if reformatted == target {
-        return;
+        return false;
     }
 
     let mut replace_range = CHARRANGE {
@@ -597,15 +600,16 @@ pub unsafe fn hard_line_break_active_edit(hwnd: HWND) {
     end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
+    true
 }
 
-pub unsafe fn order_items_active_edit(hwnd: HWND) {
+pub unsafe fn order_items_active_edit(hwnd: HWND) -> bool {
     let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
-        return;
+        return false;
     };
     let text = get_edit_text(hwnd_edit);
     if text.is_empty() {
-        return;
+        return false;
     }
 
     let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
@@ -638,7 +642,7 @@ pub unsafe fn order_items_active_edit(hwnd: HWND) {
     } else {
         let caret = utf16_index_to_byte(&text, selection.cpMin);
         let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
-            return;
+            return false;
         };
         (start, end, trailing)
     };
@@ -646,7 +650,7 @@ pub unsafe fn order_items_active_edit(hwnd: HWND) {
     let affected = &text[affected_start..affected_end];
     let ordered = order_lines_block(affected, line_ending, has_trailing_newline);
     if ordered == affected {
-        return;
+        return false;
     }
 
     let mut replace_range = CHARRANGE {
@@ -671,15 +675,16 @@ pub unsafe fn order_items_active_edit(hwnd: HWND) {
     end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
+    true
 }
 
-pub unsafe fn keep_unique_items_active_edit(hwnd: HWND) {
+pub unsafe fn keep_unique_items_active_edit(hwnd: HWND) -> bool {
     let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
-        return;
+        return false;
     };
     let text = get_edit_text(hwnd_edit);
     if text.is_empty() {
-        return;
+        return false;
     }
 
     let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
@@ -712,7 +717,7 @@ pub unsafe fn keep_unique_items_active_edit(hwnd: HWND) {
     } else {
         let caret = utf16_index_to_byte(&text, selection.cpMin);
         let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
-            return;
+            return false;
         };
         (start, end, trailing)
     };
@@ -720,7 +725,7 @@ pub unsafe fn keep_unique_items_active_edit(hwnd: HWND) {
     let affected = &text[affected_start..affected_end];
     let cleaned = keep_unique_lines_block(affected, line_ending, has_trailing_newline);
     if cleaned == affected {
-        return;
+        return false;
     }
 
     let mut replace_range = CHARRANGE {
@@ -745,15 +750,16 @@ pub unsafe fn keep_unique_items_active_edit(hwnd: HWND) {
     end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
+    true
 }
 
-pub unsafe fn reverse_items_active_edit(hwnd: HWND) {
+pub unsafe fn reverse_items_active_edit(hwnd: HWND) -> bool {
     let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
-        return;
+        return false;
     };
     let text = get_edit_text(hwnd_edit);
     if text.is_empty() {
-        return;
+        return false;
     }
 
     let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
@@ -786,7 +792,7 @@ pub unsafe fn reverse_items_active_edit(hwnd: HWND) {
     } else {
         let caret = utf16_index_to_byte(&text, selection.cpMin);
         let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
-            return;
+            return false;
         };
         (start, end, trailing)
     };
@@ -794,7 +800,7 @@ pub unsafe fn reverse_items_active_edit(hwnd: HWND) {
     let affected = &text[affected_start..affected_end];
     let reversed = reverse_lines_block(affected, line_ending, has_trailing_newline);
     if reversed == affected {
-        return;
+        return false;
     }
 
     let mut replace_range = CHARRANGE {
@@ -819,21 +825,22 @@ pub unsafe fn reverse_items_active_edit(hwnd: HWND) {
     end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
+    true
 }
 
-pub unsafe fn quote_lines_active_edit(hwnd: HWND) {
+pub unsafe fn quote_lines_active_edit(hwnd: HWND) -> bool {
     let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
-        return;
+        return false;
     };
     let text = get_edit_text(hwnd_edit);
     if text.is_empty() {
-        return;
+        return false;
     }
 
     let quote_prefix = with_state(hwnd, |state| state.settings.quote_prefix.clone())
         .unwrap_or_else(|| "> ".to_string());
     if quote_prefix.is_empty() {
-        return;
+        return false;
     }
 
     let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
@@ -866,7 +873,7 @@ pub unsafe fn quote_lines_active_edit(hwnd: HWND) {
     } else {
         let caret = utf16_index_to_byte(&text, selection.cpMin);
         let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
-            return;
+            return false;
         };
         (start, end, trailing)
     };
@@ -874,7 +881,7 @@ pub unsafe fn quote_lines_active_edit(hwnd: HWND) {
     let affected = &text[affected_start..affected_end];
     let quoted = quote_lines_block(affected, line_ending, has_trailing_newline, &quote_prefix);
     if quoted == affected {
-        return;
+        return false;
     }
 
     let mut replace_range = CHARRANGE {
@@ -899,21 +906,22 @@ pub unsafe fn quote_lines_active_edit(hwnd: HWND) {
     end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
+    true
 }
 
-pub unsafe fn unquote_lines_active_edit(hwnd: HWND) {
+pub unsafe fn unquote_lines_active_edit(hwnd: HWND) -> bool {
     let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
-        return;
+        return false;
     };
     let text = get_edit_text(hwnd_edit);
     if text.is_empty() {
-        return;
+        return false;
     }
 
     let quote_prefix = with_state(hwnd, |state| state.settings.quote_prefix.clone())
         .unwrap_or_else(|| "> ".to_string());
     if quote_prefix.is_empty() {
-        return;
+        return false;
     }
 
     let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
@@ -946,7 +954,7 @@ pub unsafe fn unquote_lines_active_edit(hwnd: HWND) {
     } else {
         let caret = utf16_index_to_byte(&text, selection.cpMin);
         let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
-            return;
+            return false;
         };
         (start, end, trailing)
     };
@@ -954,7 +962,7 @@ pub unsafe fn unquote_lines_active_edit(hwnd: HWND) {
     let affected = &text[affected_start..affected_end];
     let unquoted = unquote_lines_block(affected, line_ending, has_trailing_newline, &quote_prefix);
     if unquoted == affected {
-        return;
+        return false;
     }
 
     let mut replace_range = CHARRANGE {
@@ -979,15 +987,16 @@ pub unsafe fn unquote_lines_active_edit(hwnd: HWND) {
     end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
+    true
 }
 
-pub unsafe fn join_lines_active_edit(hwnd: HWND) {
+pub unsafe fn join_lines_active_edit(hwnd: HWND) -> bool {
     let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
-        return;
+        return false;
     };
     let text = get_edit_text(hwnd_edit);
     if text.is_empty() {
-        return;
+        return false;
     }
 
     let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
@@ -1020,7 +1029,7 @@ pub unsafe fn join_lines_active_edit(hwnd: HWND) {
     } else {
         let caret = utf16_index_to_byte(&text, selection.cpMin);
         let Some((start, end, trailing)) = paragraph_range_bytes(&text, caret) else {
-            return;
+            return false;
         };
         (start, end, trailing)
     };
@@ -1028,7 +1037,7 @@ pub unsafe fn join_lines_active_edit(hwnd: HWND) {
     let affected = &text[affected_start..affected_end];
     let joined = join_lines_block(affected, line_ending, has_trailing_newline);
     if joined == affected {
-        return;
+        return false;
     }
 
     let mut replace_range = CHARRANGE {
@@ -1053,15 +1062,16 @@ pub unsafe fn join_lines_active_edit(hwnd: HWND) {
     end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
+    true
 }
 
-pub unsafe fn clean_end_of_line_hyphens_active_edit(hwnd: HWND) {
+pub unsafe fn clean_end_of_line_hyphens_active_edit(hwnd: HWND) -> bool {
     let Some(hwnd_edit) = crate::get_active_edit(hwnd) else {
-        return;
+        return false;
     };
     let text = get_edit_text(hwnd_edit);
     if text.is_empty() {
-        return;
+        return false;
     }
 
     let line_ending = if text.contains("\r\n") { "\r\n" } else { "\n" };
@@ -1098,7 +1108,7 @@ pub unsafe fn clean_end_of_line_hyphens_active_edit(hwnd: HWND) {
     let affected = &text[affected_start..affected_end];
     let cleaned = clean_end_of_line_hyphens_block(affected, line_ending, has_trailing_newline);
     if cleaned == affected {
-        return;
+        return false;
     }
 
     let mut replace_range = CHARRANGE {
@@ -1123,6 +1133,7 @@ pub unsafe fn clean_end_of_line_hyphens_active_edit(hwnd: HWND) {
     end_single_undo_action(hwnd_edit);
     mark_dirty_from_edit(hwnd, hwnd_edit);
     SetFocus(hwnd_edit);
+    true
 }
 
 pub unsafe fn text_stats_active_edit(hwnd: HWND) {

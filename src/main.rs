@@ -58,6 +58,7 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, CoTaskMemFree};
 use windows::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, LoadLibraryW};
+use windows::Win32::UI::Accessibility::NotifyWinEvent;
 use windows::Win32::UI::Controls::Dialogs::{
     FINDREPLACE_FLAGS, FINDREPLACEW, GetSaveFileNameW, OFN_EXPLORER, OFN_OVERWRITEPROMPT,
     OFN_PATHMUSTEXIST, OPENFILENAMEW,
@@ -70,8 +71,8 @@ use windows::Win32::UI::Controls::{
     TCN_SELCHANGE, WC_BUTTON, WC_COMBOBOXW, WC_STATIC, WC_TABCONTROLW,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    EnableWindow, GetFocus, GetKeyState, SetActiveWindow, SetFocus, VK_CONTROL, VK_ESCAPE, VK_F1,
-    VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_RETURN, VK_SHIFT, VK_TAB,
+    EnableWindow, GetFocus, GetKeyState, SetActiveWindow, SetFocus, VK_APPS, VK_CONTROL, VK_ESCAPE,
+    VK_F1, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F10, VK_RETURN, VK_SHIFT, VK_TAB,
 };
 use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
 use windows::Win32::UI::Shell::{
@@ -82,24 +83,26 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     ACCEL, AppendMenuW, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, CB_ADDSTRING, CB_GETCURSEL,
     CB_GETDROPPEDSTATE, CB_GETITEMDATA, CB_RESETCONTENT, CB_SETCURSEL, CB_SETITEMDATA,
-    CBN_SELCHANGE, CBS_DROPDOWNLIST, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
-    CheckMenuItem, CreateAcceleratorTableW, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
-    DestroyWindow, DispatchMessageW, EN_CHANGE, EnumWindows, FALT, FCONTROL, FSHIFT, FVIRTKEY,
-    FindWindowW, GWLP_USERDATA, GetClassNameW, GetCursorPos, GetMenu, GetMessageW, GetParent,
-    GetWindowLongPtrW, HACCEL, HCURSOR, HICON, HMENU, IDC_ARROW, IDI_APPLICATION, KillTimer,
-    LoadCursorW, LoadIconW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_BYCOMMAND, MF_CHECKED,
-    MF_STRING, MF_UNCHECKED, MSG, MessageBoxW, PostMessageW, PostQuitMessage, RegisterClassW,
+    CBN_SELCHANGE, CBS_DROPDOWNLIST, CHILDID_SELF, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW,
+    CW_USEDEFAULT, CallWindowProcW, CheckMenuItem, CreateAcceleratorTableW, CreatePopupMenu,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EN_CHANGE,
+    EVENT_OBJECT_FOCUS, EnumWindows, FALT, FCONTROL, FSHIFT, FVIRTKEY, FindWindowW, GWLP_USERDATA,
+    GWLP_WNDPROC, GetClassNameW, GetCursorPos, GetMenu, GetMessageW, GetParent, GetWindowLongPtrW,
+    HACCEL, HCURSOR, HICON, HMENU, IDC_ARROW, IDI_APPLICATION, KillTimer, LoadCursorW, LoadIconW,
+    MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_BYCOMMAND, MF_CHECKED, MF_STRING, MF_UNCHECKED,
+    MSG, MessageBoxW, OBJID_CLIENT, PostMessageW, PostQuitMessage, RegisterClassW,
     RegisterWindowMessageW, SW_HIDE, SW_SHOW, SendMessageW, SetForegroundWindow, SetTimer,
     SetWindowLongPtrW, SetWindowTextW, ShowWindow, TPM_RIGHTBUTTON, TrackPopupMenu,
     TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND,
     WM_CONTEXTMENU, WM_COPY, WM_COPYDATA, WM_CREATE, WM_CUT, WM_DESTROY, WM_DROPFILES, WM_KEYDOWN,
     WM_NCDESTROY, WM_NEXTDLGCTL, WM_NOTIFY, WM_NULL, WM_PASTE, WM_SETFOCUS, WM_SETFONT, WM_SIZE,
-    WM_SYSKEYDOWN, WM_TIMER, WM_UNDO, WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE,
-    WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
+    WM_SYSKEYDOWN, WM_TIMER, WM_UNDO, WNDCLASSW, WNDPROC, WS_CHILD, WS_CLIPCHILDREN,
+    WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
 };
 use windows::core::{Interface, PCWSTR, PWSTR, implement, w};
 
 const EM_SCROLLCARET: u32 = 0x00B7;
+const EM_SETSEL: u32 = 0x00B1;
 
 use crate::app_windows::find_in_files_window::FindInFilesCache;
 
@@ -114,6 +117,8 @@ const WM_TTS_SAPI_VOICES_LOADED: u32 = WM_APP + 8;
 pub const WM_FOCUS_EDITOR: u32 = WM_APP + 30;
 const FOCUS_EDITOR_TIMER_ID: usize = 1;
 const FOCUS_EDITOR_TIMER_ID2: usize = 2;
+const FOCUS_EDITOR_TIMER_ID3: usize = 3;
+const FOCUS_EDITOR_TIMER_ID4: usize = 4;
 const COPYDATA_OPEN_FILE: usize = 1;
 const VOICE_PANEL_ID_ENGINE: usize = 8001;
 const VOICE_PANEL_ID_VOICE: usize = 8002;
@@ -132,8 +137,16 @@ pub(crate) fn focus_editor(hwnd: HWND) {
         .flatten()
         {
             SetFocus(hwnd_edit);
+            let _ = SendMessageW(hwnd_edit, EM_SETSEL, WPARAM(0), LPARAM(0));
+            let _ = SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
             let _ = SendMessageW(hwnd_edit, WM_SETFOCUS, WPARAM(0), LPARAM(0));
             let _ = PostMessageW(hwnd, WM_NEXTDLGCTL, WPARAM(hwnd_edit.0 as usize), LPARAM(1));
+            let _ = NotifyWinEvent(
+                EVENT_OBJECT_FOCUS,
+                hwnd_edit,
+                OBJID_CLIENT.0,
+                CHILDID_SELF as i32,
+            );
         }
     }
 }
@@ -151,9 +164,7 @@ struct PdfLoadingState {
 }
 
 fn log_path() -> Option<PathBuf> {
-    let base = std::env::var_os("APPDATA")?;
-    let mut path = PathBuf::from(base);
-    path.push("Novapad");
+    let mut path = settings::settings_dir();
     path.push("Novapad.log");
     Some(path)
 }
@@ -240,6 +251,29 @@ pub(crate) fn log_debug(message: &str) {
     }
 }
 
+fn clean_menu_label(label: &str) -> String {
+    let main = label.split('\t').next().unwrap_or(label);
+    let mut cleaned = String::with_capacity(main.len());
+    for ch in main.chars() {
+        if ch != '&' {
+            cleaned.push(ch);
+        }
+    }
+    cleaned.trim().to_string()
+}
+
+fn confirm_menu_action(hwnd: HWND, key: &str) {
+    let language = unsafe { with_state(hwnd, |state| state.settings.language).unwrap_or_default() };
+    let label = i18n::tr(language, key);
+    let cleaned = clean_menu_label(&label);
+    if !cleaned.is_empty() {
+        let message = i18n::tr_f(language, "app.action_completed", &[("action", &cleaned)]);
+        unsafe {
+            show_info(hwnd, language, &message);
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct AppState {
     hwnd_tab: HWND,
@@ -293,6 +327,8 @@ pub(crate) struct AppState {
     voice_favorites_visible: bool,
     voice_label_favorites: HWND,
     voice_combo_favorites: HWND,
+    voice_combo_voice_proc: WNDPROC,
+    voice_combo_favorites_proc: WNDPROC,
     voice_context_voice: Option<FavoriteVoice>,
     find_in_files_cache: Option<FindInFilesCache>,
     normalize_undo: Option<NormalizeUndo>,
@@ -356,6 +392,7 @@ fn main() -> windows::core::Result<()> {
                         }
                     }
                     SetForegroundWindow(existing);
+                    let _ = PostMessageW(existing, WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
                     return Ok(());
                 }
             }
@@ -415,6 +452,47 @@ fn main() -> windows::core::Result<()> {
                 if (GetKeyState(VK_CONTROL.0 as i32) & (0x8000u16 as i16)) != 0 {
                     next_tab_with_prompt(hwnd);
                     continue;
+                }
+            }
+            if msg.message == WM_CONTEXTMENU && msg.lParam.0 == -1 {
+                let rss_hwnd = with_state(hwnd, |state| state.rss_window).unwrap_or(HWND(0));
+                if rss_hwnd.0 != 0 {
+                    let mut cur = msg.hwnd;
+                    let mut rss_target = false;
+                    while cur.0 != 0 {
+                        if cur == rss_hwnd {
+                            app_windows::rss_window::show_context_menu_from_keyboard(rss_hwnd);
+                            rss_target = true;
+                            break;
+                        }
+                        cur = GetParent(cur);
+                    }
+                    if rss_target {
+                        continue;
+                    }
+                }
+            }
+            if msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN {
+                let key = msg.wParam.0 as u32;
+                let is_context_key = key == u32::from(VK_APPS.0)
+                    || (key == u32::from(VK_F10.0) && GetKeyState(VK_SHIFT.0 as i32) < 0);
+                if is_context_key {
+                    let rss_hwnd = with_state(hwnd, |state| state.rss_window).unwrap_or(HWND(0));
+                    if rss_hwnd.0 != 0 {
+                        let mut cur = msg.hwnd;
+                        let mut rss_target = false;
+                        while cur.0 != 0 {
+                            if cur == rss_hwnd {
+                                app_windows::rss_window::show_context_menu_from_keyboard(rss_hwnd);
+                                rss_target = true;
+                                break;
+                            }
+                            cur = GetParent(cur);
+                        }
+                        if rss_target {
+                            continue;
+                        }
+                    }
                 }
             }
             if msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN {
@@ -827,6 +905,26 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 HINSTANCE(0),
                 None,
             );
+            let combo_voice_proc = if combo_voice.0 != 0 {
+                let old = SetWindowLongPtrW(
+                    combo_voice,
+                    GWLP_WNDPROC,
+                    voice_combo_subclass_proc as isize,
+                );
+                std::mem::transmute::<isize, WNDPROC>(old)
+            } else {
+                None
+            };
+            let combo_favorites_proc = if combo_favorites.0 != 0 {
+                let old = SetWindowLongPtrW(
+                    combo_favorites,
+                    GWLP_WNDPROC,
+                    voice_combo_subclass_proc as isize,
+                );
+                std::mem::transmute::<isize, WNDPROC>(old)
+            } else {
+                None
+            };
             for control in [
                 label_engine,
                 combo_engine,
@@ -894,6 +992,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 voice_favorites_visible: false,
                 voice_label_favorites: label_favorites,
                 voice_combo_favorites: combo_favorites,
+                voice_combo_voice_proc: combo_voice_proc,
+                voice_combo_favorites_proc: combo_favorites_proc,
                 voice_context_voice: None,
                 find_in_files_cache: None,
                 normalize_undo: None,
@@ -919,6 +1019,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
             if let Some(path_str) = file_to_open {
                 editor_manager::open_document(hwnd, Path::new(path_str));
+                let _ = PostMessageW(hwnd, WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
             } else {
                 editor_manager::new_document(hwnd);
             }
@@ -961,7 +1062,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_TIMER => {
-            if wparam.0 == FOCUS_EDITOR_TIMER_ID || wparam.0 == FOCUS_EDITOR_TIMER_ID2 {
+            if wparam.0 == FOCUS_EDITOR_TIMER_ID
+                || wparam.0 == FOCUS_EDITOR_TIMER_ID2
+                || wparam.0 == FOCUS_EDITOR_TIMER_ID3
+                || wparam.0 == FOCUS_EDITOR_TIMER_ID4
+            {
                 let _ = KillTimer(hwnd, wparam.0);
                 focus_editor(hwnd);
                 return LRESULT(0);
@@ -1126,6 +1231,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             focus_editor(hwnd);
             let _ = SetTimer(hwnd, FOCUS_EDITOR_TIMER_ID, 80, None);
             let _ = SetTimer(hwnd, FOCUS_EDITOR_TIMER_ID2, 200, None);
+            let _ = SetTimer(hwnd, FOCUS_EDITOR_TIMER_ID3, 350, None);
+            let _ = SetTimer(hwnd, FOCUS_EDITOR_TIMER_ID4, 600, None);
             LRESULT(0)
         }
         WM_KEYDOWN => {
@@ -1324,42 +1431,58 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }
                 IDM_EDIT_STRIP_MARKDOWN => {
                     log_debug("Menu: Strip Markdown");
-                    editor_manager::strip_markdown_active_edit(hwnd);
+                    if editor_manager::strip_markdown_active_edit(hwnd) {
+                        confirm_menu_action(hwnd, "edit.strip_markdown");
+                    }
                     LRESULT(0)
                 }
                 IDM_EDIT_NORMALIZE_WHITESPACE => {
                     log_debug("Menu: Normalize whitespace");
-                    editor_manager::normalize_whitespace_active_edit(hwnd);
+                    if editor_manager::normalize_whitespace_active_edit(hwnd) {
+                        confirm_menu_action(hwnd, "edit.normalize_whitespace");
+                    }
                     LRESULT(0)
                 }
                 IDM_EDIT_HARD_LINE_BREAK => {
                     log_debug("Menu: Hard line break");
-                    editor_manager::hard_line_break_active_edit(hwnd);
+                    if editor_manager::hard_line_break_active_edit(hwnd) {
+                        confirm_menu_action(hwnd, "edit.hard_line_break");
+                    }
                     LRESULT(0)
                 }
                 IDM_EDIT_ORDER_ITEMS => {
                     log_debug("Menu: Order items");
-                    editor_manager::order_items_active_edit(hwnd);
+                    if editor_manager::order_items_active_edit(hwnd) {
+                        confirm_menu_action(hwnd, "edit.order_items");
+                    }
                     LRESULT(0)
                 }
                 IDM_EDIT_KEEP_UNIQUE_ITEMS => {
                     log_debug("Menu: Keep unique items");
-                    editor_manager::keep_unique_items_active_edit(hwnd);
+                    if editor_manager::keep_unique_items_active_edit(hwnd) {
+                        confirm_menu_action(hwnd, "edit.keep_unique_items");
+                    }
                     LRESULT(0)
                 }
                 IDM_EDIT_REVERSE_ITEMS => {
                     log_debug("Menu: Reverse items");
-                    editor_manager::reverse_items_active_edit(hwnd);
+                    if editor_manager::reverse_items_active_edit(hwnd) {
+                        confirm_menu_action(hwnd, "edit.reverse_items");
+                    }
                     LRESULT(0)
                 }
                 IDM_EDIT_QUOTE_LINES => {
                     log_debug("Menu: Quote lines");
-                    editor_manager::quote_lines_active_edit(hwnd);
+                    if editor_manager::quote_lines_active_edit(hwnd) {
+                        confirm_menu_action(hwnd, "edit.quote_lines");
+                    }
                     LRESULT(0)
                 }
                 IDM_EDIT_UNQUOTE_LINES => {
                     log_debug("Menu: Unquote lines");
-                    editor_manager::unquote_lines_active_edit(hwnd);
+                    if editor_manager::unquote_lines_active_edit(hwnd) {
+                        confirm_menu_action(hwnd, "edit.unquote_lines");
+                    }
                     LRESULT(0)
                 }
                 IDM_EDIT_TEXT_STATS => {
@@ -1369,22 +1492,30 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }
                 IDM_EDIT_JOIN_LINES => {
                     log_debug("Menu: Join lines");
-                    editor_manager::join_lines_active_edit(hwnd);
+                    if editor_manager::join_lines_active_edit(hwnd) {
+                        confirm_menu_action(hwnd, "edit.join_lines");
+                    }
                     LRESULT(0)
                 }
                 IDM_EDIT_CLEAN_EOL_HYPHENS => {
                     log_debug("Menu: Clean EOL hyphens");
-                    editor_manager::clean_end_of_line_hyphens_active_edit(hwnd);
+                    if editor_manager::clean_end_of_line_hyphens_active_edit(hwnd) {
+                        confirm_menu_action(hwnd, "edit.clean_eol_hyphens");
+                    }
                     LRESULT(0)
                 }
                 IDM_EDIT_REMOVE_DUPLICATE_LINES => {
                     log_debug("Menu: Remove duplicate lines");
-                    editor_manager::remove_duplicate_lines_active_edit(hwnd);
+                    if editor_manager::remove_duplicate_lines_active_edit(hwnd) {
+                        confirm_menu_action(hwnd, "edit.remove_duplicate_lines");
+                    }
                     LRESULT(0)
                 }
                 IDM_EDIT_REMOVE_DUPLICATE_CONSECUTIVE_LINES => {
                     log_debug("Menu: Remove duplicate consecutive lines");
-                    editor_manager::remove_duplicate_consecutive_lines_active_edit(hwnd);
+                    if editor_manager::remove_duplicate_consecutive_lines_active_edit(hwnd) {
+                        confirm_menu_action(hwnd, "edit.remove_duplicate_consecutive_lines");
+                    }
                     LRESULT(0)
                 }
                 IDM_VIEW_SHOW_VOICES => {
@@ -1414,7 +1545,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }
                 IDM_INSERT_CLEAR_BOOKMARKS => {
                     log_debug("Menu: Clear Current Bookmarks");
-                    clear_current_bookmarks(hwnd);
+                    if clear_current_bookmarks(hwnd) {
+                        confirm_menu_action(hwnd, "insert.clear_bookmarks");
+                    }
                     LRESULT(0)
                 }
                 IDM_MANAGE_BOOKMARKS => {
@@ -1502,6 +1635,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let path = from_wide(cds.lpData as *const u16);
                 if !path.is_empty() {
                     open_document(hwnd, Path::new(&path));
+                    let _ = ShowWindow(hwnd, SW_SHOW);
+                    SetForegroundWindow(hwnd);
+                    focus_editor(hwnd);
+                    if let Some(hwnd_edit) = get_active_edit(hwnd) {
+                        let _ = NotifyWinEvent(
+                            EVENT_OBJECT_FOCUS,
+                            hwnd_edit,
+                            OBJID_CLIENT.0,
+                            CHILDID_SELF as i32,
+                        );
+                    }
                     let _ = PostMessageW(hwnd, WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
                 }
                 return LRESULT(1);
@@ -2315,6 +2459,52 @@ unsafe fn current_favorite_selection(hwnd: HWND) -> Option<FavoriteVoice> {
     favorites.get(fav_idx).cloned()
 }
 
+unsafe extern "system" fn voice_combo_subclass_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if msg == WM_CONTEXTMENU {
+        let parent = GetParent(hwnd);
+        if parent.0 != 0 {
+            show_voice_context_menu(parent, hwnd, lparam);
+            return LRESULT(0);
+        }
+    }
+    if msg == WM_KEYDOWN
+        && wparam.0 as u32 == u32::from(VK_F10.0)
+        && GetKeyState(VK_SHIFT.0 as i32) < 0
+    {
+        let parent = GetParent(hwnd);
+        if parent.0 != 0 {
+            show_voice_context_menu(parent, hwnd, LPARAM(-1));
+            return LRESULT(0);
+        }
+    }
+
+    let parent = GetParent(hwnd);
+    let prev_proc = if parent.0 != 0 {
+        with_state(parent, |s| {
+            if hwnd == s.voice_combo_voice {
+                s.voice_combo_voice_proc
+            } else if hwnd == s.voice_combo_favorites {
+                s.voice_combo_favorites_proc
+            } else {
+                None
+            }
+        })
+        .unwrap_or(None)
+    } else {
+        None
+    };
+    if let Some(proc) = prev_proc {
+        CallWindowProcW(Some(proc), hwnd, msg, wparam, lparam)
+    } else {
+        DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+}
+
 pub(crate) unsafe fn restart_tts_from_current_offset(hwnd: HWND) {
     let mut restart = None;
     let _ = with_state(hwnd, |state| {
@@ -2823,8 +3013,33 @@ unsafe fn create_accelerators() -> HACCEL {
         },
         ACCEL {
             fVirt: virt_shift,
-            key: 'P' as u16,
+            key: 'T' as u16,
             cmd: IDM_TOOLS_PROMPT as u16,
+        },
+        ACCEL {
+            fVirt: virt_shift,
+            key: 'P' as u16,
+            cmd: IDM_TOOLS_OPTIONS as u16,
+        },
+        ACCEL {
+            fVirt: virt_shift,
+            key: 'D' as u16,
+            cmd: IDM_TOOLS_DICTIONARY as u16,
+        },
+        ACCEL {
+            fVirt: virt_shift,
+            key: 'U' as u16,
+            cmd: IDM_TOOLS_RSS as u16,
+        },
+        ACCEL {
+            fVirt: virt_shift,
+            key: 'G' as u16,
+            cmd: IDM_MANAGE_BOOKMARKS as u16,
+        },
+        ACCEL {
+            fVirt: virt_shift,
+            key: 'L' as u16,
+            cmd: IDM_INSERT_CLEAR_BOOKMARKS as u16,
         },
         ACCEL {
             fVirt: virt,
@@ -3006,7 +3221,7 @@ unsafe fn insert_bookmark(hwnd: HWND) {
     }
 }
 
-unsafe fn clear_current_bookmarks(hwnd: HWND) {
+unsafe fn clear_current_bookmarks(hwnd: HWND) -> bool {
     let path: std::path::PathBuf = match with_state(hwnd, |state| {
         state
             .docs
@@ -3014,21 +3229,23 @@ unsafe fn clear_current_bookmarks(hwnd: HWND) {
             .and_then(|doc| doc.path.clone())
     }) {
         Some(Some(path)) => path,
-        _ => return,
+        _ => return false,
     };
 
     let path_str = path.to_string_lossy().to_string();
-    let bookmarks_window = with_state(hwnd, |state| {
-        if state.bookmarks.files.remove(&path_str).is_some() {
+    let (removed, bookmarks_window) = with_state(hwnd, |state| {
+        let removed = state.bookmarks.files.remove(&path_str).is_some();
+        if removed {
             save_bookmarks(&state.bookmarks);
         }
-        state.bookmarks_window
+        (removed, state.bookmarks_window)
     })
-    .unwrap_or(HWND(0));
+    .unwrap_or((false, HWND(0)));
 
     if bookmarks_window.0 != 0 {
         app_windows::bookmarks_window::refresh_bookmarks_list(bookmarks_window);
     }
+    removed
 }
 
 pub(crate) unsafe fn goto_first_bookmark(
@@ -3525,13 +3742,12 @@ pub(crate) unsafe fn send_open_file(hwnd: HWND, path: &str) -> bool {
         WPARAM(0),
         LPARAM(&data as *const _ as isize),
     );
+    let _ = PostMessageW(hwnd, WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
     true
 }
 
 pub(crate) fn recent_store_path() -> Option<PathBuf> {
-    let base = std::env::var_os("APPDATA")?;
-    let mut path = PathBuf::from(base);
-    path.push("Novapad");
+    let mut path = settings::settings_dir();
     path.push("recent.json");
     Some(path)
 }

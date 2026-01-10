@@ -301,7 +301,7 @@ fn dir_is_writable(dir: &std::path::Path) -> bool {
     }
 }
 
-fn get_settings_path() -> PathBuf {
+fn resolve_settings_dir() -> PathBuf {
     let exe_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
     let exe_dir = exe_path
         .parent()
@@ -337,7 +337,15 @@ fn get_settings_path() -> PathBuf {
         portable_dir
     };
 
-    settings_dir.join("settings.json")
+    settings_dir
+}
+
+pub fn settings_dir() -> PathBuf {
+    resolve_settings_dir()
+}
+
+fn get_settings_path() -> PathBuf {
+    resolve_settings_dir().join("settings.json")
 }
 
 #[allow(dead_code)]

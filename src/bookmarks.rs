@@ -15,9 +15,7 @@ pub struct BookmarkStore {
 }
 
 fn bookmark_store_path() -> Option<PathBuf> {
-    let base = std::env::var_os("APPDATA")?;
-    let mut path = PathBuf::from(base);
-    path.push("Novapad");
+    let mut path = crate::settings::settings_dir();
     path.push("bookmarks.json");
     Some(path)
 }

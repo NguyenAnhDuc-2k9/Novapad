@@ -55,6 +55,8 @@ plus **podcast recording from microphone and system audio**.
   - Dedicated terminal window with stable output for screen readers
   - Shortcuts: Ctrl+Shift+P, Alt+I (input), Alt+O (output)
   - Options: auto-scroll, strip ANSI, beep on idle, prevent sleep; choose cmd/PowerShell/Codex CLI
+- **RSS / Articles Reader**
+  - Browse and import articles from RSS feeds
 - **Readable UI Options**
   - Text color and text size controls for better readability, including light/dark colors and larger sizes
 - **Editing tools**

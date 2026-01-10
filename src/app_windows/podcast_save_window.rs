@@ -11,11 +11,12 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     BS_DEFPUSHBUTTON, CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow,
-    GWLP_USERDATA, GetParent, GetWindowLongPtrW, HMENU, IDC_ARROW, IDYES, LoadCursorW,
+    GWLP_USERDATA, GetParent, GetWindowLongPtrW, HMENU, IDC_ARROW, IDYES, KillTimer, LoadCursorW,
     MB_ICONWARNING, MB_YESNO, MSG, MessageBoxW, PostMessageW, RegisterClassW, SendMessageW,
-    SetForegroundWindow, SetWindowLongPtrW, SetWindowTextW, WINDOW_STYLE, WM_APP, WM_CLOSE,
-    WM_COMMAND, WM_CREATE, WM_KEYDOWN, WM_NCDESTROY, WM_SETFOCUS, WM_SETFONT, WM_SYSKEYDOWN,
-    WNDCLASSW, WS_CAPTION, WS_CHILD, WS_EX_DLGMODALFRAME, WS_POPUP, WS_TABSTOP, WS_VISIBLE,
+    SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowTextW, WINDOW_STYLE, WM_APP,
+    WM_CLOSE, WM_COMMAND, WM_CREATE, WM_KEYDOWN, WM_NCDESTROY, WM_SETFOCUS, WM_SETFONT,
+    WM_SYSKEYDOWN, WM_TIMER, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_EX_DLGMODALFRAME, WS_POPUP,
+    WS_TABSTOP, WS_VISIBLE,
 };
 use windows::core::{PCWSTR, w};
 
@@ -25,6 +26,9 @@ pub const WM_PODCAST_SAVE_PROGRESS: u32 = WM_APP + 72;
 pub const WM_PODCAST_SAVE_CANCEL: u32 = WM_APP + 73;
 const SAVE_CLASS_NAME: &str = "NovapadPodcastSave";
 const SAVE_ID_CANCEL: usize = 12002;
+const SAVE_PROGRESS_TIMER_ID: usize = 1;
+const SAVE_PROGRESS_TICK_MS: u32 = 250;
+const SAVE_PROGRESS_MAX_FAKE: usize = 95;
 
 struct SaveState {
     parent: HWND,
@@ -33,6 +37,7 @@ struct SaveState {
     cancel_button: HWND,
     cancel_requested: bool,
     language: Language,
+    current_pct: usize,
 }
 
 fn save_labels(language: Language) -> (String, String, String, String, String, String) {
@@ -68,6 +73,13 @@ pub unsafe fn handle_navigation(hwnd: HWND, msg: &MSG) -> bool {
 pub unsafe fn open(parent: HWND) -> HWND {
     let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
     let class_name = to_wide(SAVE_CLASS_NAME);
+    let main = GetParent(parent);
+    let language = if main.0 != 0 {
+        with_state(main, |state| state.settings.language).unwrap_or_default()
+    } else {
+        crate::app_windows::podcast_window::language_for_window(parent).unwrap_or_default()
+    };
+    let title = i18n::tr(language, "podcast.save.title");
 
     let wc = WNDCLASSW {
         hCursor: windows::Win32::UI::WindowsAndMessaging::HCURSOR(
@@ -84,7 +96,7 @@ pub unsafe fn open(parent: HWND) -> HWND {
     let window = CreateWindowExW(
         WS_EX_DLGMODALFRAME,
         PCWSTR(class_name.as_ptr()),
-        PCWSTR(to_wide("Saving").as_ptr()),
+        PCWSTR(to_wide(&title).as_ptr()),
         WS_POPUP | WS_CAPTION | WS_VISIBLE,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
@@ -127,7 +139,11 @@ unsafe extern "system" fn save_wndproc(
             let create_struct = lparam.0 as *const CREATESTRUCTW;
             let parent = HWND((*create_struct).lpCreateParams as isize);
             let main = GetParent(parent);
-            let language = with_state(main, |state| state.settings.language).unwrap_or_default();
+            let language = if main.0 != 0 {
+                with_state(main, |state| state.settings.language).unwrap_or_default()
+            } else {
+                crate::app_windows::podcast_window::language_for_window(parent).unwrap_or_default()
+            };
             let (title, in_progress, _, _, _, cancel_text) = save_labels(language);
             let hfont = with_state(main, |state| state.hfont).unwrap_or(HFONT(0));
             let label_text = format!("{in_progress} 0%");
@@ -196,9 +212,11 @@ unsafe extern "system" fn save_wndproc(
                 cancel_button,
                 cancel_requested: false,
                 language,
+                current_pct: 0,
             };
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(Box::new(state)) as isize);
             SetFocus(label);
+            let _ = SetTimer(hwnd, SAVE_PROGRESS_TIMER_ID, SAVE_PROGRESS_TICK_MS, None);
             LRESULT(0)
         }
         WM_SETFOCUS => {
@@ -239,11 +257,28 @@ unsafe extern "system" fn save_wndproc(
             let pct = wparam.0.min(100) as usize;
             let _ = with_save_state(hwnd, |state| {
                 let _ = SendMessageW(state.progress, PBM_SETPOS, WPARAM(pct), LPARAM(0));
-                let (_, in_progress, _, _, _, _) = save_labels(state.language);
-                let text = format!("{in_progress} {pct}%");
-                let _ = SetWindowTextW(state.label, PCWSTR(to_wide(&text).as_ptr()));
+                state.current_pct = state.current_pct.max(pct);
+                update_progress_label(state);
             });
             LRESULT(0)
+        }
+        WM_TIMER => {
+            if wparam.0 == SAVE_PROGRESS_TIMER_ID {
+                let _ = with_save_state(hwnd, |state| {
+                    if state.current_pct < SAVE_PROGRESS_MAX_FAKE {
+                        state.current_pct = (state.current_pct + 1).min(SAVE_PROGRESS_MAX_FAKE);
+                        let _ = SendMessageW(
+                            state.progress,
+                            PBM_SETPOS,
+                            WPARAM(state.current_pct),
+                            LPARAM(0),
+                        );
+                        update_progress_label(state);
+                    }
+                });
+                return LRESULT(0);
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_PODCAST_SAVE_DONE => {
             let _ = DestroyWindow(hwnd);
@@ -255,6 +290,7 @@ unsafe extern "system" fn save_wndproc(
         }
         WM_NCDESTROY => {
             let parent = with_save_state(hwnd, |state| state.parent).unwrap_or(HWND(0));
+            let _ = KillTimer(hwnd, SAVE_PROGRESS_TIMER_ID);
             if parent.0 != 0 {
                 EnableWindow(parent, true);
                 let _ = PostMessageW(parent, WM_PODCAST_SAVE_CLOSED, WPARAM(0), LPARAM(0));
@@ -275,6 +311,14 @@ fn with_save_state<T>(hwnd: HWND, f: impl FnOnce(&mut SaveState) -> T) -> Option
         None
     } else {
         Some(f(unsafe { &mut *ptr }))
+    }
+}
+
+fn update_progress_label(state: &SaveState) {
+    let (_, in_progress, _, _, _, _) = save_labels(state.language);
+    let text = format!("{in_progress} {}%", state.current_pct);
+    unsafe {
+        let _ = SetWindowTextW(state.label, PCWSTR(to_wide(&text).as_ptr()));
     }
 }
 

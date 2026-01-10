@@ -1184,6 +1184,10 @@ fn with_podcast_state<T>(hwnd: HWND, f: impl FnOnce(&mut PodcastState) -> T) -> 
     let state = unsafe { &mut *(ptr as *mut PodcastState) };
     Some(f(state))
 }
+
+pub(crate) fn language_for_window(hwnd: HWND) -> Option<Language> {
+    with_podcast_state(hwnd, |state| state.language)
+}
 fn populate_combos(
     format_combo: HWND,
     bitrate_combo: HWND,

@@ -70,11 +70,15 @@ Nella finestra di aggiunta/modifica: inserisci "Parola originale", poi Tab su "P
 Nell'elenco, Tab porta ai pulsanti "Modifica voce" e "Rimuovi voce selezionata".
 Le sostituzioni del dizionario sono applicate durante la lettura e la creazione dell'audiolibro e vengono salvate.
 Importa trascrizione da YouTube: incolla un URL, scegli la lingua e importa il testo nell'editor (Ctrl+Y). Opzione per includere i timestamp.
-Terminale accessibile: apre un terminale dedicato con output separato e stabile per gli screen reader (Ctrl+Shift+P).
+Terminale accessibile: apre un terminale dedicato con output separato e stabile per gli screen reader (Ctrl+Shift+T).
 Scorciatoie: Alt+I focus input, Alt+O focus output, Tab/Shift+Tab per spostarsi tra input, output e opzioni.
 Invio invia il testo. Ctrl+C copia l'output (o invia Ctrl+C al programma). Ctrl+L pulisce l'output con conferma.
 Opzioni nel terminale: scorrimento automatico, rimuovi ANSI, annuncia nuove righe, avviso sonoro dopo 1s, evita risparmio energetico.
 Scelte programma: Prompt dei comandi (cmd.exe), PowerShell, Codex CLI (da Opzioni).
+
+RSS / Articoli: apre la finestra RSS/Articoli, aggiungi fonti, espandi un feed e premi Invio per importare un articolo nell'editor.
+Nella finestra RSS, seleziona un feed o sito e premi Canc per rimuoverlo dalla libreria.
+Nel menu contestuale dei feed o siti puoi modificare o eliminare un RSS o sito.
 
 Opzioni:
 Lingua: cambia la lingua dell'interfaccia.

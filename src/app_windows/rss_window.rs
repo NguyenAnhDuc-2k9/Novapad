@@ -4,26 +4,34 @@ use crate::i18n;
 use crate::tools::rss::{self, RssItem, RssSource, RssSourceType};
 use crate::with_state;
 use std::collections::{HashMap, HashSet};
+use std::mem;
 use std::path::PathBuf;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{COLOR_WINDOW, HBRUSH, HFONT};
 use windows::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Accessibility::NotifyWinEvent;
 use windows::Win32::UI::Controls::{
-    NMHDR, NMTREEVIEWW, NMTVKEYDOWN, TVE_EXPAND, TVGN_CARET, TVGN_CHILD, TVI_LAST, TVI_ROOT,
-    TVIF_PARAM, TVIF_TEXT, TVINSERTSTRUCTW, TVINSERTSTRUCTW_0, TVITEMEXW_CHILDREN, TVITEMW,
-    TVM_DELETEITEM, TVM_ENSUREVISIBLE, TVM_EXPAND, TVM_GETNEXTITEM, TVM_INSERTITEMW,
-    TVM_SELECTITEM, TVM_SETITEMW, TVN_ITEMEXPANDINGW, TVN_KEYDOWN, TVN_SELCHANGEDW, WC_BUTTON,
+    NM_RCLICK, NMHDR, NMTREEVIEWW, NMTVKEYDOWN, TVE_EXPAND, TVGN_CARET, TVGN_CHILD, TVHITTESTINFO,
+    TVI_LAST, TVI_ROOT, TVIF_PARAM, TVIF_TEXT, TVINSERTSTRUCTW, TVINSERTSTRUCTW_0,
+    TVITEMEXW_CHILDREN, TVITEMW, TVM_DELETEITEM, TVM_ENSUREVISIBLE, TVM_EXPAND, TVM_GETNEXTITEM,
+    TVM_HITTEST, TVM_INSERTITEMW, TVM_SELECTITEM, TVM_SETITEMW, TVN_ITEMEXPANDINGW, TVN_KEYDOWN,
+    TVN_SELCHANGEDW, WC_BUTTON,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetFocus, GetKeyState, SetActiveWindow, SetFocus, VK_APPS, VK_ESCAPE, VK_F10, VK_SHIFT,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
-    BS_DEFPUSHBUTTON, CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow,
-    GWLP_USERDATA, GetDlgItem, GetWindowLongPtrW, HMENU, IDYES, KillTimer, MB_ICONQUESTION,
-    MB_YESNO, MessageBoxW, PostMessageW, RegisterClassW, SendMessageW, SetForegroundWindow,
-    SetWindowLongPtrW, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_NCDESTROY,
-    WM_NOTIFY, WM_SETFOCUS, WM_SETFONT, WM_SETREDRAW, WM_TIMER, WM_USER, WNDCLASSW, WS_CAPTION,
-    WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
-    WS_VSCROLL,
+    AppendMenuW, BS_DEFPUSHBUTTON, CHILDID_SELF, CREATESTRUCTW, CW_USEDEFAULT, CallWindowProcW,
+    CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
+    EVENT_OBJECT_FOCUS, GWLP_USERDATA, GWLP_WNDPROC, GetCursorPos, GetDlgItem, GetParent,
+    GetWindowLongPtrW, GetWindowRect, HMENU, IDYES, KillTimer, MB_ICONQUESTION, MB_YESNO,
+    MF_STRING, MessageBoxW, OBJID_CLIENT, PostMessageW, RegisterClassW, SendMessageW,
+    SetForegroundWindow, SetWindowLongPtrW, SetWindowTextW, TrackPopupMenu, WINDOW_STYLE, WM_CLOSE,
+    WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_NCDESTROY, WM_NEXTDLGCTL,
+    WM_NOTIFY, WM_NULL, WM_SETFOCUS, WM_SETFONT, WM_SETREDRAW, WM_SYSKEYDOWN, WM_TIMER, WM_USER,
+    WNDCLASSW, WNDPROC, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_POPUP,
+    WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::{PCWSTR, w};
 
@@ -31,15 +39,24 @@ const RSS_WINDOW_CLASS: &str = "NovapadRssWindow";
 const ID_TREE: usize = 1001;
 const ID_BTN_ADD: usize = 1002;
 const ID_BTN_CLOSE: usize = 1003;
+const ID_CTX_EDIT: usize = 1101;
+const ID_CTX_DELETE: usize = 1102;
 
 const WM_RSS_FETCH_COMPLETE: u32 = WM_USER + 200;
 const WM_RSS_IMPORT_COMPLETE: u32 = WM_USER + 201;
 const WM_SHOW_ADD_DIALOG: u32 = WM_USER + 202;
 const WM_CLEAR_ENTER_GUARD: u32 = WM_USER + 203;
 const WM_CLEAR_ADD_GUARD: u32 = WM_USER + 204;
+pub(crate) const WM_RSS_SHOW_CONTEXT: u32 = WM_USER + 205;
 const ADD_GUARD_TIMER_ID: usize = 1;
 const EM_REPLACESEL: u32 = 0x00C2;
+
+const FEED_EN_DATA: &str = include_str!("../../i18n/feed_en.txt");
+const FEED_IT_DATA: &str = include_str!("../../i18n/feed_it.txt");
+const FEED_ES_DATA: &str = include_str!("../../i18n/feed_es.txt");
+const FEED_PT_DATA: &str = include_str!("../../i18n/feed_pt.txt");
 const EM_SETSEL: u32 = 0x00B1;
+const EM_SCROLLCARET: u32 = 0x00B7;
 const EM_LIMITTEXT: u32 = 0x00C5;
 const INITIAL_LOAD_COUNT: usize = 5;
 const LOAD_MORE_COUNT: usize = 5;
@@ -99,13 +116,20 @@ fn default_feed_path(language: crate::settings::Language) -> Option<PathBuf> {
     None
 }
 
+fn embedded_default_feeds(language: crate::settings::Language) -> &'static str {
+    match language {
+        crate::settings::Language::English => FEED_EN_DATA,
+        crate::settings::Language::Italian => FEED_IT_DATA,
+        crate::settings::Language::Spanish => FEED_ES_DATA,
+        crate::settings::Language::Portuguese => FEED_PT_DATA,
+    }
+}
+
 fn load_default_feeds(language: crate::settings::Language) -> Vec<(String, String)> {
-    let Some(path) = default_feed_path(language) else {
-        return Vec::new();
-    };
-    let Ok(data) = std::fs::read_to_string(path) else {
-        return Vec::new();
-    };
+    let data = default_feed_path(language).and_then(|path| std::fs::read_to_string(path).ok());
+    let data = data
+        .as_deref()
+        .unwrap_or_else(|| embedded_default_feeds(language));
     data.lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty())
@@ -322,6 +346,8 @@ struct RssWindowState {
     source_items: HashMap<isize, SourceItemsState>,
     enter_guard: bool,
     add_guard: bool,
+    pending_edit: Option<usize>,
+    tree_proc: WNDPROC,
     last_selected: isize,
 }
 
@@ -333,6 +359,12 @@ enum NodeData {
 struct SourceItemsState {
     items: Vec<RssItem>,
     loaded: usize,
+}
+
+struct AddDialogInit {
+    parent: HWND,
+    prefill_title: String,
+    prefill_url: String,
 }
 
 pub unsafe fn open(parent: HWND) {
@@ -388,6 +420,117 @@ pub unsafe fn open(parent: HWND) {
     }
 }
 
+pub unsafe fn show_context_menu_from_keyboard(hwnd: HWND) {
+    let mut pt = POINT::default();
+    let _ = GetCursorPos(&mut pt);
+    show_rss_context_menu(hwnd, pt.x, pt.y, false);
+}
+
+unsafe fn show_rss_context_menu(hwnd: HWND, x: i32, y: i32, use_hit_test: bool) {
+    let hwnd_tree = with_rss_state(hwnd, |s| s.hwnd_tree).unwrap_or(HWND(0));
+    if hwnd_tree.0 == 0 {
+        return;
+    }
+
+    let mut rect = RECT::default();
+    if use_hit_test {
+        if GetWindowRect(hwnd_tree, &mut rect).is_ok() {
+            if x < rect.left || x > rect.right || y < rect.top || y > rect.bottom {
+                return;
+            }
+        }
+    }
+
+    let hitem = if use_hit_test {
+        let mut pt = POINT { x, y };
+        if rect.right != 0 || rect.bottom != 0 {
+            pt.x -= rect.left;
+            pt.y -= rect.top;
+        }
+        let mut hit = TVHITTESTINFO {
+            pt,
+            ..Default::default()
+        };
+        let hitem = windows::Win32::UI::Controls::HTREEITEM(
+            SendMessageW(
+                hwnd_tree,
+                TVM_HITTEST,
+                WPARAM(0),
+                LPARAM(&mut hit as *mut _ as isize),
+            )
+            .0,
+        );
+        if hitem.0 != 0 {
+            let _ = SendMessageW(
+                hwnd_tree,
+                TVM_SELECTITEM,
+                WPARAM(TVGN_CARET as usize),
+                LPARAM(hitem.0),
+            );
+            let _ = SendMessageW(hwnd_tree, TVM_ENSUREVISIBLE, WPARAM(0), LPARAM(hitem.0));
+        }
+        hitem
+    } else {
+        windows::Win32::UI::Controls::HTREEITEM(
+            SendMessageW(
+                hwnd_tree,
+                TVM_GETNEXTITEM,
+                WPARAM(TVGN_CARET as usize),
+                LPARAM(0),
+            )
+            .0,
+        )
+    };
+
+    if hitem.0 == 0 {
+        return;
+    }
+
+    let is_source = with_rss_state(hwnd, |s| {
+        matches!(s.node_data.get(&hitem.0), Some(NodeData::Source(_)))
+    })
+    .unwrap_or(false);
+    if !is_source {
+        return;
+    }
+
+    let language = with_rss_state(hwnd, |s| {
+        with_state(s.parent, |ps| ps.settings.language).unwrap_or_default()
+    })
+    .unwrap_or_default();
+    let edit_label = i18n::tr(language, "rss.context.edit");
+    let delete_label = i18n::tr(language, "rss.context.delete");
+
+    if let Ok(menu) = CreatePopupMenu() {
+        if menu.0 != 0 {
+            let _ = AppendMenuW(
+                menu,
+                MF_STRING,
+                ID_CTX_EDIT,
+                PCWSTR(to_wide(&edit_label).as_ptr()),
+            );
+            let _ = AppendMenuW(
+                menu,
+                MF_STRING,
+                ID_CTX_DELETE,
+                PCWSTR(to_wide(&delete_label).as_ptr()),
+            );
+            SetForegroundWindow(hwnd);
+            let _ = TrackPopupMenu(
+                menu,
+                windows::Win32::UI::WindowsAndMessaging::TPM_RIGHTBUTTON,
+                x,
+                y,
+                0,
+                hwnd,
+                None,
+            );
+            let _ = PostMessageW(hwnd, WM_NULL, WPARAM(0), LPARAM(0));
+            let _ = DestroyMenu(menu);
+        }
+    }
+}
+
 unsafe extern "system" fn rss_wndproc(
     hwnd: HWND,
     msg: u32,
@@ -407,6 +550,8 @@ unsafe extern "system" fn rss_wndproc(
                 source_items: HashMap::new(),
                 enter_guard: false,
                 add_guard: false,
+                pending_edit: None,
+                tree_proc: None,
                 last_selected: 0,
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
@@ -422,13 +567,23 @@ unsafe extern "system" fn rss_wndproc(
             if parent.0 != 0 {
                 let _ = with_state(parent, |s| s.rss_window = HWND(0));
                 // Parent was never disabled; just bring it to front as a convenience.
-                SetForegroundWindow(parent);
+                force_focus_editor_on_parent(parent);
             }
             LRESULT(0)
         }
         WM_NCDESTROY => {
             let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RssWindowState;
             if !ptr.is_null() {
+                let parent = (*ptr).parent;
+                let hwnd_tree = (*ptr).hwnd_tree;
+                if hwnd_tree.0 != 0 {
+                    if let Some(proc) = (*ptr).tree_proc {
+                        SetWindowLongPtrW(hwnd_tree, GWLP_WNDPROC, proc as isize);
+                    }
+                }
+                if parent.0 != 0 {
+                    force_focus_editor_on_parent(parent);
+                }
                 let _ = Box::from_raw(ptr);
             }
             LRESULT(0)
@@ -482,6 +637,14 @@ unsafe extern "system" fn rss_wndproc(
 
                     LRESULT(0)
                 }
+                ID_CTX_EDIT => {
+                    handle_edit_source(hwnd);
+                    LRESULT(0)
+                }
+                ID_CTX_DELETE => {
+                    handle_delete(hwnd);
+                    LRESULT(0)
+                }
                 _ => DefWindowProcW(hwnd, msg, wparam, lparam),
             }
         }
@@ -508,44 +671,58 @@ unsafe extern "system" fn rss_wndproc(
                     title = url.clone();
                 }
 
+                let edit_idx = with_rss_state(hwnd, |s| s.pending_edit.take()).unwrap_or(None);
                 let parent = with_rss_state(hwnd, |s| s.parent).unwrap_or(HWND(0));
-                with_state(parent, |state| {
-                    state.settings.rss_sources.push(RssSource {
-                        title: title.clone(),
-                        url: url.clone(),
-                        kind: RssSourceType::Site,
-                        user_title: title.trim() != url.trim(),
+                if let Some(idx) = edit_idx {
+                    with_state(parent, |state| {
+                        if let Some(src) = state.settings.rss_sources.get_mut(idx) {
+                            src.title = title.clone();
+                            src.url = url.clone();
+                            src.user_title = title.trim() != url.trim();
+                        }
+                        crate::settings::save_settings(state.settings.clone());
                     });
-                    crate::settings::save_settings(state.settings.clone());
-                });
-                reload_tree(hwnd);
+                    reload_tree(hwnd);
+                } else {
+                    with_state(parent, |state| {
+                        state.settings.rss_sources.push(RssSource {
+                            title: title.clone(),
+                            url: url.clone(),
+                            kind: RssSourceType::Site,
+                            user_title: title.trim() != url.trim(),
+                        });
+                        crate::settings::save_settings(state.settings.clone());
+                    });
+                    reload_tree(hwnd);
 
-                // Auto-expand the new item to trigger fetch (and title update)
-                let idx = with_rss_state(hwnd, |s| {
-                    with_state(s.parent, |ps| ps.settings.rss_sources.len()).unwrap_or(0)
-                })
-                .unwrap_or(0);
-                if idx > 0 {
-                    let last_idx = idx - 1;
-                    let hitem = with_rss_state(hwnd, |s| {
-                        s.node_data.iter().find_map(|(k, v)| {
-                            if let NodeData::Source(i) = v {
-                                if *i == last_idx { Some(*k) } else { None }
-                            } else {
-                                None
-                            }
-                        })
+                    // Auto-expand the new item to trigger fetch (and title update)
+                    let idx = with_rss_state(hwnd, |s| {
+                        with_state(s.parent, |ps| ps.settings.rss_sources.len()).unwrap_or(0)
                     })
-                    .flatten();
+                    .unwrap_or(0);
+                    if idx > 0 {
+                        let last_idx = idx - 1;
+                        let hitem = with_rss_state(hwnd, |s| {
+                            s.node_data.iter().find_map(|(k, v)| {
+                                if let NodeData::Source(i) = v {
+                                    if *i == last_idx { Some(*k) } else { None }
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                        .flatten();
 
-                    if let Some(h) = hitem {
-                        let hwnd_tree = with_rss_state(hwnd, |s| s.hwnd_tree).unwrap_or(HWND(0));
-                        SendMessageW(
-                            hwnd_tree,
-                            TVM_EXPAND,
-                            WPARAM(TVE_EXPAND.0 as usize),
-                            LPARAM(h),
-                        );
+                        if let Some(h) = hitem {
+                            let hwnd_tree =
+                                with_rss_state(hwnd, |s| s.hwnd_tree).unwrap_or(HWND(0));
+                            SendMessageW(
+                                hwnd_tree,
+                                TVM_EXPAND,
+                                WPARAM(TVE_EXPAND.0 as usize),
+                                LPARAM(h),
+                            );
+                        }
                     }
                 }
             }
@@ -589,15 +766,91 @@ unsafe extern "system" fn rss_wndproc(
                         {
                             handle_delete(hwnd);
                             LRESULT(1)
+                        } else if (*ptvkd).wVKey == VK_F10.0 && GetKeyState(VK_SHIFT.0 as i32) < 0 {
+                            let hwnd_tree =
+                                with_rss_state(hwnd, |s| s.hwnd_tree).unwrap_or(HWND(0));
+                            if hwnd_tree.0 != 0 {
+                                let _ = PostMessageW(
+                                    hwnd,
+                                    WM_CONTEXTMENU,
+                                    WPARAM(hwnd_tree.0 as usize),
+                                    LPARAM(-1),
+                                );
+                            }
+                            LRESULT(1)
+                        } else if (*ptvkd).wVKey == VK_APPS.0 {
+                            let hwnd_tree =
+                                with_rss_state(hwnd, |s| s.hwnd_tree).unwrap_or(HWND(0));
+                            if hwnd_tree.0 != 0 {
+                                let _ = PostMessageW(
+                                    hwnd,
+                                    WM_CONTEXTMENU,
+                                    WPARAM(hwnd_tree.0 as usize),
+                                    LPARAM(-1),
+                                );
+                            }
+                            LRESULT(1)
+                        } else if (*ptvkd).wVKey == VK_ESCAPE.0 {
+                            let _ = DestroyWindow(hwnd);
+                            LRESULT(1)
                         } else {
                             LRESULT(0)
                         }
+                    }
+                    NM_RCLICK => {
+                        let mut pt = POINT::default();
+                        let _ = GetCursorPos(&mut pt);
+                        show_rss_context_menu(hwnd, pt.x, pt.y, true);
+                        LRESULT(1)
                     }
                     _ => LRESULT(0),
                 }
             } else {
                 LRESULT(0)
             }
+        }
+        WM_KEYDOWN | WM_SYSKEYDOWN => {
+            let key = wparam.0 as u32;
+            if key == u32::from(VK_ESCAPE.0) {
+                let _ = DestroyWindow(hwnd);
+                return LRESULT(0);
+            }
+            let hwnd_tree = with_rss_state(hwnd, |s| s.hwnd_tree).unwrap_or(HWND(0));
+            if hwnd_tree.0 == 0 {
+                return LRESULT(0);
+            }
+            if GetFocus() != hwnd_tree {
+                return LRESULT(0);
+            }
+            if key == u32::from(VK_APPS.0)
+                || (key == u32::from(VK_F10.0) && GetKeyState(VK_SHIFT.0 as i32) < 0)
+            {
+                let _ = PostMessageW(
+                    hwnd,
+                    WM_CONTEXTMENU,
+                    WPARAM(hwnd_tree.0 as usize),
+                    LPARAM(-1),
+                );
+                return LRESULT(0);
+            }
+            if key == u32::from(VK_ESCAPE.0) {
+                let _ = DestroyWindow(hwnd);
+                return LRESULT(0);
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_CONTEXTMENU => {
+            let mut x = (lparam.0 & 0xffff) as i32;
+            let mut y = ((lparam.0 >> 16) & 0xffff) as i32;
+            let use_hit_test = !(x == -1 && y == -1);
+            if x == -1 && y == -1 {
+                let mut pt = POINT::default();
+                let _ = GetCursorPos(&mut pt);
+                x = pt.x;
+                y = pt.y;
+            }
+            show_rss_context_menu(hwnd, x, y, use_hit_test);
+            LRESULT(0)
         }
         WM_RSS_FETCH_COMPLETE => {
             let ptr = lparam.0 as *mut FetchResult;
@@ -682,6 +935,10 @@ unsafe extern "system" fn rss_wndproc(
             let _ = PostMessageW(hwnd, WM_CLEAR_ADD_GUARD, WPARAM(0), LPARAM(0));
             LRESULT(0)
         }
+        WM_RSS_SHOW_CONTEXT => {
+            show_context_menu_from_keyboard(hwnd);
+            LRESULT(0)
+        }
         WM_SETFOCUS => {
             let hwnd_tree = with_rss_state(hwnd, |s| s.hwnd_tree).unwrap_or(HWND(0));
             if hwnd_tree.0 != 0 {
@@ -715,6 +972,38 @@ where
     }
 }
 
+unsafe extern "system" fn rss_tree_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
+        let key = wparam.0 as u32;
+        if key == u32::from(VK_APPS.0)
+            || (key == u32::from(VK_F10.0) && GetKeyState(VK_SHIFT.0 as i32) < 0)
+        {
+            let parent = GetParent(hwnd);
+            if parent.0 != 0 {
+                let _ = PostMessageW(parent, WM_CONTEXTMENU, WPARAM(hwnd.0 as usize), LPARAM(-1));
+                return LRESULT(0);
+            }
+        }
+    }
+
+    let parent = GetParent(hwnd);
+    let prev_proc = if parent.0 != 0 {
+        with_rss_state(parent, |s| s.tree_proc).unwrap_or(None)
+    } else {
+        None
+    };
+    if let Some(proc) = prev_proc {
+        CallWindowProcW(Some(proc), hwnd, msg, wparam, lparam)
+    } else {
+        DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+}
+
 unsafe fn create_controls(hwnd: HWND) {
     let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
 
@@ -741,6 +1030,12 @@ unsafe fn create_controls(hwnd: HWND) {
         hinstance,
         None,
     );
+    if hwnd_tree.0 != 0 {
+        let old = SetWindowLongPtrW(hwnd_tree, GWLP_WNDPROC, rss_tree_wndproc as isize);
+        with_rss_state(hwnd, |s| {
+            s.tree_proc = mem::transmute::<isize, WNDPROC>(old)
+        });
+    }
 
     let language = with_rss_state(hwnd, |s| {
         with_state(s.parent, |ps| ps.settings.language).unwrap_or_default()
@@ -1413,6 +1708,104 @@ unsafe fn handle_delete(hwnd: HWND) {
             reload_tree(hwnd);
         }
     }
+    if hwnd_tree.0 != 0 {
+        SetForegroundWindow(hwnd);
+        SetFocus(hwnd_tree);
+        let _ = SendMessageW(hwnd_tree, WM_SETFOCUS, WPARAM(0), LPARAM(0));
+    }
+}
+
+unsafe fn handle_edit_source(hwnd: HWND) {
+    let hwnd_tree = with_rss_state(hwnd, |s| s.hwnd_tree).unwrap_or(HWND(0));
+    let hitem = windows::Win32::UI::Controls::HTREEITEM(
+        SendMessageW(
+            hwnd_tree,
+            TVM_GETNEXTITEM,
+            WPARAM(TVGN_CARET as usize),
+            LPARAM(0),
+        )
+        .0,
+    );
+    if hitem.0 == 0 {
+        return;
+    }
+
+    let source_idx = with_rss_state(hwnd, |s| match s.node_data.get(&hitem.0) {
+        Some(NodeData::Source(idx)) => Some(*idx),
+        _ => None,
+    })
+    .flatten();
+
+    let Some(idx) = source_idx else {
+        return;
+    };
+
+    let source_info = with_rss_state(hwnd, |s| {
+        with_state(s.parent, |ps| {
+            ps.settings
+                .rss_sources
+                .get(idx)
+                .map(|src| (src.title.clone(), src.url.clone()))
+        })
+        .flatten()
+    })
+    .flatten();
+    let (title, url) = source_info.unwrap_or_default();
+    if url.trim().is_empty() {
+        return;
+    }
+
+    let main_hwnd = with_rss_state(hwnd, |s| s.parent).unwrap_or(HWND(0));
+    let existing = with_state(main_hwnd, |s| s.rss_add_dialog).unwrap_or(HWND(0));
+    if existing.0 != 0 {
+        SetForegroundWindow(existing);
+        return;
+    }
+
+    with_rss_state(hwnd, |s| s.pending_edit = Some(idx));
+    show_add_dialog_with_prefill(hwnd, title, url);
+}
+
+unsafe fn force_focus_editor_on_parent(parent: HWND) {
+    if parent.0 == 0 {
+        return;
+    }
+    SetForegroundWindow(parent);
+    SetActiveWindow(parent);
+    let _ = SendMessageW(parent, WM_SETFOCUS, WPARAM(0), LPARAM(0));
+    if crate::get_active_edit(parent).is_none() {
+        let _ = SendMessageW(
+            parent,
+            WM_COMMAND,
+            WPARAM(crate::menu::IDM_FILE_NEW),
+            LPARAM(0),
+        );
+    }
+    if let Some(hwnd_edit) = crate::get_active_edit(parent) {
+        SetFocus(hwnd_edit);
+        let _ = SendMessageW(hwnd_edit, EM_SETSEL, WPARAM(0), LPARAM(0));
+        let _ = SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
+        let _ = SendMessageW(hwnd_edit, WM_SETFOCUS, WPARAM(0), LPARAM(0));
+        let _ = SendMessageW(
+            parent,
+            WM_NEXTDLGCTL,
+            WPARAM(hwnd_edit.0 as usize),
+            LPARAM(1),
+        );
+        // Re-assert focus after dialog navigation to help NVDA settle on the edit control.
+        SetFocus(hwnd_edit);
+        let _ = SendMessageW(hwnd_edit, EM_SETSEL, WPARAM(0), LPARAM(0));
+        let _ = SendMessageW(hwnd_edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
+        let _ = SendMessageW(hwnd_edit, WM_SETFOCUS, WPARAM(0), LPARAM(0));
+        let _ = NotifyWinEvent(
+            EVENT_OBJECT_FOCUS,
+            hwnd_edit,
+            OBJID_CLIENT.0,
+            CHILDID_SELF as i32,
+        );
+    }
+    let _ = SendMessageW(parent, WM_SETFOCUS, WPARAM(0), LPARAM(0));
+    let _ = PostMessageW(parent, crate::WM_FOCUS_EDITOR, WPARAM(0), LPARAM(0));
 }
 
 unsafe fn import_item(hwnd: HWND, item: RssItem) {
@@ -1486,6 +1879,10 @@ fn collapse_blank_lines(input: &str) -> String {
 }
 
 unsafe fn show_add_dialog(parent_hwnd: HWND) {
+    show_add_dialog_with_prefill(parent_hwnd, String::new(), String::new());
+}
+
+unsafe fn show_add_dialog_with_prefill(parent_hwnd: HWND, title: String, url: String) {
     let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
     let class_name = to_wide("NovapadInput");
 
@@ -1508,6 +1905,11 @@ unsafe fn show_add_dialog(parent_hwnd: HWND) {
 
     let main_hwnd = with_rss_state(parent_hwnd, |s| s.parent).unwrap_or(HWND(0));
     let language = with_state(main_hwnd, |s| s.settings.language).unwrap_or_default();
+    let init_ptr = Box::into_raw(Box::new(AddDialogInit {
+        parent: parent_hwnd,
+        prefill_title: title,
+        prefill_url: url,
+    }));
     let hwnd = CreateWindowExW(
         WS_EX_DLGMODALFRAME,
         PCWSTR(class_name.as_ptr()),
@@ -1520,8 +1922,11 @@ unsafe fn show_add_dialog(parent_hwnd: HWND) {
         parent_hwnd,
         None,
         hinstance,
-        Some(parent_hwnd.0 as *const _),
+        Some(init_ptr as *const _),
     );
+    if hwnd.0 == 0 {
+        let _ = Box::from_raw(init_ptr);
+    }
 
     let main_window = with_rss_state(parent_hwnd, |s| s.parent).unwrap_or(HWND(0));
     with_state(main_window, |s| s.rss_add_dialog = hwnd);
@@ -1536,7 +1941,13 @@ unsafe extern "system" fn input_wndproc(
     match msg {
         WM_CREATE => {
             let cs = lparam.0 as *const CREATESTRUCTW;
-            let parent = HWND((*cs).lpCreateParams as isize);
+            let init_ptr = (*cs).lpCreateParams as *mut AddDialogInit;
+            let (parent, prefill_title, prefill_url) = if init_ptr.is_null() {
+                (HWND(0), String::new(), String::new())
+            } else {
+                let init = Box::from_raw(init_ptr);
+                (init.parent, init.prefill_title, init.prefill_url)
+            };
             // We need language. But we can't easily pass it.
             // We can get it from parent (rss_window) -> parent (main)
             let main_hwnd = with_rss_state(parent, |s| s.parent).unwrap_or(HWND(0));
@@ -1639,6 +2050,18 @@ unsafe extern "system" fn input_wndproc(
                 hinstance,
                 None,
             );
+            if !prefill_url.trim().is_empty() {
+                let _ = SetWindowTextW(
+                    GetDlgItem(hwnd, 101),
+                    PCWSTR(to_wide(&prefill_url).as_ptr()),
+                );
+            }
+            if !prefill_title.trim().is_empty() {
+                let _ = SetWindowTextW(
+                    GetDlgItem(hwnd, 104),
+                    PCWSTR(to_wide(&prefill_title).as_ptr()),
+                );
+            }
             SetFocus(GetDlgItem(hwnd, 101));
             LRESULT(0)
         }
@@ -1731,6 +2154,7 @@ unsafe extern "system" fn input_wndproc(
                 if main_hwnd.0 != 0 {
                     with_state(main_hwnd, |s| s.rss_add_dialog = HWND(0));
                 }
+                with_rss_state(parent, |s| s.pending_edit = None);
             }
             LRESULT(0)
         }

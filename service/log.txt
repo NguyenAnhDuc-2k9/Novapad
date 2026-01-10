@@ -1,52 +1,36 @@
-🇮🇹 Italiano – Donazioni
-Novapad è un programma creato inizialmente per soddisfare esigenze personali, ma nel tempo è cresciuto sempre di più. Il suo sviluppo richiede un lavoro costante per migliorare le funzionalità, correggere bug, ricercare nuove idee e testare a fondo ogni parte del programma.
-Se ritieni utile questo programma e desideri supportarne lo sviluppo, puoi effettuare una donazione.
-PayPal
-Puoi donare tramite PayPal al seguente link:
-https://www.paypal.me/ambrogio86
-Se possibile, indica come causale “Novapad”.
-Bonifico bancario
-È possibile contribuire anche tramite bonifico bancario sul conto intestato a Ambrogio Riili.
-IBAN: IT77W0306901020100000064149
-Se possibile, indica una causale chiara, ad esempio “Novapad”.
-Chiunque decida di supportare il progetto verrà ringraziato nel programma e sul repository GitHub, nella sezione sostenitori, salvo richiesta di anonimato o utilizzo di un nickname.
- 
-🇬🇧 English (A2) – Donations
-Novapad is a program created at first to meet personal needs, but over time it has grown more and more. Developing it requires constant work to improve features, fix bugs, search for new ideas, and carefully test all functions.
-If you find this program useful and want to support its development, you can make a donation.
-PayPal
-You can donate via PayPal using this link:
-https://www.paypal.me/ambrogio86
-Please, if possible, add “Novapad” as the payment note.
-Bank transfer
-You can also donate via bank transfer to the bank account in the name of Ambrogio Riili.
-IBAN: IT77W0306901020100000064149
-Please, if possible, use a clear payment reason, for example “Novapad”.
-Anyone who supports the project will be mentioned in the program and on the GitHub repository, unless they prefer to stay anonymous or use a nickname.
- 
-🇪🇸 Español – Donaciones
-Novapad es un programa creado inicialmente para cubrir necesidades personales, pero con el tiempo ha crecido cada vez más. Su desarrollo requiere un trabajo constante para mejorar las funciones, corregir errores, buscar nuevas ideas y probar cuidadosamente todas las funciones.
-Si consideras útil este programa y deseas apoyar su desarrollo, puedes hacer una donación.
-PayPal
-Puedes donar a través de PayPal usando este enlace:
-https://www.paypal.me/ambrogio86
-Si es posible, indica “Novapad” como concepto del pago.
-Transferencia bancaria
-También puedes contribuir mediante transferencia bancaria a la cuenta a nombre de Ambrogio Riili.
-IBAN: IT77W0306901020100000064149
-Si es posible, utiliza un concepto claro, por ejemplo “Novapad”.
-Las personas que apoyen el proyecto serán mencionadas en el programa y en el repositorio de GitHub, salvo que prefieran permanecer en el anonimato o usar un apodo.
- 
-🇵🇹 Português – Doações
-Novapad é um programa criado inicialmente para atender necessidades pessoais, mas com o tempo cresceu cada vez mais. O seu desenvolvimento exige um trabalho constante para melhorar funcionalidades, corrigir erros, buscar novas ideias e testar cuidadosamente todas as funções.
-Se você considera este programa útil e deseja apoiar o seu desenvolvimento, pode fazer uma doação.
-PayPal
-Você pode doar via PayPal usando este link:
-https://www.paypal.me/ambrogio86
-Se possível, adicione “Novapad” como descrição do pagamento.
-Transferência bancária
-Também é possível contribuir por transferência bancária para a conta em nome de Ambrogio Riili.
-IBAN: IT77W0306901020100000064149
-Se possível, utilize uma descrição clara, por exemplo “Novapad”.
-Quem apoiar o projeto será mencionado no programa e no repositório do GitHub, a menos que prefira permanecer anônimo ou usar um apelido.
- 
+[2026-01-10 01:18:00] Application started.
+[2026-01-10 01:18:00] MAIN WM_SETFOCUS
+[2026-01-10 01:18:04] Menu: RSS
+[2026-01-10 01:18:05] MAIN WM_SETFOCUS
+[2026-01-10 01:18:05] RSS ESC focus: begin
+[2026-01-10 01:18:05] MAIN WM_SETFOCUS
+[2026-01-10 01:18:05] RSS ESC focus: edit hwnd=HWND(61869450)
+[2026-01-10 01:18:05] MAIN WM_SETFOCUS
+[2026-01-10 01:18:05] RSS ESC focus: final focus=HWND(61869450)
+[2026-01-10 01:18:05] RSS ESC focus: begin
+[2026-01-10 01:18:05] MAIN WM_SETFOCUS
+[2026-01-10 01:18:05] RSS ESC focus: edit hwnd=HWND(61869450)
+[2026-01-10 01:18:05] MAIN WM_SETFOCUS
+[2026-01-10 01:18:05] RSS ESC focus: final focus=HWND(61869450)
+[2026-01-10 01:18:05] FOCUS_EDITOR: begin focus=HWND(61869450)
+[2026-01-10 01:18:05] FOCUS_EDITOR: edit hwnd=HWND(61869450)
+[2026-01-10 01:18:05] FOCUS_EDITOR: end focus=HWND(61869450)
+[2026-01-10 01:18:05] FOCUS_EDITOR: begin focus=HWND(61869450)
+[2026-01-10 01:18:05] FOCUS_EDITOR: edit hwnd=HWND(61869450)
+[2026-01-10 01:18:05] FOCUS_EDITOR: end focus=HWND(61869450)
+[2026-01-10 01:18:05] MAIN WM_TIMER focus retry id=1
+[2026-01-10 01:18:05] FOCUS_EDITOR: begin focus=HWND(61869450)
+[2026-01-10 01:18:05] FOCUS_EDITOR: edit hwnd=HWND(61869450)
+[2026-01-10 01:18:05] FOCUS_EDITOR: end focus=HWND(61869450)
+[2026-01-10 01:18:05] MAIN WM_TIMER focus retry id=2
+[2026-01-10 01:18:05] FOCUS_EDITOR: begin focus=HWND(61869450)
+[2026-01-10 01:18:05] FOCUS_EDITOR: edit hwnd=HWND(61869450)
+[2026-01-10 01:18:05] FOCUS_EDITOR: end focus=HWND(61869450)
+[2026-01-10 01:18:05] MAIN WM_TIMER focus retry id=3
+[2026-01-10 01:18:05] FOCUS_EDITOR: begin focus=HWND(61869450)
+[2026-01-10 01:18:05] FOCUS_EDITOR: edit hwnd=HWND(61869450)
+[2026-01-10 01:18:05] FOCUS_EDITOR: end focus=HWND(61869450)
+[2026-01-10 01:18:06] MAIN WM_TIMER focus retry id=4
+[2026-01-10 01:18:06] FOCUS_EDITOR: begin focus=HWND(61869450)
+[2026-01-10 01:18:06] FOCUS_EDITOR: edit hwnd=HWND(61869450)
+[2026-01-10 01:18:06] FOCUS_EDITOR: end focus=HWND(61869450)

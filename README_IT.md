@@ -58,6 +58,8 @@ oltre alla **registrazione podcast da microfono e audio di sistema**.
   - Finestra terminale dedicata con output stabile per gli screen reader
   - Scorciatoie: Ctrl+Shift+P, Alt+I (input), Alt+O (output)
   - Opzioni: scorrimento automatico, rimuovi ANSI, beep dopo inattivita', evita sospensione; scelta tra cmd/PowerShell/Codex CLI
+- **Lettore RSS / Articoli**
+  - Sfoglia e importa articoli dai feed RSS
 - **Opzioni di leggibilita'**
   - Controlli per colore e dimensione del testo per una migliore lettura, con colori chiari/scuri e dimensioni grandi
 - **Strumenti di modifica**
