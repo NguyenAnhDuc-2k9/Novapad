@@ -25,7 +25,7 @@ use windows::core::PCWSTR;
 use crate::accessibility::to_wide;
 use crate::i18n;
 use crate::log_debug;
-use crate::settings::{Language, load_settings, settings_dir};
+use crate::settings::{Language, load_settings};
 use crate::with_state;
 
 const REPO_OWNER: &str = "Ambro86";
@@ -137,21 +137,7 @@ pub(crate) fn check_for_update(hwnd: HWND, interactive: bool) {
         };
         if asset.size > 0 {
             let required = asset.size.saturating_add(MIN_FREE_SPACE_BYTES);
-            let update_dir = match update_staging_dir() {
-                Ok(dir) => dir,
-                Err(err) => {
-                    log_debug(&format!("Update check: update dir not writable: {err}"));
-                    if interactive {
-                        show_update_error_with_url(
-                            language,
-                            "updater.error.access",
-                            DIRECT_DOWNLOAD_URL,
-                        );
-                    }
-                    return;
-                }
-            };
-            match available_disk_bytes(&update_dir) {
+            match available_disk_bytes(&current_exe) {
                 Ok(available) => {
                     if available < required {
                         if interactive {
@@ -372,7 +358,7 @@ fn temp_update_path(current_exe: &Path) -> Result<PathBuf, String> {
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| "Invalid executable name".to_string())?;
-    let mut path = update_staging_dir()?;
+    let mut path = std::env::temp_dir();
     path.push(format!("{file_name}.update"));
     Ok(path)
 }
@@ -386,10 +372,6 @@ fn probe_dir_writable(current_exe: &Path) -> Result<(), io::Error> {
     let dir = current_exe
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Missing executable directory"))?;
-    probe_dir_writable_path(dir)
-}
-
-fn probe_dir_writable_path(dir: &Path) -> Result<(), io::Error> {
     let probe_name = format!("novapad_write_probe_{}.tmp", std::process::id());
     let probe_path = dir.join(probe_name);
     let mut file = std::fs::OpenOptions::new()
@@ -421,7 +403,10 @@ fn can_open_exe_for_update(current_exe: &Path) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn available_disk_bytes(dir: &Path) -> Result<u64, String> {
+fn available_disk_bytes(current_exe: &Path) -> Result<u64, String> {
+    let dir = current_exe
+        .parent()
+        .ok_or_else(|| "Missing executable directory".to_string())?;
     let path_w = to_wide(&dir.to_string_lossy());
     let mut free_bytes: u64 = 0;
     unsafe {
@@ -431,14 +416,6 @@ fn available_disk_bytes(dir: &Path) -> Result<u64, String> {
         }
     }
     Ok(free_bytes)
-}
-
-fn update_staging_dir() -> Result<PathBuf, String> {
-    let mut dir = settings_dir();
-    dir.push("updates");
-    std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
-    probe_dir_writable_path(&dir).map_err(|err| err.to_string())?;
-    Ok(dir)
 }
 
 fn format_mb(bytes: u64) -> String {
@@ -1512,10 +1489,8 @@ pub(crate) fn cleanup_update_temp_on_start() {
     let Some(file_name) = current_exe.file_name().and_then(|name| name.to_str()) else {
         return;
     };
-    let Ok(update_dir) = update_staging_dir() else {
-        return;
-    };
-    let Ok(entries) = std::fs::read_dir(&update_dir) else {
+    let temp_dir = std::env::temp_dir();
+    let Ok(entries) = std::fs::read_dir(&temp_dir) else {
         return;
     };
     let update_name = format!("{file_name}.update");
