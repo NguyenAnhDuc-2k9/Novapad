@@ -1,0 +1,7 @@
+sizeof TTSMODEINFO = 340
+Voice 1 checksum: 4952
+Voice 2 checksum: 4952
+Voice 3 checksum: 4952
+Voice 4 checksum: 4952
+Voice 5 checksum: 4952
+Voice 51 checksum: 4952
