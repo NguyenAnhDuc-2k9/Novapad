@@ -19,7 +19,9 @@
             // DEBUG: Salva l'HTML grezzo in un file vicino all'exe
             if let Ok(mut exe_path) = std::env::current_exe() {
                 exe_path.set_file_name("debug_last_fetch.txt");
-                let _ = std::fs::write(exe_path, &s);
+                if let Err(e) = std::fs::write(exe_path, &s) {
+                    log_debug(&format!("rss_article_fetch debug_save_failed: {e}"));
+                }
             }
             s
         }
